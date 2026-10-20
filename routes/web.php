@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
 use App\Http\Controllers\Knowledge\ClaimController;
 use App\Http\Controllers\Knowledge\CredentialController;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Route;
 Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     // Profile: contact details + resumes (resume-first authoring, D9).
     Route::prefix('profile')->group(function () {

@@ -1,8 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
-    BookOpen,
     BookUser,
-    FolderGit2,
     GitPullRequestArrow,
     IdCard,
     LayoutGrid,
@@ -10,7 +8,6 @@ import {
     Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -30,51 +27,25 @@ import { index as profile } from '@/routes/resumes';
 import { index as team } from '@/routes/team';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Profile',
-        href: profile(),
-        icon: IdCard,
-    },
-    {
-        title: 'Library',
-        href: knowledge(),
-        icon: BookUser,
-    },
+const overviewItems: NavItem[] = [
+    { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
 ];
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/react-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#react',
-        icon: BookOpen,
-    },
+const careerItems: NavItem[] = [
+    { title: 'Profile', href: profile(), icon: IdCard },
+    { title: 'Library', href: knowledge(), icon: BookUser },
+    { title: 'Answers', href: answers(), icon: MessageSquareText },
 ];
 
 export function AppSidebar() {
     const { auth, pendingProposals } = usePage().props;
-    const pendingCount = Number(pendingProposals ?? 0);
 
-    const navItems: NavItem[] = [
-        ...mainNavItems,
-        { title: 'Answers', href: answers(), icon: MessageSquareText },
+    const workspaceItems: NavItem[] = [
         {
-            title:
-                pendingCount > 0
-                    ? `Suggestions (${pendingCount})`
-                    : 'Suggestions',
+            title: 'Suggestions',
             href: proposals(),
             icon: GitPullRequestArrow,
+            badge: Number(pendingProposals ?? 0),
         },
         ...(auth.can.manageVas
             ? [{ title: 'Team', href: team(), icon: Users }]
@@ -95,12 +66,13 @@ export function AppSidebar() {
                 </SidebarMenu>
             </SidebarHeader>
 
-            <SidebarContent>
-                <NavMain items={navItems} />
+            <SidebarContent className="gap-2">
+                <NavMain items={overviewItems} />
+                <NavMain items={careerItems} label="Career" />
+                <NavMain items={workspaceItems} label="Workspace" />
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>

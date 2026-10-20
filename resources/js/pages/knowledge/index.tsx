@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, usePage } from '@inertiajs/react';
 import { Plus, Search } from 'lucide-react';
 import { useState } from 'react';
 import EmploymentController from '@/actions/App/Http/Controllers/Knowledge/EmploymentController';
@@ -35,6 +35,11 @@ type RecordActions = {
     archive: ReturnType<typeof EmploymentController.archive.form>;
     restore: ReturnType<typeof EmploymentController.restore.form>;
 };
+
+/** `?show=unverified|unused` (e.g. from the dashboard) preselects the filter. */
+function initialMode(show: string | null): LibraryFilterMode {
+    return show === 'unverified' || show === 'unused' ? show : 'all';
+}
 
 function formatPeriod(start: string | null, end: string | null): string {
     const month = (value: string) =>
@@ -76,7 +81,10 @@ export default function KnowledgeIndex({
     usedIn: ResumeUsage;
 }) {
     const [text, setText] = useState('');
-    const [mode, setMode] = useState<LibraryFilterMode>('all');
+    const { url } = usePage();
+    const [mode, setMode] = useState<LibraryFilterMode>(() =>
+        initialMode(new URL(url, 'http://localhost').searchParams.get('show')),
+    );
     const filter = { text, mode };
     const filtering = isFiltering(filter);
     const isEmpty = employments.length === 0 && standaloneProjects.length === 0;

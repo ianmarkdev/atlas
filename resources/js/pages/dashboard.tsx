@@ -1,28 +1,532 @@
-import { Head } from '@inertiajs/react';
-import { PlaceholderPattern } from '@/components/ui/placeholder-pattern';
+import { Head, Link } from '@inertiajs/react';
+import {
+    ArrowRight,
+    Briefcase,
+    CheckCircle2,
+    Circle,
+    FileText,
+    ListChecks,
+    MessageSquareText,
+    Plus,
+    Send,
+    Sparkles,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import ResumeController from '@/actions/App/Http/Controllers/Profile/ResumeController';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { greeting, timeAgo } from '@/lib/time';
 import { dashboard } from '@/routes';
+import { index as libraryIndex } from '@/routes/knowledge';
+import {
+    create as createAnswer,
+    index as answersIndex,
+} from '@/routes/knowledge/answers';
+import { create as createClaim } from '@/routes/knowledge/claims';
+import { index as resumesIndex } from '@/routes/resumes';
 
-export default function Dashboard() {
+type Stats = {
+    resumes: number;
+    jobs: number;
+    projects: number;
+    bullets: number;
+    bulletsProposed: number;
+    skills: number;
+    answers: number;
+    answersDraft: number;
+};
+
+type AttentionItem = {
+    key: string;
+    label: string;
+    count: number;
+    href: string;
+};
+
+type ChecklistItem = {
+    key: string;
+    label: string;
+    description: string;
+    done: boolean;
+    href: string;
+};
+
+type ResumeSummary = {
+    ulid: string;
+    name: string;
+    title: string | null;
+    jobs: number;
+    is_default: boolean;
+    updated_at: string | null;
+};
+
+type Activity = {
+    id: number;
+    actor: string;
+    is_you: boolean;
+    sentence: string;
+    subject: string | null;
+    at: string;
+};
+
+const pipelineStages = ['Saved', 'Applied', 'Interview', 'Offer'];
+
+export default function Dashboard({
+    firstName,
+    candidateName,
+    isCandidate,
+    stats,
+    attention,
+    checklist,
+    resumes,
+    activity,
+}: {
+    firstName: string;
+    candidateName: string;
+    isCandidate: boolean;
+    stats: Stats;
+    attention: AttentionItem[];
+    checklist: ChecklistItem[] | null;
+    resumes: ResumeSummary[];
+    activity: Activity[];
+}) {
+    const setupOpen =
+        checklist !== null && checklist.some((item) => !item.done);
+
     return (
         <>
             <Head title="Dashboard" />
-            <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-                <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
+
+            <div className="flex flex-col gap-6 p-4 lg:p-6">
+                <header className="flex flex-wrap items-end justify-between gap-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            {greeting()}, {firstName}
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            {isCandidate
+                                ? 'Here is where your job search material stands.'
+                                : `You are helping ${candidateName}. Here is what is happening.`}
+                        </p>
                     </div>
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
+                    <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                            <Link href={createClaim()}>
+                                <Plus /> Bullet point
+                            </Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                            <Link href={createAnswer()}>
+                                <Plus /> Answer
+                            </Link>
+                        </Button>
+                        {isCandidate && (
+                            <Button size="sm" asChild>
+                                <Link href={resumesIndex()}>
+                                    <FileText /> Resumes
+                                </Link>
+                            </Button>
+                        )}
                     </div>
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
+                </header>
+
+                <section
+                    aria-label="Summary"
+                    className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+                >
+                    <StatCard
+                        icon={FileText}
+                        label="Resumes"
+                        value={stats.resumes}
+                        hint={stats.resumes === 1 ? 'version' : 'versions'}
+                        href={resumesIndex().url}
+                    />
+                    <StatCard
+                        icon={ListChecks}
+                        label="Bullet points"
+                        value={stats.bullets}
+                        hint={
+                            stats.bulletsProposed > 0
+                                ? `${stats.bulletsProposed} to verify`
+                                : 'all verified'
+                        }
+                        href={libraryIndex().url}
+                        highlight={stats.bulletsProposed > 0}
+                    />
+                    <StatCard
+                        icon={Briefcase}
+                        label="Experience"
+                        value={stats.jobs}
+                        hint={`${stats.jobs === 1 ? 'job' : 'jobs'} · ${stats.projects} ${stats.projects === 1 ? 'project' : 'projects'} · ${stats.skills} skills`}
+                        href={libraryIndex().url}
+                    />
+                    <StatCard
+                        icon={MessageSquareText}
+                        label="Answers"
+                        value={stats.answers}
+                        hint={
+                            stats.answersDraft > 0
+                                ? `${stats.answersDraft} ${stats.answersDraft === 1 ? 'draft' : 'drafts'} waiting`
+                                : 'ready to copy'
+                        }
+                        href={answersIndex().url}
+                        highlight={stats.answersDraft > 0}
+                    />
+                </section>
+
+                <div className="grid gap-6 lg:grid-cols-3">
+                    <div className="flex flex-col gap-6 lg:col-span-2">
+                        <ApplicationsCard />
+                        <ResumesCard
+                            resumes={resumes}
+                            isCandidate={isCandidate}
+                        />
                     </div>
-                </div>
-                <div className="relative min-h-[100vh] flex-1 overflow-hidden rounded-xl border border-sidebar-border/70 md:min-h-min dark:border-sidebar-border">
-                    <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
+
+                    <div className="flex flex-col gap-6">
+                        <AttentionCard items={attention} />
+                        {setupOpen && <ChecklistCard items={checklist} />}
+                        <ActivityCard activity={activity} />
+                    </div>
                 </div>
             </div>
         </>
+    );
+}
+
+function StatCard({
+    icon: Icon,
+    label,
+    value,
+    hint,
+    href,
+    highlight = false,
+}: {
+    icon: LucideIcon;
+    label: string;
+    value: number;
+    hint: string;
+    href: string;
+    highlight?: boolean;
+}) {
+    return (
+        <Link
+            href={href}
+            className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+            <Card className="h-full gap-2 py-4 transition-colors group-hover:border-foreground/20">
+                <CardHeader className="flex flex-row items-center justify-between px-4">
+                    <CardDescription className="font-medium">
+                        {label}
+                    </CardDescription>
+                    <span className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                        <Icon className="size-4" aria-hidden />
+                    </span>
+                </CardHeader>
+                <CardContent className="px-4">
+                    <p className="text-3xl font-semibold tabular-nums">
+                        {value}
+                    </p>
+                    <p
+                        className={cn(
+                            'text-xs',
+                            highlight
+                                ? 'font-medium text-amber-700 dark:text-amber-400'
+                                : 'text-muted-foreground',
+                        )}
+                    >
+                        {hint}
+                    </p>
+                </CardContent>
+            </Card>
+        </Link>
+    );
+}
+
+function ApplicationsCard() {
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                        <Send className="size-4" aria-hidden /> Applications
+                    </CardTitle>
+                    <Badge variant="secondary">
+                        <Sparkles className="size-3" aria-hidden /> Coming next
+                    </Badge>
+                </div>
+                <CardDescription>
+                    Paste a job description to get a tailored resume, a cover
+                    letter and form answers built from your library — then track
+                    each application here.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {pipelineStages.map((stage) => (
+                        <li
+                            key={stage}
+                            className="rounded-lg border border-dashed p-3"
+                        >
+                            <p className="text-xs font-medium text-muted-foreground">
+                                {stage}
+                            </p>
+                            <p className="text-2xl font-semibold text-muted-foreground/60 tabular-nums">
+                                0
+                            </p>
+                        </li>
+                    ))}
+                </ol>
+            </CardContent>
+        </Card>
+    );
+}
+
+function ResumesCard({
+    resumes,
+    isCandidate,
+}: {
+    resumes: ResumeSummary[];
+    isCandidate: boolean;
+}) {
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                    <CardTitle>Resumes</CardTitle>
+                    <Link
+                        href={resumesIndex()}
+                        className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                        All resumes <ArrowRight className="size-3.5" />
+                    </Link>
+                </div>
+                <CardDescription>
+                    Versions of the same story, each focused on a kind of role.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {resumes.length === 0 ? (
+                    <EmptyState
+                        text={
+                            isCandidate
+                                ? 'No resumes yet. Create one from your Profile.'
+                                : 'The candidate has no resumes yet.'
+                        }
+                    />
+                ) : (
+                    <ul className="divide-y">
+                        {resumes.map((resume) => (
+                            <li key={resume.ulid}>
+                                <Link
+                                    href={ResumeController.show(resume.ulid)}
+                                    className="flex items-center gap-3 rounded-md px-2 py-3 hover:bg-muted/50"
+                                >
+                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                        <FileText
+                                            className="size-4"
+                                            aria-hidden
+                                        />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex items-center gap-2">
+                                            <span className="truncate font-medium">
+                                                {resume.name}
+                                            </span>
+                                            {resume.is_default && (
+                                                <Badge variant="secondary">
+                                                    Default
+                                                </Badge>
+                                            )}
+                                        </span>
+                                        <span className="block truncate text-xs text-muted-foreground">
+                                            {[
+                                                resume.title,
+                                                `${resume.jobs} ${resume.jobs === 1 ? 'job' : 'jobs'}`,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' · ')}
+                                        </span>
+                                    </span>
+                                    {resume.updated_at && (
+                                        <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">
+                                            Edited {timeAgo(resume.updated_at)}
+                                        </span>
+                                    )}
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function AttentionCard({ items }: { items: AttentionItem[] }) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Needs attention</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {items.length === 0 ? (
+                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2
+                            className="size-4 text-emerald-600 dark:text-emerald-400"
+                            aria-hidden
+                        />
+                        All caught up.
+                    </p>
+                ) : (
+                    <ul className="space-y-1">
+                        {items.map((item) => (
+                            <li key={item.key}>
+                                <Link
+                                    href={item.href}
+                                    className="flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted/50"
+                                >
+                                    {item.label}
+                                    <Badge className="tabular-nums">
+                                        {item.count}
+                                    </Badge>
+                                </Link>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function ChecklistCard({ items }: { items: ChecklistItem[] }) {
+    const done = items.filter((item) => item.done).length;
+    const percent = Math.round((done / items.length) * 100);
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Get set up</CardTitle>
+                <CardDescription>
+                    {done} of {items.length} done
+                </CardDescription>
+                <div
+                    role="progressbar"
+                    aria-label="Setup progress"
+                    aria-valuenow={percent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                >
+                    <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${percent}%` }}
+                    />
+                </div>
+            </CardHeader>
+            <CardContent>
+                <ul className="space-y-1">
+                    {items.map((item) => (
+                        <li key={item.key}>
+                            <Link
+                                href={item.href}
+                                className="flex items-start gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                            >
+                                {item.done ? (
+                                    <CheckCircle2
+                                        className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                        aria-label="Done"
+                                    />
+                                ) : (
+                                    <Circle
+                                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                        aria-label="To do"
+                                    />
+                                )}
+                                <span className="min-w-0">
+                                    <span
+                                        className={cn(
+                                            'block text-sm',
+                                            item.done
+                                                ? 'text-muted-foreground line-through'
+                                                : 'font-medium',
+                                        )}
+                                    >
+                                        {item.label}
+                                    </span>
+                                    {!item.done && (
+                                        <span className="block text-xs text-muted-foreground">
+                                            {item.description}
+                                        </span>
+                                    )}
+                                </span>
+                            </Link>
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+}
+
+function ActivityCard({ activity }: { activity: Activity[] }) {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Recent activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+                {activity.length === 0 ? (
+                    <EmptyState text="Nothing yet." />
+                ) : (
+                    <ol className="relative space-y-4 border-l pl-4">
+                        {activity.map((event) => (
+                            <li key={event.id} className="relative text-sm">
+                                <span
+                                    aria-hidden
+                                    className="absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-background bg-muted-foreground/50"
+                                />
+                                <p>
+                                    <span className="font-medium">
+                                        {event.is_you ? 'You' : event.actor}
+                                    </span>{' '}
+                                    {event.sentence}
+                                </p>
+                                {event.subject && (
+                                    <p className="truncate text-xs text-muted-foreground">
+                                        {event.subject}
+                                    </p>
+                                )}
+                                <time
+                                    dateTime={event.at}
+                                    title={new Date(event.at).toLocaleString()}
+                                    className="text-xs text-muted-foreground"
+                                >
+                                    {timeAgo(event.at)}
+                                </time>
+                            </li>
+                        ))}
+                    </ol>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function EmptyState({ text }: { text: string }) {
+    return (
+        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            {text}
+        </p>
     );
 }
 
