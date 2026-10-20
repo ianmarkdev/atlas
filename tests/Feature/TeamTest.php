@@ -3,19 +3,8 @@
 use App\Domain\Audit\AuditEvent;
 use App\Domain\Tenancy\Role;
 use App\Domain\Tenancy\TenantContext;
-use App\Domain\Tenancy\Workspace;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
-
-function candidateWithTwoFactor(): User
-{
-    return User::factory()->withTwoFactor()->candidate()->create();
-}
-
-function workspaceOf(User $user): Workspace
-{
-    return $user->membership->workspace;
-}
 
 test('the candidate sees the team page with VAs and seat usage', function () {
     $candidate = candidateWithTwoFactor();

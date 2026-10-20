@@ -2,10 +2,15 @@
 
 namespace App\Providers;
 
+use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\Project;
 use App\Domain\Tenancy\TenantContext;
+use App\Domain\Tenancy\Workspace;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -31,6 +36,15 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureGates();
 
+        // Short, stable type names in polymorphic columns (audit_events.subject_type, later claim subjects).
+        Relation::morphMap([
+            'user' => User::class,
+            'workspace' => Workspace::class,
+            'candidate_profile' => CandidateProfile::class,
+            'employment' => Employment::class,
+            'project' => Project::class,
+        ]);
+
         Event::listen(function (Login $event): void {
             if ($event->user instanceof User) {
                 $event->user->forceFill(['last_login_at' => now()])->save();
@@ -45,6 +59,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('manage-vas', fn (User $user): bool => $user->isCandidate());
         Gate::define('manage-budget', fn (User $user): bool => $user->isCandidate());
+        Gate::define('edit-candidate-profile', fn (User $user): bool => $user->isCandidate());
     }
 
     /**

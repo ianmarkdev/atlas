@@ -41,6 +41,14 @@ class CandidateProfile extends Model
     }
 
     /**
+     * The candidate profile of the workspace in context. MVP: exactly one per workspace.
+     */
+    public static function current(): self
+    {
+        return static::query()->oldest('id')->firstOrFail();
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo

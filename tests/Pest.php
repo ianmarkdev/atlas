@@ -1,5 +1,9 @@
 <?php
 
+use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Tenancy\TenantContext;
+use App\Domain\Tenancy\Workspace;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -47,4 +51,40 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * The workspace's candidate, with two-factor authentication set up so they pass the 2FA requirement.
+ */
+function candidateWithTwoFactor(): User
+{
+    return User::factory()->withTwoFactor()->candidate()->create();
+}
+
+function workspaceOf(User $user): Workspace
+{
+    return $user->membership->workspace;
+}
+
+function vaOf(User $candidate): User
+{
+    return User::factory()->va(workspaceOf($candidate))->create();
+}
+
+function profileOf(User $candidate): CandidateProfile
+{
+    return CandidateProfile::withoutGlobalScopes()->where('user_id', $candidate->id)->sole();
+}
+
+/**
+ * Run a callback with the given user's workspace as tenant context (for asserting on tenant models).
+ *
+ * @template TReturn
+ *
+ * @param  callable(): TReturn  $callback
+ * @return TReturn
+ */
+function inWorkspaceOf(User $user, callable $callback): mixed
+{
+    return app(TenantContext::class)->run(workspaceOf($user), $callback);
 }
