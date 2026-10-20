@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Knowledge;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimStatus;
+use App\Domain\Knowledge\Credential;
+use App\Domain\Knowledge\CredentialType;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeStatus;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeUsage;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ClaimResource;
+use App\Http\Resources\CredentialResource;
 use App\Http\Resources\EmploymentResource;
 use App\Http\Resources\ProjectResource;
 use Illuminate\Database\Eloquent\Builder;
@@ -57,6 +61,11 @@ class KnowledgeController extends Controller
             ->oldest('id')
             ->get();
 
+        $credentials = Credential::query()
+            ->tap($visibleRecords)
+            ->orderByRaw('end_date IS NOT NULL, end_date DESC')
+            ->get();
+
         return Inertia::render('knowledge/index', [
             'profile' => [
                 'display_name' => $profile->display_name,
@@ -65,6 +74,10 @@ class KnowledgeController extends Controller
             'employments' => EmploymentResource::collection($employments)->resolve(),
             'standaloneProjects' => ProjectResource::collection($standaloneProjects)->resolve(),
             'generalClaims' => ClaimResource::collection($generalClaims)->resolve(),
+            'education' => CredentialResource::collection($credentials->where('type', CredentialType::Education)->values())->resolve(),
+            'certifications' => CredentialResource::collection($credentials->where('type', CredentialType::Certification)->values())->resolve(),
+            'skills' => array_values(Skill::query()->alphabetical()->get()->map(SkillController::present(...))->all()),
+            'canEditSkills' => $request->user()->can('edit-candidate-profile'),
             'showArchived' => $showArchived,
         ]);
     }

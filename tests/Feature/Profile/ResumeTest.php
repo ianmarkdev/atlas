@@ -1,11 +1,15 @@
 <?php
 
+use App\Domain\Knowledge\CandidateLanguage;
+use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimRevision;
 use App\Domain\Knowledge\ClaimStatus;
+use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeStatus;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Resumes\ResumeVariantRevision;
 use App\Models\User;
@@ -196,6 +200,87 @@ describe('save', function () {
         $foreign = resumeOf(candidateWithTwoFactor());
 
         $this->actingAs($candidate)->get(route('resumes.show', $foreign))->assertNotFound();
+    });
+});
+
+describe('skills, education, certifications, languages and links', function () {
+    test('grouped skills, credentials, languages and links are saved; duplicates and empty groups are dropped', function () {
+        $candidate = candidateWithTwoFactor();
+        $workspace = workspaceOf($candidate);
+        $php = Skill::factory()->inWorkspace($workspace)->create(['name' => 'PHP']);
+        $react = Skill::factory()->inWorkspace($workspace)->create(['name' => 'React']);
+        $degree = Credential::factory()->forProfile(profileOf($candidate))->verified($candidate)->create();
+        $cert = Credential::factory()->forProfile(profileOf($candidate))->certification()->verified($candidate)->create();
+        $language = CandidateLanguage::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => profileOf($candidate)->id, 'language' => 'German', 'proficiency' => 'fluent']);
+        $link = CandidateLink::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => profileOf($candidate)->id, 'kind' => 'github', 'url' => 'https://github.com/alex']);
+        $resume = resumeOf($candidate);
+
+        $this->actingAs($candidate)
+            ->put(route('resumes.update', $resume), saveResume($resume, [
+                'skills' => [
+                    ['label' => 'Backend', 'items' => [$php->ulid, $php->ulid]],
+                    ['label' => 'Frontend', 'items' => [$react->ulid, $php->ulid]],
+                    ['label' => 'Empty', 'items' => []],
+                ],
+                'education' => [['credential' => $degree->ulid]],
+                'certifications' => [['credential' => $cert->ulid]],
+                'languages' => [$language->ulid],
+                'links' => [$link->ulid],
+            ]))
+            ->assertSessionHasNoErrors();
+
+        $document = $resume->refresh()->load('currentRevision')->document();
+        expect($document['skills'])->toEqual([
+            ['label' => 'Backend', 'items' => [$php->ulid]],
+            ['label' => 'Frontend', 'items' => [$react->ulid]],
+        ])
+            ->and($document['education'])->toEqual([['credential' => $degree->ulid]])
+            ->and($document['certifications'])->toEqual([['credential' => $cert->ulid]])
+            ->and($document['languages'])->toBe([$language->ulid])
+            ->and($document['links'])->toBe([$link->ulid]);
+    });
+
+    test('education listed as a certification is rejected', function () {
+        $candidate = candidateWithTwoFactor();
+        $degree = Credential::factory()->forProfile(profileOf($candidate))->verified($candidate)->create();
+        $resume = resumeOf($candidate);
+
+        $this->actingAs($candidate)
+            ->put(route('resumes.update', $resume), saveResume($resume, ['certifications' => [['credential' => $degree->ulid]]]))
+            ->assertSessionHasErrors(['document.certifications.0.credential' => 'This certification is no longer in your library.']);
+    });
+
+    test('a skill or language of another workspace is rejected', function () {
+        $candidate = candidateWithTwoFactor();
+        $other = candidateWithTwoFactor();
+        $foreignSkill = Skill::factory()->inWorkspace(workspaceOf($other))->create(['name' => 'Cobol']);
+        $foreignLanguage = CandidateLanguage::create(['workspace_id' => workspaceOf($other)->id, 'candidate_profile_id' => profileOf($other)->id, 'language' => 'Latin', 'proficiency' => 'basic']);
+        $resume = resumeOf($candidate);
+
+        $this->actingAs($candidate)
+            ->put(route('resumes.update', $resume), saveResume($resume, [
+                'skills' => [['label' => null, 'items' => [$foreignSkill->ulid]]],
+                'languages' => [$foreignLanguage->ulid],
+            ]))
+            ->assertSessionHasErrors(['document.skills.0.items.0', 'document.languages.0']);
+    });
+
+    test('an older resume revision without the new sections opens with them empty', function () {
+        $candidate = candidateWithTwoFactor();
+        $resume = ResumeVariant::factory()->forProfile(profileOf($candidate))->create();
+        ResumeVariantRevision::create([
+            'workspace_id' => $resume->workspace_id,
+            'resume_variant_id' => $resume->id,
+            'revision_no' => 1,
+            'document' => ['schema_version' => 1, 'title' => 'Old', 'summary' => null, 'experience' => [], 'projects' => []],
+        ]);
+        $resume->forceFill(['current_revision_id' => ResumeVariantRevision::withoutGlobalScopes()->where('resume_variant_id', $resume->id)->value('id')])->save();
+
+        $this->actingAs($candidate)->get(route('resumes.show', $resume))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('resume.document.title', 'Old')
+                ->where('resume.document.skills', [])
+                ->where('resume.document.links', []));
     });
 });
 

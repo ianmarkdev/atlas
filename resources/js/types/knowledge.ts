@@ -51,6 +51,40 @@ export type Employment = {
     can: KnowledgeAbilities;
 };
 
+export type Credential = {
+    ulid: string;
+    type: 'education' | 'certification';
+    institution: string;
+    name: string;
+    field_of_study: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    expires_on: string | null;
+    credential_url: string | null;
+    summary: string | null;
+    status: KnowledgeStatus;
+    lock_version: number;
+    can: KnowledgeAbilities;
+};
+
+export type Skill = {
+    ulid: string;
+    name: string;
+};
+
+export type Language = {
+    ulid: string;
+    language: string;
+    proficiency: string;
+};
+
+export type ContactLink = {
+    ulid: string;
+    kind: string;
+    label: string;
+    url: string;
+};
+
 export type SelectOption = {
     value: string;
     label: string;

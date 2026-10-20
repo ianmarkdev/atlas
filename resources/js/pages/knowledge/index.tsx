@@ -1,7 +1,11 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import EmploymentController from '@/actions/App/Http/Controllers/Knowledge/EmploymentController';
+import CredentialController from '@/actions/App/Http/Controllers/Knowledge/CredentialController';
 import ProjectController from '@/actions/App/Http/Controllers/Knowledge/ProjectController';
+import SkillController from '@/actions/App/Http/Controllers/Knowledge/SkillController';
+import InputError from '@/components/input-error';
+import { Input } from '@/components/ui/input';
 import { ClaimList } from '@/components/claim-list';
 import Heading from '@/components/heading';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
@@ -9,10 +13,12 @@ import { Button } from '@/components/ui/button';
 import { index } from '@/routes/knowledge';
 import type {
     Claim,
+    Credential,
     Employment,
     KnowledgeAbilities,
     Project,
     ResumeUsage,
+    Skill,
 } from '@/types';
 
 type RecordActions = {
@@ -39,12 +45,20 @@ export default function KnowledgeIndex({
     employments,
     standaloneProjects,
     generalClaims,
+    education,
+    certifications,
+    skills,
+    canEditSkills,
     showArchived,
     usedIn,
 }: {
     employments: Employment[];
     standaloneProjects: Project[];
     generalClaims: Claim[];
+    education: Credential[];
+    certifications: Credential[];
+    skills: Skill[];
+    canEditSkills: boolean;
     showArchived: boolean;
     usedIn: ResumeUsage;
 }) {
@@ -190,6 +204,22 @@ export default function KnowledgeIndex({
                     </section>
                 )}
 
+                <CredentialList
+                    title="Education"
+                    type="education"
+                    credentials={education}
+                    usedIn={usedIn.credentials}
+                />
+
+                <CredentialList
+                    title="Certifications"
+                    type="certification"
+                    credentials={certifications}
+                    usedIn={usedIn.credentials}
+                />
+
+                <SkillManager skills={skills} canEdit={canEditSkills} />
+
                 <section className="space-y-4">
                     <Heading
                         variant="small"
@@ -254,6 +284,155 @@ function ProjectItem({
                 />
             </div>
         </div>
+    );
+}
+
+function CredentialList({
+    title,
+    type,
+    credentials,
+    usedIn,
+}: {
+    title: string;
+    type: 'education' | 'certification';
+    credentials: Credential[];
+    usedIn: Record<string, string[]>;
+}) {
+    return (
+        <section className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <Heading variant="small" title={title} />
+                <Button size="sm" variant="outline" asChild>
+                    <Link
+                        href={CredentialController.create({ query: { type } })}
+                    >
+                        <Plus />{' '}
+                        {type === 'education'
+                            ? 'Add education'
+                            : 'Add certification'}
+                    </Link>
+                </Button>
+            </div>
+            {credentials.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                    Nothing here yet.
+                </p>
+            ) : (
+                <ul className="space-y-2">
+                    {credentials.map((credential) => (
+                        <li
+                            key={credential.ulid}
+                            className="rounded-lg border p-3"
+                        >
+                            <RecordHeader
+                                title={`${credential.name}${credential.field_of_study ? `, ${credential.field_of_study}` : ''} — ${credential.institution}`}
+                                subtitle={formatPeriod(
+                                    credential.start_date,
+                                    credential.end_date,
+                                )}
+                                status={credential.status}
+                                can={credential.can}
+                                usedIn={usedIn[credential.ulid]}
+                                editHref={CredentialController.edit(
+                                    credential.ulid,
+                                )}
+                                actions={{
+                                    verify: CredentialController.verify.form(
+                                        credential.ulid,
+                                    ),
+                                    archive: CredentialController.archive.form(
+                                        credential.ulid,
+                                    ),
+                                    restore: CredentialController.restore.form(
+                                        credential.ulid,
+                                    ),
+                                }}
+                            />
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    );
+}
+
+function SkillManager({
+    skills,
+    canEdit,
+}: {
+    skills: Skill[];
+    canEdit: boolean;
+}) {
+    return (
+        <section className="space-y-4">
+            <Heading
+                variant="small"
+                title="Skills"
+                description="Your full skill list. Each resume picks, groups and orders the ones it shows."
+            />
+            {skills.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No skills yet.</p>
+            ) : (
+                <ul className="flex flex-wrap gap-2">
+                    {skills.map((skill) => (
+                        <li
+                            key={skill.ulid}
+                            className="flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-3 text-sm"
+                        >
+                            {skill.name}
+                            {canEdit && (
+                                <Form
+                                    {...SkillController.destroy.form(
+                                        skill.ulid,
+                                    )}
+                                    options={{ preserveScroll: true }}
+                                >
+                                    {({ processing }) => (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-6 px-2 text-xs"
+                                            disabled={processing}
+                                            aria-label={`Remove ${skill.name}`}
+                                        >
+                                            ×
+                                        </Button>
+                                    )}
+                                </Form>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {canEdit && (
+                <Form
+                    {...SkillController.store.form()}
+                    options={{ preserveScroll: true }}
+                    resetOnSuccess
+                    className="flex max-w-xl gap-2"
+                >
+                    {({ processing, errors }) => (
+                        <div className="flex w-full flex-col gap-1">
+                            <div className="flex gap-2">
+                                <Input
+                                    name="names"
+                                    placeholder="Add skills, comma-separated: PHP, Laravel, React"
+                                    aria-label="Add skills"
+                                />
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={processing}
+                                >
+                                    Add
+                                </Button>
+                            </div>
+                            <InputError message={errors.names} />
+                        </div>
+                    )}
+                </Form>
+            )}
+        </section>
     );
 }
 

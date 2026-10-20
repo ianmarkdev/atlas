@@ -17,14 +17,14 @@ class KnowledgeRecordService
     public function __construct(private AuditLogger $audit) {}
 
     /**
-     * @template TRecord of Employment|Project
+     * @template TRecord of Employment|Project|Credential
      *
      * @param  TRecord  $record  unsaved model, already filled with validated attributes
      * @return TRecord
      */
-    public function create(Employment|Project $record, User $actor): Employment|Project
+    public function create(Employment|Project|Credential $record, User $actor): Employment|Project|Credential
     {
-        return DB::transaction(function () use ($record, $actor): Employment|Project {
+        return DB::transaction(function () use ($record, $actor): Employment|Project|Credential {
             $record->candidate_profile_id = CandidateProfile::current()->id;
             $record->created_by = $actor->id;
 
@@ -49,7 +49,7 @@ class KnowledgeRecordService
      *
      * @throws ValidationException when someone else saved the record in the meantime
      */
-    public function update(Employment|Project $record, array $attributes, int $expectedLockVersion, User $actor): void
+    public function update(Employment|Project|Credential $record, array $attributes, int $expectedLockVersion, User $actor): void
     {
         DB::transaction(function () use ($record, $attributes, $expectedLockVersion, $actor): void {
             $current = $record->newQuery()->whereKey($record->getKey())->lockForUpdate()->firstOrFail();
@@ -68,14 +68,14 @@ class KnowledgeRecordService
         });
     }
 
-    public function verify(Employment|Project $record, User $actor): void
+    public function verify(Employment|Project|Credential $record, User $actor): void
     {
         $this->transition($record, $actor, 'verified', function () use ($record, $actor): void {
             $this->markVerified($record, $actor);
         });
     }
 
-    public function archive(Employment|Project $record, User $actor): void
+    public function archive(Employment|Project|Credential $record, User $actor): void
     {
         $this->transition($record, $actor, 'archived', function () use ($record): void {
             $record->status = KnowledgeStatus::Archived;
@@ -85,7 +85,7 @@ class KnowledgeRecordService
     /**
      * Restored records come back as verified: only the candidate can restore.
      */
-    public function restore(Employment|Project $record, User $actor): void
+    public function restore(Employment|Project|Credential $record, User $actor): void
     {
         $this->transition($record, $actor, 'restored', function () use ($record, $actor): void {
             $this->markVerified($record, $actor);
@@ -95,7 +95,7 @@ class KnowledgeRecordService
     /**
      * @param  callable(): void  $change
      */
-    private function transition(Employment|Project $record, User $actor, string $action, callable $change): void
+    private function transition(Employment|Project|Credential $record, User $actor, string $action, callable $change): void
     {
         DB::transaction(function () use ($record, $actor, $action, $change): void {
             $change();
@@ -106,7 +106,7 @@ class KnowledgeRecordService
         });
     }
 
-    private function markVerified(Employment|Project $record, User $actor): void
+    private function markVerified(Employment|Project|Credential $record, User $actor): void
     {
         $record->status = KnowledgeStatus::Verified;
         $record->verified_by = $actor->id;

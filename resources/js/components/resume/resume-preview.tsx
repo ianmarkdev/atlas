@@ -1,7 +1,16 @@
-import { bulletText, formatPeriod } from '@/lib/resume-document';
+import {
+    bulletText,
+    credentialHeading,
+    formatPeriod,
+    resolvedCredentials,
+    resolvedLanguages,
+    resolvedLinks,
+    resolvedSkillGroups,
+} from '@/lib/resume-document';
 import type { LibraryIndex } from '@/lib/resume-document';
 import type {
     Contact,
+    Credential,
     ResumeBullet,
     ResumeDocument,
     ResumeProjectItem,
@@ -22,12 +31,23 @@ export function ResumePreview({
     const contactLine = [contact.email, contact.phone, contact.location]
         .filter(Boolean)
         .join(' · ');
+    const links = resolvedLinks(document, index);
+    const skillGroups = resolvedSkillGroups(document, index);
     const jobs = document.experience.filter((job) =>
         index.employments.has(job.employment),
     );
     const standalone = document.projects.filter((item) =>
         index.projects.has(item.project),
     );
+    const education = resolvedCredentials(document.education, index);
+    const certifications = resolvedCredentials(document.certifications, index);
+    const languages = resolvedLanguages(document, index);
+    const isEmpty =
+        jobs.length === 0 &&
+        standalone.length === 0 &&
+        skillGroups.length === 0 &&
+        education.length === 0 &&
+        certifications.length === 0;
 
     return (
         <article className="space-y-5 rounded-lg border bg-background p-6 text-sm leading-relaxed shadow-xs">
@@ -41,17 +61,46 @@ export function ResumePreview({
                 {contactLine && (
                     <p className="text-muted-foreground">{contactLine}</p>
                 )}
+                {links.length > 0 && (
+                    <p className="flex flex-wrap gap-x-3 text-muted-foreground">
+                        {links.map((link) => (
+                            <a
+                                key={link.ulid}
+                                href={link.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline underline-offset-2"
+                            >
+                                {link.label}
+                            </a>
+                        ))}
+                    </p>
+                )}
             </header>
 
             {document.summary && (
                 <p className="whitespace-pre-line">{document.summary}</p>
             )}
 
+            {skillGroups.length > 0 && (
+                <Section title="Skills">
+                    <ul className="space-y-0.5">
+                        {skillGroups.map((group, i) => (
+                            <li key={i}>
+                                {group.label && (
+                                    <span className="font-medium">
+                                        {group.label}:{' '}
+                                    </span>
+                                )}
+                                {group.names.join(', ')}
+                            </li>
+                        ))}
+                    </ul>
+                </Section>
+            )}
+
             {jobs.length > 0 && (
-                <section className="space-y-4">
-                    <h3 className="border-b pb-1 text-xs font-semibold tracking-widest uppercase">
-                        Experience
-                    </h3>
+                <Section title="Experience">
                     {jobs.map((job) => {
                         const employment = index.employments.get(
                             job.employment,
@@ -88,14 +137,11 @@ export function ResumePreview({
                             </div>
                         );
                     })}
-                </section>
+                </Section>
             )}
 
             {standalone.length > 0 && (
-                <section className="space-y-3">
-                    <h3 className="border-b pb-1 text-xs font-semibold tracking-widest uppercase">
-                        Projects
-                    </h3>
+                <Section title="Projects">
                     {standalone.map((item) => (
                         <ProjectPreview
                             key={item.project}
@@ -103,15 +149,76 @@ export function ResumePreview({
                             index={index}
                         />
                     ))}
-                </section>
+                </Section>
             )}
 
-            {jobs.length === 0 && standalone.length === 0 && (
+            {education.length > 0 && (
+                <Section title="Education">
+                    <CredentialLines credentials={education} />
+                </Section>
+            )}
+
+            {certifications.length > 0 && (
+                <Section title="Certifications">
+                    <CredentialLines credentials={certifications} />
+                </Section>
+            )}
+
+            {languages.length > 0 && (
+                <Section title="Languages">
+                    <p>
+                        {languages
+                            .map((l) => `${l.language} (${l.proficiency})`)
+                            .join(', ')}
+                    </p>
+                </Section>
+            )}
+
+            {isEmpty && (
                 <p className="text-muted-foreground">
-                    Add experience and projects on the left to see them here.
+                    Add experience, projects, skills and education on the left
+                    to see them here.
                 </p>
             )}
         </article>
+    );
+}
+
+function Section({
+    title,
+    children,
+}: {
+    title: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <section className="space-y-3">
+            <h3 className="border-b pb-1 text-xs font-semibold tracking-widest uppercase">
+                {title}
+            </h3>
+            {children}
+        </section>
+    );
+}
+
+function CredentialLines({ credentials }: { credentials: Credential[] }) {
+    return (
+        <ul className="space-y-1">
+            {credentials.map((credential) => (
+                <li
+                    key={credential.ulid}
+                    className="flex flex-wrap justify-between gap-x-4"
+                >
+                    <span>{credentialHeading(credential)}</span>
+                    <span className="text-muted-foreground">
+                        {formatPeriod(
+                            credential.start_date,
+                            credential.end_date,
+                        )}
+                    </span>
+                </li>
+            ))}
+        </ul>
     );
 }
 

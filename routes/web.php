@@ -1,10 +1,14 @@
 <?php
 
 use App\Http\Controllers\Knowledge\ClaimController;
+use App\Http\Controllers\Knowledge\CredentialController;
 use App\Http\Controllers\Knowledge\EmploymentController;
 use App\Http\Controllers\Knowledge\KnowledgeController;
 use App\Http\Controllers\Knowledge\ProjectController;
+use App\Http\Controllers\Knowledge\SkillController;
 use App\Http\Controllers\Profile\ContactController;
+use App\Http\Controllers\Profile\LanguageController;
+use App\Http\Controllers\Profile\LinkController;
 use App\Http\Controllers\Profile\ResumeController;
 use App\Http\Controllers\TeamController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +25,10 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::middleware('can:edit-candidate-profile')->group(function () {
             Route::get('contact', [ContactController::class, 'edit'])->name('contact.edit');
             Route::patch('contact', [ContactController::class, 'update'])->name('contact.update');
+            Route::post('contact/languages', [LanguageController::class, 'store'])->name('contact.languages.store');
+            Route::delete('contact/languages/{language}', [LanguageController::class, 'destroy'])->name('contact.languages.destroy');
+            Route::post('contact/links', [LinkController::class, 'store'])->name('contact.links.store');
+            Route::delete('contact/links/{link}', [LinkController::class, 'destroy'])->name('contact.links.destroy');
         });
 
         Route::get('resumes/{resume}', [ResumeController::class, 'show'])->name('resumes.show');
@@ -49,6 +57,17 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('projects/{project}/verify', [ProjectController::class, 'verify'])->name('projects.verify');
         Route::patch('projects/{project}/archive', [ProjectController::class, 'archive'])->name('projects.archive');
         Route::patch('projects/{project}/restore', [ProjectController::class, 'restore'])->name('projects.restore');
+
+        Route::resource('credentials', CredentialController::class)->only(['create', 'store', 'edit', 'update']);
+        Route::patch('credentials/{credential}/verify', [CredentialController::class, 'verify'])->name('credentials.verify');
+        Route::patch('credentials/{credential}/archive', [CredentialController::class, 'archive'])->name('credentials.archive');
+        Route::patch('credentials/{credential}/restore', [CredentialController::class, 'restore'])->name('credentials.restore');
+
+        Route::middleware('can:edit-candidate-profile')->group(function () {
+            Route::post('skills', [SkillController::class, 'store'])->name('skills.store');
+            Route::patch('skills/{skill}', [SkillController::class, 'update'])->name('skills.update');
+            Route::delete('skills/{skill}', [SkillController::class, 'destroy'])->name('skills.destroy');
+        });
 
         Route::get('claims/bulk', [ClaimController::class, 'bulkCreate'])->name('claims.bulk.create');
         Route::post('claims/bulk', [ClaimController::class, 'bulkStore'])->name('claims.bulk.store');

@@ -2,12 +2,16 @@
 
 namespace Database\Seeders;
 
+use App\Domain\Knowledge\CandidateLanguage;
+use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimKind;
+use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\EmploymentType;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -135,42 +139,89 @@ class LocalDemoSeeder extends Seeder
         $retries = $verifiedClaim($invoiceProject, 'Designed the retry and dead-letter handling for failed invoice jobs.');
         $installs = $verifiedClaim($auditTrail, 'Package with over 1,000 monthly installs on Packagist.');
 
+        $skill = [];
+
+        foreach (['PHP', 'Laravel', 'PostgreSQL', 'Redis', 'Pest', 'React', 'TypeScript', 'Next.js', 'Ruby', 'Rails', 'Docker', 'AWS'] as $name) {
+            $skill[$name] = Skill::factory()->inWorkspace($workspace)->create(['name' => $name, 'created_by' => $candidate->id])->ulid;
+        }
+
+        $degree = Credential::factory()->forProfile($profile)->verified($candidate)->create([
+            'institution' => 'University of Leeds',
+            'name' => 'BSc',
+            'field_of_study' => 'Computer Science',
+            'start_date' => '2013-09-01',
+            'end_date' => '2016-07-01',
+            'created_by' => $candidate->id,
+        ]);
+        $aws = Credential::factory()->forProfile($profile)->certification()->verified($candidate)->create(['created_by' => $candidate->id]);
+
+        $english = CandidateLanguage::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => $profile->id, 'language' => 'English', 'proficiency' => 'native', 'position' => 1]);
+        $german = CandidateLanguage::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => $profile->id, 'language' => 'German', 'proficiency' => 'professional', 'position' => 2]);
+        $github = CandidateLink::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => $profile->id, 'kind' => 'github', 'url' => 'https://github.com/alex-morgan-dev', 'position' => 1]);
+        $portfolio = CandidateLink::create(['workspace_id' => $workspace->id, 'candidate_profile_id' => $profile->id, 'kind' => 'portfolio', 'url' => 'https://alexmorgan.example.com', 'position' => 2]);
+
+        $shared = [
+            'education' => [['credential' => $degree->ulid]],
+            'languages' => [$english->ulid, $german->ulid],
+            'links' => [$github->ulid, $portfolio->ulid],
+        ];
+
         $this->seedResumes($profile, [
             'PHP focused' => [
                 'default' => true,
                 'title' => 'Senior PHP Engineer',
                 'summary' => 'PHP and Laravel engineer with eight years of building billing and e-commerce backends. I like making slow, fragile jobs fast and boring.',
+                'skills' => [
+                    ['label' => 'Backend', 'items' => [$skill['PHP'], $skill['Laravel'], $skill['PostgreSQL'], $skill['Redis']]],
+                    ['label' => 'Testing & ops', 'items' => [$skill['Pest'], $skill['Docker'], $skill['AWS']]],
+                ],
                 'experience' => [
                     $this->job($current, 'Senior PHP Developer', [$lead, $invoiceRun, $mentoring], [$this->project($invoiceProject, [$retries])]),
                     $this->job($previous, null, [$integrations]),
                 ],
                 'projects' => [$this->project($auditTrail, [$installs])],
+                'certifications' => [['credential' => $aws->ulid]],
+                ...$shared,
             ],
             'React focused' => [
                 'title' => 'Senior Full-stack Engineer (React)',
                 'summary' => 'Full-stack engineer who builds React and TypeScript front ends on top of solid Laravel APIs.',
+                'skills' => [
+                    ['label' => 'Frontend', 'items' => [$skill['React'], $skill['TypeScript']]],
+                    ['label' => 'Backend', 'items' => [$skill['Laravel'], $skill['PHP'], $skill['PostgreSQL']]],
+                ],
                 'experience' => [
                     $this->job($current, 'Senior Full-stack Developer', [$dashboard, $pricing, $lead]),
                     $this->job($previous),
                 ],
+                ...$shared,
             ],
             'Next.js focused' => [
                 'title' => 'Senior Full-stack Engineer (Next.js)',
                 'summary' => 'Builds fast, server-rendered Next.js sites backed by well-tested APIs.',
+                'skills' => [
+                    ['label' => null, 'items' => [$skill['Next.js'], $skill['React'], $skill['TypeScript'], $skill['AWS']]],
+                ],
                 'experience' => [
                     $this->job($current, 'Senior Full-stack Developer', [
                         ['claim' => $pricing->ulid, 'text' => 'Rebuilt the public pricing pages in Next.js (SSR), raising Lighthouse performance from 62 to 95.'],
                         $dashboard,
                     ]),
                 ],
+                ...$shared,
             ],
             'Ruby focused' => [
                 'title' => 'Senior Backend Engineer (Ruby & PHP)',
                 'summary' => 'Backend engineer comfortable in Ruby on Rails and Laravel, focused on reliable background processing.',
+                'skills' => [
+                    ['label' => 'Languages', 'items' => [$skill['Ruby'], $skill['PHP']]],
+                    ['label' => 'Frameworks', 'items' => [$skill['Rails'], $skill['Laravel']]],
+                ],
                 'experience' => [
                     $this->job($current, 'Senior Backend Developer', [$invoiceRun, $mentoring]),
                     $this->job($previous, 'Ruby & PHP Developer', [$rails]),
                 ],
+                ...$shared,
             ],
         ]);
     }
@@ -181,12 +232,10 @@ class LocalDemoSeeder extends Seeder
     private function seedResumes(CandidateProfile $profile, array $resumes): void
     {
         foreach ($resumes as $name => $resume) {
-            $factory = ResumeVariant::factory()->forProfile($profile)->withDocument([
-                'title' => $resume['title'],
-                'summary' => $resume['summary'],
-                'experience' => $resume['experience'],
-                'projects' => $resume['projects'] ?? [],
-            ]);
+            $factory = ResumeVariant::factory()->forProfile($profile)->withDocument(array_intersect_key(
+                $resume,
+                array_flip(['title', 'summary', 'experience', 'projects', 'skills', 'education', 'certifications', 'languages', 'links']),
+            ));
 
             ($resume['default'] ?? false ? $factory->default() : $factory)
                 ->create(['name' => $name, 'created_by' => $profile->user_id]);

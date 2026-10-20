@@ -46,7 +46,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
   2. Employments + projects — **done**
   3. Claims: revisions, sources, verify/reject/archive/restore, exact + trigram duplicates, bulk add — **done** (revisions and sources are append-only via a DB trigger; near duplicates warn with "save anyway"; bulk add strips list markers and skips exact duplicates)
   4. **done** — **Resumes core (resume-first UI)**: contact fields; `resume_variants` + revisions; `ResumeDocumentValidator`; **Profile** page (contact + list of resumes); resume editor (include/order jobs and projects, per-resume display title and description, choose/order/reword bullets, "Apply everywhere", add job/project/bullet/paste a list through dialogs that write to the shared library), live preview, plain-text copy, history; `headline` → default resume; UI renames (Job, Bullet point, Short description, Paste a list, Library)
-  5. Skills, education, certifications (`credentials`), languages, links — in the library and as resume sections
+  5. **done** — Skills, education, certifications (`credentials`), languages, links — in the library and as resume sections (skills are candidate-only and grouped per resume, e.g. "Backend: PHP, Laravel"; education/certifications follow the experience rules, VA additions proposed; languages and links live on the contact page; resume documents gain `skills`, `education`, `certifications`, `languages`, `links`, older revisions read them as empty)
   6. VA edits of verified items as `revise_claim` proposals + candidate approve/reject
   7. Manual answer library
   8. Polish: filters, "used in" everywhere

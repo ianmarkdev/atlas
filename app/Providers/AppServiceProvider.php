@@ -4,8 +4,10 @@ namespace App\Providers;
 
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
+use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Tenancy\TenantContext;
 use App\Domain\Tenancy\Workspace;
@@ -46,6 +48,8 @@ class AppServiceProvider extends ServiceProvider
             'employment' => Employment::class,
             'project' => Project::class,
             'claim' => Claim::class,
+            'credential' => Credential::class,
+            'skill' => Skill::class,
             'resume_variant' => ResumeVariant::class,
         ]);
 

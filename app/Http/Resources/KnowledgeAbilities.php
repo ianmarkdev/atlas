@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\Project;
 use App\Models\User;
@@ -15,7 +16,7 @@ class KnowledgeAbilities
     /**
      * @return array{update: bool, verify: bool, archive: bool, restore: bool}
      */
-    public static function for(?User $user, Employment|Project $record): array
+    public static function for(?User $user, Employment|Project|Credential $record): array
     {
         return [
             'update' => $user?->can('update', $record) ?? false,

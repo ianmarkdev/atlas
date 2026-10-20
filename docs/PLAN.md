@@ -366,7 +366,7 @@ Facts live once in the master record; resume variants and tailored resumes only 
 - **resume_claims** (M8): same shape as `answer_claims` (classification, validation flags, resolution), plus `path` into the document (e.g. `experience.0.bullets.2`).
 
 **Resume document** (`schema_version: 1`, validated by `ResumeDocumentValidator` on every save; one format for variants and tailored versions; slice 5 adds `skills`, `education`, `certifications`, `languages`, `links` keys):
-`{schema_version, title, summary, experience: [{employment: ulid, display_title, description, bullets: [{claim: ulid, text}], projects: [{project: ulid, description, bullets: [...]}]}], projects: [{project: ulid, description, bullets: [...]}]}`
+`{schema_version, title, summary, experience: [{employment: ulid, display_title, description, bullets: [{claim: ulid, text}], projects: [{project: ulid, description, bullets: [...]}]}], projects: [{project: ulid, description, bullets: [...]}], skills: [{label, items: [skill ulid]}], education: [{credential: ulid}], certifications: [{credential: ulid}], languages: [language ulid], links: [link ulid]}` (sections missing from older revisions read as empty lists)
 - Facts (employer, official job title, dates, institution) and contact details are **not** in the document: they are read from the master record by ULID, so they cannot be changed per variant or per job.
 - `display_title` (optional): how this resume shows the job title; the official title stays on the employment (and in `facts_snapshot` for tailored versions). Candidate-only; the AI may reuse existing display titles but never invent one.
 - Every bullet is backed by a claim: `{claim, text}` where `text = null` uses the claim's current wording and a non-null `text` is a rewording for this resume only.
@@ -604,7 +604,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
   2. Employments + projects — **done**
   3. Claims: revisions, sources, verify/reject/archive/restore, exact + trigram duplicates, bulk add — **done** (revisions and sources are append-only via a DB trigger; near duplicates warn with "save anyway"; bulk add strips list markers and skips exact duplicates)
   4. **done** — **Resumes core (resume-first UI)**: contact fields; `resume_variants` + revisions; `ResumeDocumentValidator`; **Profile** page (contact + list of resumes); resume editor (include/order jobs and projects, per-resume display title and description, choose/order/reword bullets, "Apply everywhere", add job/project/bullet/paste a list through dialogs that write to the shared library), live preview, plain-text copy, history; `headline` → default resume; UI renames (Job, Bullet point, Short description, Paste a list, Library)
-  5. Skills, education, certifications (`credentials`), languages, links — in the library and as resume sections
+  5. **done** — Skills, education, certifications (`credentials`), languages, links — in the library and as resume sections (skills are candidate-only and grouped per resume, e.g. "Backend: PHP, Laravel"; education/certifications follow the experience rules, VA additions proposed; languages and links live on the contact page; resume documents gain `skills`, `education`, `certifications`, `languages`, `links`, older revisions read them as empty)
   6. VA edits of verified items as `revise_claim` proposals + candidate approve/reject
   7. Manual answer library
   8. Polish: filters, "used in" everywhere

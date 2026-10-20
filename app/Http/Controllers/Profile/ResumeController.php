@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers\Profile;
 
+use App\Domain\Knowledge\CandidateLanguage;
+use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimService;
 use App\Domain\Knowledge\ClaimStatus;
+use App\Domain\Knowledge\Credential;
+use App\Domain\Knowledge\CredentialType;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeDocumentValidator;
 use App\Domain\Resumes\ResumeService;
 use App\Domain\Resumes\ResumeUsage;
@@ -15,8 +20,10 @@ use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Resumes\ResumeVariantRevision;
 use App\Domain\Shared\PlainText;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Knowledge\SkillController;
 use App\Http\Requests\Profile\SaveResumeRequest;
 use App\Http\Resources\ClaimResource;
+use App\Http\Resources\CredentialResource;
 use App\Http\Resources\EmploymentResource;
 use App\Http\Resources\ProjectResource;
 use Illuminate\Http\JsonResponse;
@@ -124,6 +131,7 @@ class ResumeController extends Controller
             'library' => [
                 'employments' => EmploymentResource::collection($employments)->resolve(),
                 'standaloneProjects' => ProjectResource::collection($standaloneProjects)->resolve(),
+                ...self::sharedLibrary(),
             ],
             'usedElsewhere' => ResumeUsage::map(exceptResumeId: $resume->id),
             'revisions' => $revisions->map(fn (ResumeVariantRevision $revision): array => [
@@ -135,6 +143,24 @@ class ResumeController extends Controller
             ])->values()->all(),
             'canEdit' => $request->user()->can('edit-resumes') && ! $resume->isArchived(),
         ]);
+    }
+
+    /**
+     * Education, certifications, skills, languages and links the resume can pick from.
+     *
+     * @return array{education: array<int, mixed>, certifications: array<int, mixed>, skills: list<array{ulid: string, name: string}>, languages: list<array{ulid: string, language: string, proficiency: string}>, links: list<array{ulid: string, kind: string, label: string, url: string}>}
+     */
+    public static function sharedLibrary(): array
+    {
+        $credentials = Credential::query()->notArchived()->orderByRaw('end_date IS NOT NULL, end_date DESC')->get();
+
+        return [
+            'education' => CredentialResource::collection($credentials->where('type', CredentialType::Education)->values())->resolve(),
+            'certifications' => CredentialResource::collection($credentials->where('type', CredentialType::Certification)->values())->resolve(),
+            'skills' => array_values(Skill::query()->alphabetical()->get()->map(SkillController::present(...))->all()),
+            'languages' => array_values(CandidateLanguage::query()->orderBy('position')->get()->map(LanguageController::present(...))->all()),
+            'links' => array_values(CandidateLink::query()->orderBy('position')->get()->map(LinkController::present(...))->all()),
+        ];
     }
 
     public function update(SaveResumeRequest $request, ResumeVariant $resume): RedirectResponse

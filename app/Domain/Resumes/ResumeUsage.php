@@ -9,13 +9,14 @@ namespace App\Domain\Resumes;
 class ResumeUsage
 {
     /**
-     * @return array{employments: array<string, list<string>>, projects: array<string, list<string>>, claims: array<string, list<string>>}
+     * @return array{employments: array<string, list<string>>, projects: array<string, list<string>>, claims: array<string, list<string>>, credentials: array<string, list<string>>}
      */
     public static function map(?int $exceptResumeId = null): array
     {
         $employments = [];
         $projects = [];
         $claims = [];
+        $credentials = [];
 
         $resumes = ResumeVariant::query()
             ->active()
@@ -42,9 +43,13 @@ class ResumeUsage
                     self::add($claims, $bullet['claim'] ?? null, $resume->name);
                 }
             }
+
+            foreach ([...$document['education'], ...$document['certifications']] as $item) {
+                self::add($credentials, $item['credential'] ?? null, $resume->name);
+            }
         }
 
-        return ['employments' => $employments, 'projects' => $projects, 'claims' => $claims];
+        return ['employments' => $employments, 'projects' => $projects, 'claims' => $claims, 'credentials' => $credentials];
     }
 
     /**

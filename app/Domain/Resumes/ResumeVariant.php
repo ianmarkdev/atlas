@@ -65,13 +65,14 @@ class ResumeVariant extends Model
     }
 
     /**
-     * The current document, or an empty one for a resume without revisions.
+     * The current document, with every section present (sections added after a revision was
+     * saved default to empty), or an empty document for a resume without revisions.
      *
      * @return array<string, mixed>
      */
     public function document(): array
     {
-        return $this->currentRevision->document ?? ResumeDocumentValidator::emptyDocument();
+        return [...ResumeDocumentValidator::emptyDocument(), ...($this->currentRevision->document ?? [])];
     }
 
     /**

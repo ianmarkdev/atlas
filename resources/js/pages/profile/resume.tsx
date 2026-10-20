@@ -17,6 +17,11 @@ import {
     AddProjectDialog,
 } from '@/components/resume/add-dialogs';
 import { BulletPicker } from '@/components/resume/bullet-picker';
+import {
+    CredentialSection,
+    PickListSection,
+    SkillsSection,
+} from '@/components/resume/extra-sections';
 import { ResumePreview } from '@/components/resume/resume-preview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,6 +41,7 @@ import {
     formatPeriod,
     indexLibrary,
     moveItem,
+    pruneMissing,
     resumeToPlainText,
     wordCount,
 } from '@/lib/resume-document';
@@ -153,7 +159,11 @@ function ResumeEditor({
         saving.current = true;
         router.put(
             ResumeController.update.url(resume.ulid),
-            { name, document, lock_version: resume.lock_version },
+            {
+                name,
+                document: pruneMissing(document, libraryIndex),
+                lock_version: resume.lock_version,
+            },
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -249,6 +259,7 @@ function ResumeEditor({
                 : item;
 
         setLibrary((current) => ({
+            ...current,
             employments: current.employments.map((e) =>
                 type === 'employment'
                     ? withClaims(e)
@@ -278,6 +289,7 @@ function ResumeEditor({
             (claims ?? []).map((c) => (c.ulid === claim.ulid ? claim : c));
 
         setLibrary((current) => ({
+            ...current,
             employments: current.employments.map((e) => ({
                 ...e,
                 claims: replace(e.claims),
@@ -445,6 +457,26 @@ function ResumeEditor({
                         </div>
                     </section>
 
+                    <SkillsSection
+                        groups={document.skills}
+                        skills={library.skills}
+                        onChange={(skills) => change({ ...document, skills })}
+                        onSkillsCreated={(created) =>
+                            setLibrary((current) => ({
+                                ...current,
+                                skills: [
+                                    ...current.skills,
+                                    ...created.filter(
+                                        (skill) =>
+                                            !current.skills.some(
+                                                (s) => s.ulid === skill.ulid,
+                                            ),
+                                    ),
+                                ].sort((a, b) => a.name.localeCompare(b.name)),
+                            }))
+                        }
+                    />
+
                     <section className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <h2 className="text-base font-medium">
@@ -547,6 +579,67 @@ function ResumeEditor({
                             resumeUlid={resume.ulid}
                         />
                     </section>
+
+                    <CredentialSection
+                        title="Education"
+                        type="education"
+                        credentials={library.education}
+                        items={document.education}
+                        onChange={(education) =>
+                            change({ ...document, education })
+                        }
+                        onCreated={(credential) =>
+                            setLibrary((current) => ({
+                                ...current,
+                                education: [credential, ...current.education],
+                            }))
+                        }
+                        usedElsewhere={usedElsewhere.credentials}
+                    />
+
+                    <CredentialSection
+                        title="Certifications"
+                        type="certification"
+                        credentials={library.certifications}
+                        items={document.certifications}
+                        onChange={(certifications) =>
+                            change({ ...document, certifications })
+                        }
+                        onCreated={(credential) =>
+                            setLibrary((current) => ({
+                                ...current,
+                                certifications: [
+                                    credential,
+                                    ...current.certifications,
+                                ],
+                            }))
+                        }
+                        usedElsewhere={usedElsewhere.credentials}
+                    />
+
+                    <PickListSection
+                        title="Languages"
+                        options={library.languages.map((language) => ({
+                            ulid: language.ulid,
+                            label: `${language.language} (${language.proficiency})`,
+                        }))}
+                        selected={document.languages}
+                        onChange={(languages) =>
+                            change({ ...document, languages })
+                        }
+                        emptyHint="Add the languages you speak in your contact details first."
+                    />
+
+                    <PickListSection
+                        title="Links"
+                        options={library.links.map((link) => ({
+                            ulid: link.ulid,
+                            label: `${link.label} — ${link.url}`,
+                        }))}
+                        selected={document.links}
+                        onChange={(links) => change({ ...document, links })}
+                        emptyHint="Add your portfolio, GitHub or LinkedIn in your contact details first."
+                    />
                 </div>
 
                 <div className={view === 'edit' ? 'hidden lg:block' : ''}>

@@ -3,7 +3,11 @@
 namespace App\Http\Controllers\Profile;
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Knowledge\CandidateLanguage;
+use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Knowledge\LanguageProficiency;
+use App\Domain\Knowledge\LinkKind;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Profile\UpdateContactRequest;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +24,20 @@ class ContactController extends Controller
     {
         return Inertia::render('profile/contact', [
             'contact' => self::contactOf(CandidateProfile::current()),
+            'languages' => array_values(CandidateLanguage::query()->orderBy('position')->get()->map(LanguageController::present(...))->all()),
+            'links' => array_values(CandidateLink::query()->orderBy('position')->get()->map(LinkController::present(...))->all()),
+            'proficiencies' => array_map(fn (LanguageProficiency $proficiency): array => [
+                'value' => $proficiency->value,
+                'label' => ucfirst($proficiency->value),
+            ], LanguageProficiency::cases()),
+            'linkKinds' => array_map(fn (LinkKind $kind): array => [
+                'value' => $kind->value,
+                'label' => match ($kind) {
+                    LinkKind::Github => 'GitHub',
+                    LinkKind::Linkedin => 'LinkedIn',
+                    default => ucfirst($kind->value),
+                },
+            ], LinkKind::cases()),
         ]);
     }
 
