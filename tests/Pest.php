@@ -1,6 +1,9 @@
 <?php
 
 use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Knowledge\Claim;
+use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\Project;
 use App\Domain\Tenancy\TenantContext;
 use App\Domain\Tenancy\Workspace;
 use App\Models\User;
@@ -74,6 +77,21 @@ function vaOf(User $candidate): User
 function profileOf(User $candidate): CandidateProfile
 {
     return CandidateProfile::withoutGlobalScopes()->where('user_id', $candidate->id)->sole();
+}
+
+function employmentOf(User $candidate): Employment
+{
+    return Employment::factory()->forProfile(profileOf($candidate))->verified($candidate)->create();
+}
+
+/**
+ * A verified claim of the candidate, about the given job or project (or general).
+ */
+function claimOf(User $candidate, string $statement, Employment|Project|null $subject = null): Claim
+{
+    $factory = Claim::factory()->forProfile(profileOf($candidate))->stating($statement);
+
+    return ($subject === null ? $factory : $factory->about($subject))->verified($candidate)->create();
 }
 
 /**

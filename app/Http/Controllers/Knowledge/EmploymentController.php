@@ -8,6 +8,7 @@ use App\Domain\Knowledge\KnowledgeRecordService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\SaveEmploymentRequest;
 use App\Http\Resources\EmploymentResource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -26,9 +27,18 @@ class EmploymentController extends Controller
         ]);
     }
 
-    public function store(SaveEmploymentRequest $request): RedirectResponse
+    /**
+     * JSON requests (the resume editor's "Add experience" dialog) get the new experience back instead of a redirect.
+     */
+    public function store(SaveEmploymentRequest $request): RedirectResponse|JsonResponse
     {
         $employment = $this->records->create(new Employment($request->employmentAttributes()), $request->user());
+
+        if ($request->expectsJson()) {
+            $employment->setRelation('projects', collect())->setRelation('claims', collect());
+
+            return response()->json(['employment' => EmploymentResource::make($employment)->resolve($request)], 201);
+        }
 
         $this->flashSaved($employment);
 
@@ -71,7 +81,7 @@ class EmploymentController extends Controller
 
         $this->records->archive($employment, $request->user());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Employment archived.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Experience archived.')]);
 
         return to_route('knowledge.index');
     }
@@ -99,8 +109,8 @@ class EmploymentController extends Controller
     private function flashSaved(Employment $employment): void
     {
         $message = $employment->isVerified()
-            ? __('Employment saved.')
-            : __('Employment saved as proposed. The candidate will verify it.');
+            ? __('Experience saved.')
+            : __('Experience saved as proposed. The candidate will verify it.');
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
     }

@@ -25,7 +25,8 @@ class CandidateProfileFactory extends Factory
             'workspace_id' => Workspace::factory(),
             'user_id' => User::factory(),
             'display_name' => fake()->name(),
-            'headline' => fake()->jobTitle(),
+            'email' => fake()->safeEmail(),
+            'location' => fake()->city(),
         ];
     }
 }

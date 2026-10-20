@@ -1,9 +1,11 @@
 <?php
 
-use App\Http\Controllers\Knowledge\CandidateProfileController;
+use App\Http\Controllers\Knowledge\ClaimController;
 use App\Http\Controllers\Knowledge\EmploymentController;
 use App\Http\Controllers\Knowledge\KnowledgeController;
 use App\Http\Controllers\Knowledge\ProjectController;
+use App\Http\Controllers\Profile\ContactController;
+use App\Http\Controllers\Profile\ResumeController;
 use App\Http\Controllers\TeamController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,13 +14,31 @@ Route::inertia('/', 'welcome')->name('home');
 Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
 
-    Route::prefix('knowledge')->name('knowledge.')->group(function () {
-        Route::get('/', [KnowledgeController::class, 'index'])->name('index');
+    // Profile: contact details + resumes (resume-first authoring, D9).
+    Route::prefix('profile')->group(function () {
+        Route::get('/', [ResumeController::class, 'index'])->name('resumes.index');
 
         Route::middleware('can:edit-candidate-profile')->group(function () {
-            Route::get('profile', [CandidateProfileController::class, 'edit'])->name('profile.edit');
-            Route::patch('profile', [CandidateProfileController::class, 'update'])->name('profile.update');
+            Route::get('contact', [ContactController::class, 'edit'])->name('contact.edit');
+            Route::patch('contact', [ContactController::class, 'update'])->name('contact.update');
         });
+
+        Route::get('resumes/{resume}', [ResumeController::class, 'show'])->name('resumes.show');
+
+        Route::middleware('can:edit-resumes')->group(function () {
+            Route::post('resumes', [ResumeController::class, 'store'])->name('resumes.store');
+            Route::put('resumes/{resume}', [ResumeController::class, 'update'])->name('resumes.update');
+            Route::patch('resumes/{resume}/default', [ResumeController::class, 'makeDefault'])->name('resumes.default');
+            Route::patch('resumes/{resume}/archive', [ResumeController::class, 'archive'])->name('resumes.archive');
+            Route::patch('resumes/{resume}/unarchive', [ResumeController::class, 'unarchive'])->name('resumes.unarchive');
+            Route::post('resumes/{resume}/revisions/{revision}/restore', [ResumeController::class, 'restoreRevision'])->name('resumes.revisions.restore');
+            Route::post('resumes/{resume}/claims/{claim}/apply', [ResumeController::class, 'applyBullet'])->name('resumes.apply-bullet');
+        });
+    });
+
+    // Library: every job, project and bullet point (the shared facts behind all resumes).
+    Route::prefix('library')->name('knowledge.')->group(function () {
+        Route::get('/', [KnowledgeController::class, 'index'])->name('index');
 
         Route::resource('employments', EmploymentController::class)->only(['create', 'store', 'edit', 'update']);
         Route::patch('employments/{employment}/verify', [EmploymentController::class, 'verify'])->name('employments.verify');
@@ -29,6 +49,14 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('projects/{project}/verify', [ProjectController::class, 'verify'])->name('projects.verify');
         Route::patch('projects/{project}/archive', [ProjectController::class, 'archive'])->name('projects.archive');
         Route::patch('projects/{project}/restore', [ProjectController::class, 'restore'])->name('projects.restore');
+
+        Route::get('claims/bulk', [ClaimController::class, 'bulkCreate'])->name('claims.bulk.create');
+        Route::post('claims/bulk', [ClaimController::class, 'bulkStore'])->name('claims.bulk.store');
+        Route::resource('claims', ClaimController::class)->only(['create', 'store', 'edit', 'update']);
+        Route::patch('claims/{claim}/verify', [ClaimController::class, 'verify'])->name('claims.verify');
+        Route::patch('claims/{claim}/reject', [ClaimController::class, 'reject'])->name('claims.reject');
+        Route::patch('claims/{claim}/archive', [ClaimController::class, 'archive'])->name('claims.archive');
+        Route::patch('claims/{claim}/restore', [ClaimController::class, 'restore'])->name('claims.restore');
     });
 
     Route::middleware('can:manage-vas')->group(function () {

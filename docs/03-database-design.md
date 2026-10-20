@@ -63,7 +63,7 @@ erDiagram
 - **users**: id, ulid, name, email (unique, citext), password, two_factor_*, is_active, last_login_at.
 - **workspaces**: id, ulid, name, settings jsonb (default models), monthly_ai_budget_micros bigint (default 30_000_000 = US$30), budget_warn_pct smallint (default 80), created_by. MVP: exactly one row, created by a seeder/install command.
 - **workspace_memberships**: id, workspace_id, user_id, role (`candidate|va`), created_by. `UNIQUE(workspace_id, user_id)`; partial unique `UNIQUE(workspace_id) WHERE role='candidate'` (exactly one candidate); VA seat limit (≤ 3 active) enforced in `MembershipService` inside a transaction with `FOR UPDATE` on the workspace row.
-- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, contact info shared by every resume variant (email citext, phone, location), headline (**to be removed in M3 slice 6**: copied into the default resume variant's title). `UNIQUE(workspace_id, id)`. MVP: one row — the *person*; resume variants are separate rows (see "Resumes").
+- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, contact info shared by every resume variant (email citext, phone, location). The former `headline` was copied into a default resume's title and dropped (M3 slice 4). `UNIQUE(workspace_id, id)`. MVP: one row — the *person*; resume variants are separate rows (see "Resumes").
 - (Dropped for MVP: invitations table — candidate creates VA accounts directly and shares a password-reset link; candidate_profile_members; extra roles.)
 
 ### Career knowledge (canonical)
@@ -72,9 +72,9 @@ erDiagram
 - **claims** — the atomic, citable unit:
   - id, ulid, workspace_id, candidate_profile_id
   - subject_type (`employment|project|credential|general`), subject_id (nullable)
-  - kind (`responsibility|achievement|metric|skill|technology|qualification|domain|preference|other`)
+  - kind (`achievement|responsibility|skill|qualification|other`) — kept short on purpose: a metric is an achievement with a number, a technology is a skill
   - current_revision_id (FK claim_revisions)
-  - status (`verified|proposed|rejected|archived`) — **only verified claims can back a `verified` label**
+  - status (`verified|proposed|rejected|archived`) — **only verified claims can back a `verified` label**; `rejected` = a proposed claim the candidate turned down (restorable)
   - origin (`user_entered|ai_suggested|feedback_derived|imported`)
   - normalized_hash (sha256 of normalised statement — exact-dup guard)
   - verified_by, verified_at, lock_version
@@ -119,10 +119,12 @@ Facts live once in the master record; resume variants and tailored resumes only 
 - **application_resume_versions** (append-only, M7): id, workspace_id, application_resume_id, version_no, document jsonb, facts_snapshot jsonb (employer/title/dates/degree as they were when the version was made, so a submitted resume can be reproduced), author_type (`user|ai`), author_user_id, generation_run_id, parent_version_id, created_at. An approved version is frozen; if the master record changes later, the UI shows "facts changed since this version".
 - **resume_claims** (M8): same shape as `answer_claims` (classification, validation flags, resolution), plus `path` into the document (e.g. `experience.0.bullets.2`).
 
-**Resume document** (`schema_version`, validated by a `ResumeDocument` DTO + JSON schema on every save; one format for variants and tailored versions):
-`{schema_version, title, summary, sections: [{type: experience|education|certifications|skills|languages|links, items: [{ref: "employment:01J…", summary?, bullets: [{text, claims: ["claim:01J…"]}], projects: [{ref: "project:01J…", summary?, bullets: []}]}]}]}`
-- Facts (employer, job title, dates, institution) and contact details are **not** in the document: they are read from the master record by `ref`, so they cannot be changed per variant or per job.
-- On save: every `ref` exists in this workspace and is not archived; projects sit under their own employment; each cited claim belongs to that item; plain-text normalisation and length limits apply.
+**Resume document** (`schema_version: 1`, validated by `ResumeDocumentValidator` on every save; one format for variants and tailored versions; slice 5 adds `skills`, `education`, `certifications`, `languages`, `links` keys):
+`{schema_version, title, summary, experience: [{employment: ulid, display_title, description, bullets: [{claim: ulid, text}], projects: [{project: ulid, description, bullets: [...]}]}], projects: [{project: ulid, description, bullets: [...]}]}`
+- Facts (employer, official job title, dates, institution) and contact details are **not** in the document: they are read from the master record by ULID, so they cannot be changed per variant or per job.
+- `display_title` (optional): how this resume shows the job title; the official title stays on the employment (and in `facts_snapshot` for tailored versions). Candidate-only; the AI may reuse existing display titles but never invent one.
+- Every bullet is backed by a claim: `{claim, text}` where `text = null` uses the claim's current wording and a non-null `text` is a rewording for this resume only.
+- On save: every ULID exists in this workspace and is not archived; each job appears once; projects under a job belong to that job, top-level projects are standalone; each bullet's claim is a live claim about that job/project; plain-text normalisation and length limits apply.
 - Trade-off (ADR-9): refs inside JSON have no foreign key. An archived or removed item shows as "Removed from your record" in the editor.
 - Variants and tailored versions are **never embedded or retrieved as evidence**.
 

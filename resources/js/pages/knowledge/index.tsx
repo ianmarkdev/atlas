@@ -1,13 +1,19 @@
 import { Form, Head, Link } from '@inertiajs/react';
-import { Pencil, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import EmploymentController from '@/actions/App/Http/Controllers/Knowledge/EmploymentController';
 import ProjectController from '@/actions/App/Http/Controllers/Knowledge/ProjectController';
+import { ClaimList } from '@/components/claim-list';
 import Heading from '@/components/heading';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
 import { Button } from '@/components/ui/button';
 import { index } from '@/routes/knowledge';
-import { edit as editProfile } from '@/routes/knowledge/profile';
-import type { Employment, KnowledgeAbilities, Project } from '@/types';
+import type {
+    Claim,
+    Employment,
+    KnowledgeAbilities,
+    Project,
+    ResumeUsage,
+} from '@/types';
 
 type RecordActions = {
     verify: ReturnType<typeof EmploymentController.verify.form>;
@@ -30,54 +36,41 @@ function formatPeriod(start: string | null, end: string | null): string {
 }
 
 export default function KnowledgeIndex({
-    profile,
     employments,
     standaloneProjects,
+    generalClaims,
     showArchived,
-    canEditProfile,
+    usedIn,
 }: {
-    profile: { display_name: string; headline: string | null };
     employments: Employment[];
     standaloneProjects: Project[];
+    generalClaims: Claim[];
     showArchived: boolean;
-    canEditProfile: boolean;
+    usedIn: ResumeUsage;
 }) {
     const isEmpty = employments.length === 0 && standaloneProjects.length === 0;
 
     return (
         <>
-            <Head title="Career knowledge" />
+            <Head title="Library" />
 
             <div className="flex flex-col gap-8 p-4 lg:max-w-4xl">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl font-semibold tracking-tight">
-                            {profile.display_name}
-                        </h1>
-                        <p className="text-sm text-muted-foreground">
-                            {profile.headline ?? 'No headline yet'}
-                        </p>
-                    </div>
-                    {canEditProfile && (
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={editProfile()}>
-                                <Pencil /> Edit profile
-                            </Link>
-                        </Button>
-                    )}
-                </div>
+                <Heading
+                    title="Library"
+                    description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
+                />
 
                 <section className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <Heading
                             variant="small"
-                            title="Employments"
-                            description="Each job, with the projects you did there."
+                            title="Experience"
+                            description="Each role, with the projects you did there and their bullet points."
                         />
                         <div className="flex gap-2">
                             <Button size="sm" asChild>
                                 <Link href={EmploymentController.create()}>
-                                    <Plus /> Add employment
+                                    <Plus /> Add experience
                                 </Link>
                             </Button>
                             <Button size="sm" variant="outline" asChild>
@@ -114,6 +107,7 @@ export default function KnowledgeIndex({
                                         .join(' · ')}
                                     status={employment.status}
                                     can={employment.can}
+                                    usedIn={usedIn.employments[employment.ulid]}
                                     editHref={EmploymentController.edit(
                                         employment.ulid,
                                     )}
@@ -138,12 +132,24 @@ export default function KnowledgeIndex({
                                     </p>
                                 )}
 
+                                <div className="mt-3">
+                                    <ClaimList
+                                        claims={employment.claims ?? []}
+                                        subject={`employment:${employment.ulid}`}
+                                    />
+                                </div>
+
                                 <div className="mt-4 space-y-2 border-l-2 pl-4">
                                     {(employment.projects ?? []).map(
                                         (project) => (
                                             <ProjectItem
                                                 key={project.ulid}
                                                 project={project}
+                                                usedIn={
+                                                    usedIn.projects[
+                                                        project.ulid
+                                                    ]
+                                                }
                                             />
                                         ),
                                     )}
@@ -169,17 +175,29 @@ export default function KnowledgeIndex({
                         <Heading
                             variant="small"
                             title="Other projects"
-                            description="Freelance, side and personal projects not tied to an employment."
+                            description="Freelance, side and personal projects not tied to an experience."
                         />
                         <ul className="space-y-2">
                             {standaloneProjects.map((project) => (
                                 <li key={project.ulid}>
-                                    <ProjectItem project={project} />
+                                    <ProjectItem
+                                        project={project}
+                                        usedIn={usedIn.projects[project.ulid]}
+                                    />
                                 </li>
                             ))}
                         </ul>
                     </section>
                 )}
+
+                <section className="space-y-4">
+                    <Heading
+                        variant="small"
+                        title="Other facts"
+                        description="Skills, qualifications and other bullet points not tied to one experience or project."
+                    />
+                    <ClaimList claims={generalClaims} subject="general" />
+                </section>
 
                 <Link
                     href={index({
@@ -196,7 +214,13 @@ export default function KnowledgeIndex({
     );
 }
 
-function ProjectItem({ project }: { project: Project }) {
+function ProjectItem({
+    project,
+    usedIn,
+}: {
+    project: Project;
+    usedIn?: string[];
+}) {
     return (
         <div className="rounded-md bg-muted/40 p-3">
             <RecordHeader
@@ -210,6 +234,7 @@ function ProjectItem({ project }: { project: Project }) {
                     .join(' · ')}
                 status={project.status}
                 can={project.can}
+                usedIn={usedIn}
                 editHref={ProjectController.edit(project.ulid)}
                 actions={{
                     verify: ProjectController.verify.form(project.ulid),
@@ -222,6 +247,12 @@ function ProjectItem({ project }: { project: Project }) {
                     {project.summary}
                 </p>
             )}
+            <div className="mt-3">
+                <ClaimList
+                    claims={project.claims ?? []}
+                    subject={`project:${project.ulid}`}
+                />
+            </div>
         </div>
     );
 }
@@ -231,6 +262,7 @@ function RecordHeader({
     subtitle,
     status,
     can,
+    usedIn,
     editHref,
     actions,
 }: {
@@ -238,6 +270,7 @@ function RecordHeader({
     subtitle: string;
     status: Employment['status'];
     can: KnowledgeAbilities;
+    usedIn?: string[];
     editHref: ReturnType<typeof EmploymentController.edit>;
     actions: RecordActions;
 }) {
@@ -251,6 +284,11 @@ function RecordHeader({
                 {subtitle && (
                     <p className="text-sm text-muted-foreground">{subtitle}</p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                    {usedIn && usedIn.length > 0
+                        ? `Used in: ${usedIn.join(', ')}`
+                        : 'Not on any resume yet'}
+                </p>
             </div>
 
             <div className="flex shrink-0 flex-wrap gap-2">
@@ -311,7 +349,7 @@ function RecordHeader({
 KnowledgeIndex.layout = {
     breadcrumbs: [
         {
-            title: 'Career knowledge',
+            title: 'Library',
             href: index(),
         },
     ],

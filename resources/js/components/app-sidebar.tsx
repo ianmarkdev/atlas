@@ -3,6 +3,7 @@ import {
     BookOpen,
     BookUser,
     FolderGit2,
+    IdCard,
     LayoutGrid,
     Users,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as knowledge } from '@/routes/knowledge';
+import { index as profile } from '@/routes/resumes';
 import { index as team } from '@/routes/team';
 import type { NavItem } from '@/types';
 
@@ -31,7 +33,12 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
     {
-        title: 'Career knowledge',
+        title: 'Profile',
+        href: profile(),
+        icon: IdCard,
+    },
+    {
+        title: 'Library',
         href: knowledge(),
         icon: BookUser,
     },

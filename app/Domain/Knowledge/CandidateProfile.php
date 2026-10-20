@@ -21,11 +21,13 @@ use Illuminate\Support\Carbon;
  * @property int $workspace_id
  * @property int $user_id
  * @property string $display_name
- * @property string|null $headline
+ * @property string|null $email
+ * @property string|null $phone
+ * @property string|null $location
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['workspace_id', 'user_id', 'display_name', 'headline'])]
+#[Fillable(['workspace_id', 'user_id', 'display_name', 'email', 'phone', 'location'])]
 #[UseFactory(CandidateProfileFactory::class)]
 class CandidateProfile extends Model
 {

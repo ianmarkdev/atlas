@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 /**
  * Shared by verifiable knowledge records (employments, projects): status, verification
@@ -39,6 +40,16 @@ trait IsKnowledgeRecord
     public function candidateProfile(): BelongsTo
     {
         return $this->belongsTo(CandidateProfile::class);
+    }
+
+    /**
+     * Claims about this record, oldest first (the order they were entered).
+     *
+     * @return MorphMany<Claim, $this>
+     */
+    public function claims(): MorphMany
+    {
+        return $this->morphMany(Claim::class, 'subject')->oldest('id');
     }
 
     /**

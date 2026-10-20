@@ -7,6 +7,18 @@ export type KnowledgeAbilities = {
     restore: boolean;
 };
 
+export type ClaimStatus = 'verified' | 'proposed' | 'rejected' | 'archived';
+
+export type Claim = {
+    ulid: string;
+    statement: string;
+    kind: string;
+    status: ClaimStatus;
+    revision_no: number | null;
+    lock_version: number;
+    can: KnowledgeAbilities & { reject: boolean };
+};
+
 export type Project = {
     ulid: string;
     employment: string | null;
@@ -19,6 +31,7 @@ export type Project = {
     url: string | null;
     status: KnowledgeStatus;
     lock_version: number;
+    claims?: Claim[];
     can: KnowledgeAbilities;
 };
 
@@ -34,6 +47,7 @@ export type Employment = {
     status: KnowledgeStatus;
     lock_version: number;
     projects?: Project[];
+    claims?: Claim[];
     can: KnowledgeAbilities;
 };
 

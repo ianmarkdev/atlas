@@ -21,12 +21,12 @@ export default function EmploymentForm({
 
     return (
         <>
-            <Head title={isEditing ? 'Edit employment' : 'Add employment'} />
+            <Head title={isEditing ? 'Edit experience' : 'Add experience'} />
 
             <div className="flex flex-col gap-6 p-4 lg:max-w-2xl">
                 <Heading
-                    title={isEditing ? 'Edit employment' : 'Add employment'}
-                    description="Plain text only. Leave the end month empty for your current job."
+                    title={isEditing ? 'Edit experience' : 'Add experience'}
+                    description="Plain text only. Leave the end month empty for your current role."
                 />
 
                 <Form
@@ -72,7 +72,9 @@ export default function EmploymentForm({
                                 </div>
 
                                 <div className="grid gap-2">
-                                    <Label htmlFor="title">Job title</Label>
+                                    <Label htmlFor="title">
+                                        Official job title
+                                    </Label>
                                     <Input
                                         id="title"
                                         name="title"
@@ -144,13 +146,15 @@ export default function EmploymentForm({
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="summary">Summary</Label>
+                                <Label htmlFor="summary">
+                                    Short description
+                                </Label>
                                 <Textarea
                                     id="summary"
                                     name="summary"
                                     rows={5}
                                     defaultValue={employment?.summary ?? ''}
-                                    placeholder="What the role was about. Specific achievements go in as separate claims."
+                                    placeholder="1–2 sentences on the role. Put achievements in bullet points."
                                 />
                                 <InputError message={errors.summary} />
                             </div>
@@ -171,7 +175,7 @@ export default function EmploymentForm({
 
 EmploymentForm.layout = {
     breadcrumbs: [
-        { title: 'Career knowledge', href: index() },
-        { title: 'Employment', href: index() },
+        { title: 'Library', href: index() },
+        { title: 'Experience', href: index() },
     ],
 };

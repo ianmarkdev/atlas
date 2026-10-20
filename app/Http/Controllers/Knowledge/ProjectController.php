@@ -8,6 +8,7 @@ use App\Domain\Knowledge\Project;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\SaveProjectRequest;
 use App\Http\Resources\ProjectResource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,9 +28,18 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function store(SaveProjectRequest $request): RedirectResponse
+    /**
+     * JSON requests (the resume editor's "Add project" dialog) get the new project back instead of a redirect.
+     */
+    public function store(SaveProjectRequest $request): RedirectResponse|JsonResponse
     {
         $project = $this->records->create(new Project($request->projectAttributes()), $request->user());
+
+        if ($request->expectsJson()) {
+            $project->load('employment')->setRelation('claims', collect());
+
+            return response()->json(['project' => ProjectResource::make($project)->resolve($request)], 201);
+        }
 
         $this->flashSaved($project);
 

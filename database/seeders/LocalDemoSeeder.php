@@ -3,10 +3,14 @@
 namespace Database\Seeders;
 
 use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Knowledge\Claim;
+use App\Domain\Knowledge\ClaimKind;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\EmploymentType;
 use App\Domain\Knowledge\Project;
+use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Seeder;
 use RuntimeException;
 
@@ -34,7 +38,12 @@ class LocalDemoSeeder extends Seeder
         $workspace->update(['name' => "Alex's applications"]);
 
         $profile = CandidateProfile::withoutGlobalScopes()->where('user_id', $candidate->id)->sole();
-        $profile->update(['display_name' => 'Alex Morgan', 'headline' => 'Senior Laravel developer']);
+        $profile->update([
+            'display_name' => 'Alex Morgan',
+            'email' => 'alex.morgan@example.com',
+            'phone' => '+44 20 7946 0000',
+            'location' => 'London, UK (open to remote)',
+        ]);
 
         $va = User::factory()->va($workspace)->create(['name' => 'Vera Assistant', 'email' => 'va@example.com']);
         User::factory()->va($workspace)->create(['name' => 'Sam Helper', 'email' => 'va2@example.com']);
@@ -72,7 +81,26 @@ class LocalDemoSeeder extends Seeder
             'created_by' => $va->id,
         ]);
 
-        Project::factory()->forProfile($profile)->verified($candidate)->create([
+        $verifiedClaim = fn (Model $subject, string $statement): Claim => Claim::factory()->forProfile($profile)
+            ->about($subject)->stating($statement)->verified($candidate)->create(['created_by' => $candidate->id]);
+
+        $lead = $verifiedClaim($current, 'Lead backend developer for the merchant billing platform (40k merchants).');
+        $invoiceRun = $verifiedClaim($current, 'Cut the nightly invoice run from 4 hours to 20 minutes by moving it to queued, idempotent jobs.');
+        $mentoring = $verifiedClaim($current, 'Mentored two junior developers through their first production releases.');
+        $dashboard = $verifiedClaim($current, 'Built the merchant dashboard in React and TypeScript on top of the billing API.');
+        $pricing = $verifiedClaim($current, 'Rebuilt the public pricing pages in Next.js with server-side rendering; Lighthouse performance went from 62 to 95.');
+        $rails = $verifiedClaim($previous, 'Maintained a Ruby on Rails order-management app for a retail client.');
+
+        $integrations = Claim::factory()->forProfile($profile)->about($previous)
+            ->stating('Built Shopify and Magento integrations for six retail clients.')
+            ->create(['created_by' => $va->id]);
+
+        foreach (['PostgreSQL query tuning and indexing', 'Laravel, PHP 8, Pest'] as $statement) {
+            Claim::factory()->forProfile($profile)->stating($statement)->verified($candidate)
+                ->create(['kind' => ClaimKind::Skill, 'created_by' => $candidate->id]);
+        }
+
+        $invoiceProject = Project::factory()->forProfile($profile)->verified($candidate)->create([
             'employment_id' => $current->id,
             'name' => 'Invoice engine rewrite',
             'role' => 'Tech lead',
@@ -91,7 +119,7 @@ class LocalDemoSeeder extends Seeder
             'created_by' => $va->id,
         ]);
 
-        Project::factory()->forProfile($profile)->verified($candidate)->create([
+        $auditTrail = Project::factory()->forProfile($profile)->verified($candidate)->create([
             'name' => 'laravel-audit-trail (open source)',
             'role' => 'Maintainer',
             'url' => 'https://example.com/laravel-audit-trail',
@@ -103,5 +131,102 @@ class LocalDemoSeeder extends Seeder
             'name' => 'Old portfolio site',
             'created_by' => $candidate->id,
         ]);
+
+        $retries = $verifiedClaim($invoiceProject, 'Designed the retry and dead-letter handling for failed invoice jobs.');
+        $installs = $verifiedClaim($auditTrail, 'Package with over 1,000 monthly installs on Packagist.');
+
+        $this->seedResumes($profile, [
+            'PHP focused' => [
+                'default' => true,
+                'title' => 'Senior PHP Engineer',
+                'summary' => 'PHP and Laravel engineer with eight years of building billing and e-commerce backends. I like making slow, fragile jobs fast and boring.',
+                'experience' => [
+                    $this->job($current, 'Senior PHP Developer', [$lead, $invoiceRun, $mentoring], [$this->project($invoiceProject, [$retries])]),
+                    $this->job($previous, null, [$integrations]),
+                ],
+                'projects' => [$this->project($auditTrail, [$installs])],
+            ],
+            'React focused' => [
+                'title' => 'Senior Full-stack Engineer (React)',
+                'summary' => 'Full-stack engineer who builds React and TypeScript front ends on top of solid Laravel APIs.',
+                'experience' => [
+                    $this->job($current, 'Senior Full-stack Developer', [$dashboard, $pricing, $lead]),
+                    $this->job($previous),
+                ],
+            ],
+            'Next.js focused' => [
+                'title' => 'Senior Full-stack Engineer (Next.js)',
+                'summary' => 'Builds fast, server-rendered Next.js sites backed by well-tested APIs.',
+                'experience' => [
+                    $this->job($current, 'Senior Full-stack Developer', [
+                        ['claim' => $pricing->ulid, 'text' => 'Rebuilt the public pricing pages in Next.js (SSR), raising Lighthouse performance from 62 to 95.'],
+                        $dashboard,
+                    ]),
+                ],
+            ],
+            'Ruby focused' => [
+                'title' => 'Senior Backend Engineer (Ruby & PHP)',
+                'summary' => 'Backend engineer comfortable in Ruby on Rails and Laravel, focused on reliable background processing.',
+                'experience' => [
+                    $this->job($current, 'Senior Backend Developer', [$invoiceRun, $mentoring]),
+                    $this->job($previous, 'Ruby & PHP Developer', [$rails]),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $resumes
+     */
+    private function seedResumes(CandidateProfile $profile, array $resumes): void
+    {
+        foreach ($resumes as $name => $resume) {
+            $factory = ResumeVariant::factory()->forProfile($profile)->withDocument([
+                'title' => $resume['title'],
+                'summary' => $resume['summary'],
+                'experience' => $resume['experience'],
+                'projects' => $resume['projects'] ?? [],
+            ]);
+
+            ($resume['default'] ?? false ? $factory->default() : $factory)
+                ->create(['name' => $name, 'created_by' => $profile->user_id]);
+        }
+    }
+
+    /**
+     * @param  list<Claim|array{claim: string, text: string}>  $bullets
+     * @param  list<array<string, mixed>>  $projects
+     * @return array<string, mixed>
+     */
+    private function job(Employment $employment, ?string $displayTitle = null, array $bullets = [], array $projects = []): array
+    {
+        return [
+            'employment' => $employment->ulid,
+            'display_title' => $displayTitle,
+            'description' => null,
+            'bullets' => $this->bullets($bullets),
+            'projects' => $projects,
+        ];
+    }
+
+    /**
+     * @param  list<Claim>  $bullets
+     * @return array<string, mixed>
+     */
+    private function project(Project $project, array $bullets = []): array
+    {
+        return ['project' => $project->ulid, 'description' => null, 'bullets' => $this->bullets($bullets)];
+    }
+
+    /**
+     * @param  list<Claim|array{claim: string, text: string}>  $bullets
+     * @return list<array{claim: string, text: string|null}>
+     */
+    private function bullets(array $bullets): array
+    {
+        return array_map(
+            fn (Claim|array $bullet): array => $bullet instanceof Claim ? ['claim' => $bullet->ulid, 'text' => null] : $bullet,
+            $bullets,
+        );
     }
 }

@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\Project;
+use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Tenancy\TenantContext;
 use App\Domain\Tenancy\Workspace;
 use App\Models\User;
@@ -43,6 +45,8 @@ class AppServiceProvider extends ServiceProvider
             'candidate_profile' => CandidateProfile::class,
             'employment' => Employment::class,
             'project' => Project::class,
+            'claim' => Claim::class,
+            'resume_variant' => ResumeVariant::class,
         ]);
 
         Event::listen(function (Login $event): void {
@@ -60,6 +64,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manage-vas', fn (User $user): bool => $user->isCandidate());
         Gate::define('manage-budget', fn (User $user): bool => $user->isCandidate());
         Gate::define('edit-candidate-profile', fn (User $user): bool => $user->isCandidate());
+        Gate::define('edit-resumes', fn (User $user): bool => $user->isCandidate());
     }
 
     /**

@@ -30,6 +30,8 @@ class ProjectResource extends JsonResource
             'url' => $this->url,
             'status' => $this->status->value,
             'lock_version' => $this->lock_version,
+            // Resolved to a plain list: Inertia would otherwise serialise a nested resource as `{ data: [...] }`.
+            'claims' => $this->whenLoaded('claims', fn () => ClaimResource::collection($this->claims)->resolve($request)),
             'can' => KnowledgeAbilities::for($request->user(), $this->resource),
         ];
     }

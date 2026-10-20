@@ -28,7 +28,7 @@ export default function ProjectForm({
             <div className="flex flex-col gap-6 p-4 lg:max-w-2xl">
                 <Heading
                     title={isEditing ? 'Edit project' : 'Add project'}
-                    description="Plain text only. Link it to an employment, or leave it standalone for freelance and side projects."
+                    description="Plain text only. Link it to an experience, or leave it standalone for freelance and side projects."
                 />
 
                 <Form
@@ -67,7 +67,7 @@ export default function ProjectForm({
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="employment">Employment</Label>
+                                <Label htmlFor="employment">Experience</Label>
                                 <NativeSelect
                                     id="employment"
                                     name="employment"
@@ -150,7 +150,9 @@ export default function ProjectForm({
                             </div>
 
                             <div className="grid gap-2">
-                                <Label htmlFor="summary">Summary</Label>
+                                <Label htmlFor="summary">
+                                    Short description
+                                </Label>
                                 <Textarea
                                     id="summary"
                                     name="summary"
@@ -176,7 +178,7 @@ export default function ProjectForm({
 
 ProjectForm.layout = {
     breadcrumbs: [
-        { title: 'Career knowledge', href: index() },
+        { title: 'Library', href: index() },
         { title: 'Project', href: index() },
     ],
 };

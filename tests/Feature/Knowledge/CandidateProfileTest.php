@@ -1,36 +1,45 @@
 <?php
 
-test('the candidate updates the display name and headline as normalised plain text', function () {
+test('the candidate updates their contact details as normalised plain text', function () {
     $candidate = candidateWithTwoFactor();
 
     $this->actingAs($candidate)
-        ->patch(route('knowledge.profile.update'), [
+        ->patch(route('contact.update'), [
             'display_name' => "  Alex\u{200B}  Morgan ",
-            'headline' => 'Senior Laravel developer',
+            'email' => 'Alex.Morgan@Example.com',
+            'phone' => '+44 20 7946 0000',
+            'location' => 'London, UK',
         ])
-        ->assertRedirect(route('knowledge.index'));
+        ->assertRedirect(route('resumes.index'));
 
     $profile = profileOf($candidate);
     expect($profile->display_name)->toBe('Alex Morgan')
-        ->and($profile->headline)->toBe('Senior Laravel developer');
+        ->and($profile->phone)->toBe('+44 20 7946 0000')
+        ->and($profile->location)->toBe('London, UK');
 });
 
-test('a blank headline is stored as empty', function () {
+test('a phone number with letters is rejected', function () {
+    $this->actingAs(candidateWithTwoFactor())
+        ->patch(route('contact.update'), ['display_name' => 'Alex Morgan', 'phone' => 'call me'])
+        ->assertSessionHasErrors(['phone' => 'Use digits, spaces and + ( ) - . only.']);
+});
+
+test('blank optional contact fields are stored as empty', function () {
     $candidate = candidateWithTwoFactor();
 
-    $this->actingAs($candidate)->patch(route('knowledge.profile.update'), [
+    $this->actingAs($candidate)->patch(route('contact.update'), [
         'display_name' => 'Alex Morgan',
-        'headline' => '   ',
+        'location' => '   ',
     ]);
 
-    expect(profileOf($candidate)->headline)->toBeNull();
+    expect(profileOf($candidate)->location)->toBeNull();
 });
 
-test('VAs cannot edit the candidate profile', function () {
+test('VAs cannot edit the contact details', function () {
     $candidate = candidateWithTwoFactor();
 
     $this->actingAs(vaOf($candidate))
-        ->patch(route('knowledge.profile.update'), ['display_name' => 'Someone else'])
+        ->patch(route('contact.update'), ['display_name' => 'Someone else'])
         ->assertForbidden();
 
     expect(profileOf($candidate)->display_name)->not->toBe('Someone else');

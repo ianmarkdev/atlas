@@ -23,11 +23,18 @@ export function NativeSelect({
             )}
             {...props}
         >
+            {/* The open option list is drawn by the browser; give it the theme colours (dark mode). */}
             {placeholder !== undefined && (
-                <option value="">{placeholder}</option>
+                <option value="" className="bg-background text-foreground">
+                    {placeholder}
+                </option>
             )}
             {options.map((option) => (
-                <option key={option.value} value={option.value}>
+                <option
+                    key={option.value}
+                    value={option.value}
+                    className="bg-background text-foreground"
+                >
                     {option.label}
                 </option>
             ))}
