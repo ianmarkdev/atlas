@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Knowledge\AnswerLibraryController;
 use App\Http\Controllers\Knowledge\ClaimController;
 use App\Http\Controllers\Knowledge\CredentialController;
 use App\Http\Controllers\Knowledge\EmploymentController;
@@ -69,6 +70,14 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
             Route::patch('skills/{skill}', [SkillController::class, 'update'])->name('skills.update');
             Route::delete('skills/{skill}', [SkillController::class, 'destroy'])->name('skills.destroy');
         });
+
+        Route::get('answers', [AnswerLibraryController::class, 'index'])->name('answers.index');
+        Route::get('answers/bulk', [AnswerLibraryController::class, 'bulkCreate'])->name('answers.bulk.create');
+        Route::post('answers/bulk', [AnswerLibraryController::class, 'bulkStore'])->name('answers.bulk.store');
+        Route::resource('answers', AnswerLibraryController::class)->only(['create', 'store', 'edit', 'update']);
+        Route::patch('answers/{answer}/approve', [AnswerLibraryController::class, 'approve'])->name('answers.approve');
+        Route::patch('answers/{answer}/archive', [AnswerLibraryController::class, 'archive'])->name('answers.archive');
+        Route::patch('answers/{answer}/restore', [AnswerLibraryController::class, 'restore'])->name('answers.restore');
 
         Route::get('proposals', [ProposalController::class, 'index'])->name('proposals.index');
         Route::middleware('can:approve-proposals')->group(function () {

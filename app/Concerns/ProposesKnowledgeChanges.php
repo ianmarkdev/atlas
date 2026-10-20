@@ -2,6 +2,7 @@
 
 namespace App\Concerns;
 
+use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
@@ -22,7 +23,7 @@ trait ProposesKnowledgeChanges
     /**
      * @return bool true when this user's save becomes a suggestion rather than an edit
      */
-    protected function proposing(User $user, Claim|Employment|Project|Credential $record): bool
+    protected function proposing(User $user, Claim|Employment|Project|Credential|AnswerLibraryEntry $record): bool
     {
         if ($user->can('update', $record)) {
             return false;
@@ -36,7 +37,7 @@ trait ProposesKnowledgeChanges
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function proposeChange(Claim|Employment|Project|Credential $record, array $payload, Request $request): RedirectResponse
+    protected function proposeChange(Claim|Employment|Project|Credential|AnswerLibraryEntry $record, array $payload, Request $request): RedirectResponse
     {
         $rationale = $request->input('rationale');
 

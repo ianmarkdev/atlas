@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
@@ -35,6 +36,7 @@ class KnowledgeProposalResource extends JsonResource
             'name' => 'Project name', 'employment_id' => 'Experience', 'role' => 'Your role', 'client_name' => 'Client',
             'start_date' => 'Start', 'end_date' => 'End', 'url' => 'Link', 'summary' => 'Short description',
         ],
+        'answer_library_entry' => ['question' => 'Question', 'category' => 'Category', 'body' => 'Answer'],
         'credential' => [
             'type' => 'Type', 'name' => 'Name', 'institution' => 'School / issuer', 'field_of_study' => 'Field of study',
             'start_date' => 'Start', 'end_date' => 'End / awarded', 'expires_on' => 'Expires',
@@ -73,7 +75,7 @@ class KnowledgeProposalResource extends JsonResource
     /**
      * @return list<array{label: string, from: string|null, to: string|null}>
      */
-    private function changes(Claim|Employment|Project|Credential $target): array
+    private function changes(Claim|Employment|Project|Credential|AnswerLibraryEntry $target): array
     {
         $changes = [];
 
@@ -82,7 +84,12 @@ class KnowledgeProposalResource extends JsonResource
                 continue;
             }
 
-            $from = $this->display($field, $field === 'statement' && $target instanceof Claim ? $target->statement() : $target->getAttribute($field));
+            $current = match (true) {
+                $field === 'statement' && $target instanceof Claim => $target->statement(),
+                $field === 'body' && $target instanceof AnswerLibraryEntry => $target->body(),
+                default => $target->getAttribute($field),
+            };
+            $from = $this->display($field, $current);
             $to = $this->display($field, $this->payload[$field]);
 
             if ($from !== $to) {
@@ -106,12 +113,13 @@ class KnowledgeProposalResource extends JsonResource
         };
     }
 
-    private function targetLabel(Claim|Employment|Project|Credential $target): string
+    private function targetLabel(Claim|Employment|Project|Credential|AnswerLibraryEntry $target): string
     {
         return match (true) {
             $target instanceof Claim => __('Bullet point'),
             $target instanceof Employment => __('Experience: :title — :employer', ['title' => $target->title, 'employer' => $target->employer_name]),
             $target instanceof Project => __('Project: :name', ['name' => $target->name]),
+            $target instanceof AnswerLibraryEntry => __('Answer: :question', ['question' => $target->question]),
             default => __(':name — :institution', ['name' => $target->name, 'institution' => $target->institution]),
         };
     }

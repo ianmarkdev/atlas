@@ -44,7 +44,7 @@ class ProposalController extends Controller
 
         $loadClaimRevisions = function ($proposals): void {
             foreach ($proposals as $proposal) {
-                if ($proposal->target_type === 'claim') {
+                if (in_array($proposal->target_type, ['claim', 'answer_library_entry'], true)) {
                     $proposal->target?->loadMissing('currentRevision');
                 }
             }

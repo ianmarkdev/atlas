@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property int $workspace_id
  * @property int $candidate_profile_id
  * @property string $origin
- * @property string $proposal_type `revise_claim` | `revise_record`
+ * @property string $proposal_type `revise_claim` | `revise_record` | `revise_library_answer`
  * @property string $target_type
  * @property int $target_id
  * @property int $base_version claim: current revision id; other records: lock_version
@@ -33,7 +33,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property int $lock_version
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
- * @property-read Claim|Employment|Project|Credential|null $target
+ * @property-read Claim|Employment|Project|Credential|AnswerLibraryEntry|null $target
  * @property-read User|null $proposer
  * @property-read User|null $decider
  */

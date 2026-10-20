@@ -87,6 +87,30 @@ export type ContactLink = {
     url: string;
 };
 
+export type Answer = {
+    ulid: string;
+    question: string;
+    body: string;
+    category: string;
+    claims: string[];
+    status: 'approved' | 'draft' | 'archived';
+    revision_no: number | null;
+    lock_version: number;
+    updated_at: string | null;
+    can: {
+        update: boolean;
+        propose: boolean;
+        approve: boolean;
+        archive: boolean;
+        restore: boolean;
+    };
+};
+
+export type EvidenceGroup = {
+    label: string;
+    claims: { ulid: string; statement: string }[];
+};
+
 export type ProposalStatus =
     | 'pending'
     | 'approved'
@@ -97,7 +121,12 @@ export type ProposalStatus =
 export type KnowledgeProposal = {
     ulid: string;
     status: ProposalStatus;
-    target_type: 'claim' | 'employment' | 'project' | 'credential';
+    target_type:
+        | 'claim'
+        | 'employment'
+        | 'project'
+        | 'credential'
+        | 'answer_library_entry';
     target_label: string;
     changes: { label: string; from: string | null; to: string | null }[];
     rationale: string | null;

@@ -6,6 +6,7 @@ import {
     GitPullRequestArrow,
     IdCard,
     LayoutGrid,
+    MessageSquareText,
     Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as knowledge } from '@/routes/knowledge';
+import { index as answers } from '@/routes/knowledge/answers';
 import { index as proposals } from '@/routes/knowledge/proposals';
 import { index as profile } from '@/routes/resumes';
 import { index as team } from '@/routes/team';
@@ -65,6 +67,7 @@ export function AppSidebar() {
 
     const navItems: NavItem[] = [
         ...mainNavItems,
+        { title: 'Answers', href: answers(), icon: MessageSquareText },
         {
             title:
                 pendingCount > 0

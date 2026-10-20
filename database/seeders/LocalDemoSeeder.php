@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Domain\Knowledge\AnswerCategory;
+use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\CandidateLanguage;
 use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\CandidateProfile;
@@ -224,6 +226,28 @@ class LocalDemoSeeder extends Seeder
                 ...$shared,
             ],
         ]);
+
+        $this->seedAnswers($profile, $candidate, [
+            [AnswerCategory::Motivation, 'Why do you want to work here?', 'I want to work on payments products where reliability matters. Your focus on small merchants matches what I have built at Northwind for the last four years.', [], true],
+            [AnswerCategory::Behavioural, 'Tell us about a time you improved performance.', 'At Northwind the nightly invoice run took four hours and often overlapped the morning peak. I split it into queued, idempotent jobs and it now finishes in twenty minutes.', [$invoiceRun->ulid], true],
+            [AnswerCategory::Strengths, 'What is your greatest strength?', 'Turning slow, fragile processes into simple, well-tested ones, and helping juniors do the same.', [$invoiceRun->ulid, $mentoring->ulid], true],
+            [AnswerCategory::Availability, 'What is your notice period?', 'One month.', [], true],
+            [AnswerCategory::Salary, 'What are your salary expectations?', 'Around £85,000, depending on the overall package.', [], false],
+        ]);
+    }
+
+    /**
+     * Approved answers, plus drafts as a VA would leave them.
+     *
+     * @param  list<array{AnswerCategory, string, string, list<string>, bool}>  $answers
+     */
+    private function seedAnswers(CandidateProfile $profile, User $candidate, array $answers): void
+    {
+        foreach ($answers as [$category, $question, $body, $claimUlids, $approved]) {
+            $factory = AnswerLibraryEntry::factory()->forProfile($profile)->answering($body, $claimUlids);
+
+            ($approved ? $factory->approved($candidate) : $factory)->create(['question' => $question, 'category' => $category]);
+        }
     }
 
     /**

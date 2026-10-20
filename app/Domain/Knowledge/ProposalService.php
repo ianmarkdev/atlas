@@ -17,6 +17,7 @@ class ProposalService
     public function __construct(
         private ClaimService $claims,
         private KnowledgeRecordService $records,
+        private AnswerLibraryService $answers,
         private AuditLogger $audit,
     ) {}
 
@@ -26,7 +27,7 @@ class ProposalService
      *
      * @throws ValidationException when the item changed while the proposer was editing
      */
-    public function propose(Claim|Employment|Project|Credential $target, array $payload, ?string $rationale, int $expectedLockVersion, User $actor): KnowledgeProposal
+    public function propose(Claim|Employment|Project|Credential|AnswerLibraryEntry $target, array $payload, ?string $rationale, int $expectedLockVersion, User $actor): KnowledgeProposal
     {
         if ($target->lock_version !== $expectedLockVersion) {
             throw ValidationException::withMessages([
@@ -45,7 +46,11 @@ class ProposalService
             $proposal->forceFill([
                 'candidate_profile_id' => $target->candidate_profile_id,
                 'origin' => 'manual',
-                'proposal_type' => $target instanceof Claim ? 'revise_claim' : 'revise_record',
+                'proposal_type' => match (true) {
+                    $target instanceof Claim => 'revise_claim',
+                    $target instanceof AnswerLibraryEntry => 'revise_library_answer',
+                    default => 'revise_record',
+                },
                 'target_type' => $target->getMorphClass(),
                 'target_id' => $target->getKey(),
                 'base_version' => $this->versionOf($target),
@@ -73,7 +78,7 @@ class ProposalService
             $proposal = KnowledgeProposal::query()->whereKey($proposal->id)->lockForUpdate()->firstOrFail();
             $this->ensurePending($proposal);
 
-            /** @var Claim|Employment|Project|Credential|null $target */
+            /** @var Claim|Employment|Project|Credential|AnswerLibraryEntry|null $target */
             $target = $proposal->target()->lockForUpdate()->first();
 
             if ($target === null || ! $this->isApplicable($target, $proposal)) {
@@ -92,6 +97,18 @@ class ProposalService
                     $target->lock_version,
                     $actor,
                     allowNearDuplicate: true,
+                    via: "proposal:{$proposal->id}",
+                );
+            } elseif ($target instanceof AnswerLibraryEntry) {
+                $this->answers->revise(
+                    $target,
+                    (string) $proposal->payload['question'],
+                    (string) $proposal->payload['body'],
+                    AnswerCategory::from((string) $proposal->payload['category']),
+                    array_values(array_filter((array) ($proposal->payload['claim_ulids'] ?? []), is_string(...))),
+                    $proposal->rationale,
+                    $target->lock_version,
+                    $actor,
                     via: "proposal:{$proposal->id}",
                 );
             } else {
@@ -117,16 +134,18 @@ class ProposalService
     /**
      * Still verified and unchanged since the suggestion was made.
      */
-    private function isApplicable(Claim|Employment|Project|Credential $target, KnowledgeProposal $proposal): bool
+    private function isApplicable(Claim|Employment|Project|Credential|AnswerLibraryEntry $target, KnowledgeProposal $proposal): bool
     {
-        $isVerified = $target instanceof Claim
-            ? $target->status === ClaimStatus::Verified
-            : $target->status === KnowledgeStatus::Verified;
+        $isVerified = match (true) {
+            $target instanceof Claim => $target->status === ClaimStatus::Verified,
+            $target instanceof AnswerLibraryEntry => $target->status === AnswerStatus::Approved,
+            default => $target->status === KnowledgeStatus::Verified,
+        };
 
         return $isVerified && $this->versionOf($target) === $proposal->base_version;
     }
 
-    private function versionOf(Claim|Employment|Project|Credential $target): int
+    private function versionOf(Claim|Employment|Project|Credential|AnswerLibraryEntry $target): int
     {
         return $target instanceof Claim ? (int) $target->current_revision_id : $target->lock_version;
     }

@@ -33,7 +33,7 @@ erDiagram
   claims ||--o{ claim_sources : provenance
   claims }o--o{ tags : tagged
 
-  workspaces ||--o{ answer_library_entries : "shared or profile"
+  candidate_profiles ||--o{ answer_library_entries : answers
   answer_library_entries ||--o{ answer_library_revisions : versions
   writing_preferences }o--|| workspaces : scoped
 
@@ -92,8 +92,8 @@ erDiagram
 There are no `documents` / `document_chunks` tables: nothing is uploaded or extracted. All knowledge is plain text stored directly on the canonical rows (`claim_revisions.statement`, `employments.summary`, `projects.summary`, library answer bodies). Longer context, such as a case study, goes into a project's `summary` as plain text.
 
 ### Reusable content
-- **answer_library_entries**: id, workspace_id, candidate_profile_id (NULL = workspace-shared template), visibility (`profile|workspace`), question_pattern (canonical question text), category (`motivation|strengths|salary|behavioural|technical|...`), current_revision_id, status (`approved|draft|archived`), approved_by/at, lock_version. Merges the prompt's `question_templates` and `approved_answers`: a shared template is just an entry with no profile and placeholder-style content.
-- **answer_library_revisions**: entry_id, revision_no, body, claim_ids bigint[] (claims the answer relies on), created_by, source (`manual|proposal:{id}`).
+- **answer_library_entries**: id, workspace_id, candidate_profile_id, question (plain text, trigram-indexed), category (`motivation|strengths|weaknesses|behavioural|technical|salary|availability|other`), current_revision_id, status (`approved|draft|archived`), approved_by/at, lock_version. Merges the prompt's `question_templates` and `approved_answers`. Entries are profile-owned in the MVP; workspace-shared templates are deferred.
+- **answer_library_revisions**: answer_library_entry_id, revision_no, body (trigram-indexed), claim_ulids jsonb (claims the answer relies on; validated as live claims of the workspace on save), change_reason, created_by, created_via (`manual|proposal:{id}`). Append-only (DB trigger).
 - **writing_preferences**: id, workspace_id, scope (`user|profile|workspace`), user_id / candidate_profile_id (per scope), rule text (e.g. "British spelling", "No 'passionate'"), kind (`tone|banned_phrase|format|spelling|structure`), status, examples jsonb, created_via. CHECK that exactly the right owner column is set for the scope.
 
 ### Retrieval (derived, rebuildable)
@@ -136,7 +136,7 @@ Facts live once in the master record; resume variants and tailored resumes only 
 
 ### Feedback & proposals
 - **feedback_events**: id, workspace_id, answer_draft_id, from_version_id, to_version_id, user_id, diff jsonb (computed server-side), analysis jsonb (Claude output), generation_run_id, status (`pending_analysis|analysed|failed`).
-- **knowledge_proposals**: id, ulid, workspace_id, candidate_profile_id, origin (`feedback|achievement_suggestion|clarification|manual`), origin_id, proposal_type (built in M3 slice 6: `revise_claim|revise_record`; later: `create_claim|archive_claim|create_library_answer|revise_library_answer|create_writing_preference|one_off_no_action`), target_type (`claim|employment|project|credential`), target_id, base_version (claim: current revision id; other records: lock_version — for conflict detection), payload jsonb (the new values, as validated by the item's form request), rationale, status (`pending|approved|rejected|superseded|conflict`), proposed_by_user_id / proposed_by_run_id, decided_by, decided_at, decision_note, lock_version.
+- **knowledge_proposals**: id, ulid, workspace_id, candidate_profile_id, origin (`feedback|achievement_suggestion|clarification|manual`), origin_id, proposal_type (built in M3 slices 6–7: `revise_claim|revise_record|revise_library_answer`; later: `create_claim|archive_claim|create_library_answer|create_writing_preference|one_off_no_action`), target_type (`claim|employment|project|credential|answer_library_entry`), target_id, base_version (claim: current revision id; other records: lock_version — for conflict detection), payload jsonb (the new values, as validated by the item's form request), rationale, status (`pending|approved|rejected|superseded|conflict`), proposed_by_user_id / proposed_by_run_id, decided_by, decided_at, decision_note, lock_version.
   - Partial unique: `UNIQUE(target_type, target_id, proposal_type) WHERE status='pending'` for revise types — prevents conflicting concurrent pending edits; new ones mark older as `superseded`.
 
 ### Operations

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Credential;
@@ -52,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
             'credential' => Credential::class,
             'skill' => Skill::class,
             'knowledge_proposal' => KnowledgeProposal::class,
+            'answer_library_entry' => AnswerLibraryEntry::class,
             'resume_variant' => ResumeVariant::class,
         ]);
 
