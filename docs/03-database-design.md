@@ -1,0 +1,147 @@
+# Deliverable 3 — Database design
+
+## 3.1 Conventions
+- PKs: `bigint` identity internally + `ulid` public id column for URLs (avoids enumeration). **Every tenant table has `workspace_id NOT NULL`** (denormalised on purpose for RLS, indexes and cheap filtering).
+- Composite FKs `(workspace_id, x_id)` → `(workspace_id, id)` on key relationships so a row can never reference another workspace's row (requires `UNIQUE (workspace_id, id)` on parents). This is the cheapest strong isolation guarantee Postgres offers.
+- Timestamps `timestamptz`. Soft deletes only where restore is a product feature (applications); knowledge uses `status = archived` + revisions instead.
+- Optimistic locking: `lock_version int` on mutable heads (claims, answer_drafts, applications, proposals).
+- Enums as `text` + `CHECK` constraints (easier migrations than PG enums).
+
+## 3.2 ER diagram (core)
+
+```mermaid
+erDiagram
+  users ||--o{ workspace_memberships : has
+  workspaces ||--o{ workspace_memberships : has
+  workspaces ||--o{ candidate_profiles : contains
+  candidate_profiles ||--o{ candidate_profile_members : grants
+  users ||--o{ candidate_profile_members : granted
+
+  candidate_profiles ||--o{ employments : has
+  candidate_profiles ||--o{ projects : has
+  employments ||--o{ projects : "optional parent"
+  candidate_profiles ||--o{ claims : has
+  claims ||--o{ claim_revisions : versions
+  claims ||--o{ claim_sources : provenance
+  claims }o--o{ tags : tagged
+
+  workspaces ||--o{ answer_library_entries : "shared or profile"
+  answer_library_entries ||--o{ answer_library_revisions : versions
+  writing_preferences }o--|| workspaces : scoped
+
+  retrieval_units ||--o{ embeddings : vectors
+  embedding_models ||--o{ embeddings : produces
+
+  candidate_profiles ||--o{ job_applications : for
+  job_applications ||--|| job_postings : "original JD"
+  job_applications ||--o{ job_analyses : "analysis runs"
+  job_analyses ||--o{ requirements : extracts
+  job_applications ||--o{ application_questions : has
+  application_questions ||--o{ answer_drafts : answers
+  answer_drafts ||--o{ answer_versions : versions
+  answer_versions ||--o{ answer_claims : contains
+  answer_claims ||--o{ evidence_references : cites
+  requirements ||--o{ evidence_references : "matched evidence"
+
+  answer_versions ||--o{ feedback_events : "diff from"
+  feedback_events ||--o{ knowledge_proposals : suggests
+  generation_runs ||--o{ answer_versions : produced
+  workspaces ||--o{ audit_events : logs
+```
+
+## 3.3 Table definitions (important columns)
+
+### Identity & tenancy
+- **users**: id, ulid, name, email (unique, citext), password, two_factor_*, is_active, last_login_at.
+- **workspaces**: id, ulid, name, settings jsonb (default models), monthly_ai_budget_micros bigint (default 30_000_000 = US$30), budget_warn_pct smallint (default 80), created_by. MVP: exactly one row, created by a seeder/install command.
+- **workspace_memberships**: id, workspace_id, user_id, role (`candidate|va`), created_by. `UNIQUE(workspace_id, user_id)`; partial unique `UNIQUE(workspace_id) WHERE role='candidate'` (exactly one candidate); VA seat limit (≤ 3 active) enforced in `MembershipService` inside a transaction with `FOR UPDATE` on the workspace row.
+- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, headline. `UNIQUE(workspace_id, id)`. MVP: one row.
+- (Dropped for MVP: invitations table — candidate creates VA accounts directly and shares a password-reset link; candidate_profile_members; extra roles.)
+
+### Career knowledge (canonical)
+- **employments**: id, workspace_id, candidate_profile_id, employer_name, employer_normalized, title, employment_type, location, start_date, end_date (null=current), date_precision (`day|month|year`), summary, status (`verified|proposed|archived`), lock_version.
+- **projects**: id, workspace_id, candidate_profile_id, employment_id (nullable), name, client_name (nullable — careful: confidential), role, start/end, summary, url, status, lock_version.
+- **claims** — the atomic, citable unit:
+  - id, ulid, workspace_id, candidate_profile_id
+  - subject_type (`employment|project|education|certification|general`), subject_id (nullable)
+  - kind (`responsibility|achievement|metric|skill|technology|qualification|domain|preference|other`)
+  - current_revision_id (FK claim_revisions)
+  - status (`verified|proposed|rejected|archived`) — **only verified claims can back a `verified` label**
+  - origin (`user_entered|ai_suggested|feedback_derived|imported`)
+  - normalized_hash (sha256 of normalised statement — exact-dup guard)
+  - verified_by, verified_at, lock_version
+  - Constraints: `CHECK (status <> 'verified' OR verified_by IS NOT NULL)`; partial unique `UNIQUE(candidate_profile_id, normalized_hash) WHERE status IN ('verified','proposed')`.
+- **claim_revisions** (append-only): id, workspace_id, claim_id, revision_no, statement text, structured jsonb (e.g. `{metric: {value, unit, period}, technologies: []}`), date_from/date_to, change_reason, created_by, created_via (`manual|proposal:{id}|import`), created_at. `UNIQUE(claim_id, revision_no)`.
+- **claim_sources** (provenance, many per claim): id, workspace_id, claim_id, claim_revision_id, source_type (`user_confirmation|project|employment|external_url|answer_version`), source_id, quote/excerpt (short span), confirmed_by, created_at. Note: `answer_version` source is allowed only to record *where it was first suggested*; it never satisfies verification on its own (enforced in `KnowledgeService::verify`, which requires a `user_confirmation` source).
+- **tags**: id, workspace_id, kind (`skill|technology|domain|industry`), name, normalized_name. `UNIQUE(workspace_id, kind, normalized_name)`.
+- **taggables**: tag_id, taggable_type, taggable_id, workspace_id.
+- **education / certifications**: modelled as `subject_type` records in a small `credentials` table (id, workspace_id, profile_id, type, institution, name, awarded_on, status).
+
+### No documents tables (D8)
+There are no `documents` / `document_chunks` tables: nothing is uploaded or extracted. All knowledge is plain text stored directly on the canonical rows (`claim_revisions.statement`, `employments.summary`, `projects.summary`, library answer bodies). Longer context, such as a case study, goes into a project's `summary` as plain text.
+
+### Reusable content
+- **answer_library_entries**: id, workspace_id, candidate_profile_id (NULL = workspace-shared template), visibility (`profile|workspace`), question_pattern (canonical question text), category (`motivation|strengths|salary|behavioural|technical|...`), current_revision_id, status (`approved|draft|archived`), approved_by/at, lock_version. Merges the prompt's `question_templates` and `approved_answers`: a shared template is just an entry with no profile and placeholder-style content.
+- **answer_library_revisions**: entry_id, revision_no, body, claim_ids bigint[] (claims the answer relies on), created_by, source (`manual|proposal:{id}`).
+- **writing_preferences**: id, workspace_id, scope (`user|profile|workspace`), user_id / candidate_profile_id (per scope), rule text (e.g. "British spelling", "No 'passionate'"), kind (`tone|banned_phrase|format|spelling|structure`), status, examples jsonb, created_via. CHECK that exactly the right owner column is set for the scope.
+
+### Retrieval (derived, rebuildable)
+- **retrieval_units**: id, workspace_id, candidate_profile_id (nullable for workspace-shared), visibility, unit_type (`claim|library_answer|project_summary|employment_summary`), source_type, source_id, source_revision_id, status (copied from source: `verified|proposed|approved`), search_text, tsv `tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED`, tag_ids int[], employer_normalized, date_to, specificity_score real, content_hash, is_active bool, updated_at. `UNIQUE(source_type, source_id)`.
+- **embedding_models**: id, provider, model, dimensions, distance (`cosine`), input_type_doc, input_type_query, is_active_for_write, is_active_for_read, created_at.
+- **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `vector` (no fixed dimension at column level), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
+
+### Applications
+- **jd_collections**: id, workspace_id, name, description, use_for_eval bool, created_by. `UNIQUE(workspace_id, name)`.
+- **jd_collection_items**: jd_collection_id, job_application_id, added_by, added_at. PK(collection, application). Many-to-many so one JD can sit in several groups.
+- **job_applications**: id, ulid, workspace_id, candidate_profile_id, company_name, role_title, source_url, location, employment_type, salary_text, status (`draft|analysing|ready_for_generation|in_progress|in_review|changes_requested|approved|submitted|interviewing|offer|rejected|withdrawn|archived`), owner_user_id, assigned_user_id, deadline_at, submitted_at, notes, lock_version, deleted_at.
+- **job_postings**: id, workspace_id, job_application_id (unique), raw_text (verbatim, immutable), raw_sha256, captured_at, captured_by.
+- **job_analyses**: id, workspace_id, job_application_id, generation_run_id, prompt_version, brief jsonb (validated: summary, employer language, seniority, must-haves, nice-to-haves, red flags, injection_warnings), status, created_at. Multiple per application (re-analysis); `job_applications.current_analysis_id`.
+- **requirements**: id, workspace_id, job_analysis_id, kind (`must|preferred|responsibility|employer_value`), text, importance smallint, verbatim_quote.
+- **application_questions**: id, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`), prompt_text, word_limit, char_limit, position, status.
+- **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
+
+### Answers, versions, claims, evidence
+- **answer_drafts**: id, workspace_id, application_question_id, current_version_id, approved_version_id, status (`generating|draft|in_review|approved`), lock_version.
+- **answer_versions** (append-only): id, workspace_id, answer_draft_id, version_no, body text, author_type (`ai|user`), author_user_id, generation_run_id, parent_version_id, created_at. `UNIQUE(answer_draft_id, version_no)`.
+- **answer_claims**: id, workspace_id, answer_version_id, span_start, span_end, text, classification (`verified|inferred|proposed|hypothetical`), model_classification (what the LLM said, for eval), validation_flags text[] (e.g. `downgraded_no_verified_evidence`, `metric_without_source`), resolution (`open|accepted|removed|converted_to_proposal`), resolved_by.
+- **evidence_references**: id, workspace_id, referrer_type (`answer_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
+
+### Feedback & proposals
+- **feedback_events**: id, workspace_id, answer_draft_id, from_version_id, to_version_id, user_id, diff jsonb (computed server-side), analysis jsonb (Claude output), generation_run_id, status (`pending_analysis|analysed|failed`).
+- **knowledge_proposals**: id, ulid, workspace_id, candidate_profile_id, origin (`feedback|achievement_suggestion|clarification|manual`), origin_id, proposal_type (`create_claim|revise_claim|archive_claim|create_library_answer|revise_library_answer|create_writing_preference|one_off_no_action`), target_type, target_id, target_revision_id (base revision — for conflict detection), payload jsonb (validated per type), rationale, status (`pending|approved|rejected|superseded|conflict`), proposed_by_user_id / proposed_by_run_id, decided_by, decided_at, decision_note, lock_version.
+  - Partial unique: `UNIQUE(target_type, target_id, proposal_type) WHERE status='pending'` for revise types — prevents conflicting concurrent pending edits; new ones mark older as `superseded`.
+
+### Operations
+- **generation_runs**: id, ulid, workspace_id, purpose (`jd_analysis|answer_generation|feedback_analysis|achievement_suggestion|grounding_check`), prompt_key, prompt_version, model, request_hash, idempotency_key (unique), input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_micros, latency_ms, status (`queued|running|succeeded|failed|invalid_output`), error_code, attempt, created_by. Store prompt/response bodies **only** in an encrypted, TTL'd `generation_payloads` table (debug, default 14-day retention) — not in logs.
+- **audit_events**: id, workspace_id, actor_user_id, actor_type (`user|system|job`), action (`claim.verified`, `proposal.approved`, `data_export.downloaded`, `member.role_changed`, …), subject_type, subject_id, metadata jsonb (no content bodies), ip_hash, created_at. Append-only (revoke UPDATE/DELETE from app role). Doubles as activity history.
+
+## 3.4 How the schema supports the requirements
+- **Provenance**: `claim_sources` (+ pinned `claim_revision_id`), `evidence_references.source_revision_id`, `knowledge_proposals.origin`.
+- **Verification status**: `claims.status` + `verified_by/at` CHECK; `answer_claims.classification` + validator flags.
+- **Versioning**: append-only `*_revisions`/`answer_versions`; heads carry `current_revision_id` + `lock_version`.
+- **Private vs shared**: `candidate_profile_id` (private to profile) vs `NULL` + `visibility='workspace'` (shared templates); `writing_preferences.scope` for user-level.
+- **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `vector` column with per-model partial expression HNSW indexes (pgvector supports indexing an expression cast like `(embedding::vector(1024))` with `WHERE embedding_model_id = N` — **[VERIFY]** current pgvector README; dims limit for HNSW on `vector` is 2,000, `halfvec` 4,000 **[VERIFY]**).
+- **Efficient hybrid retrieval**: one table (`retrieval_units`) with GIN on `tsv`, btree on `(workspace_id, candidate_profile_id, unit_type, status)`, GIN on `tag_ids`, HNSW per model on `embeddings`.
+- **Concurrent edit/approval**: `lock_version` checks (409 on mismatch with merge UI), `SELECT … FOR UPDATE` on proposal + target in `ProposalApplier`, base-revision conflict detection.
+- **Tenant isolation**: `workspace_id` everywhere, global scope, policies; RLS later (3.6).
+
+## 3.5 Indexes & pgvector strategy
+- `retrieval_units`: `GIN(tsv)`; `BTREE(workspace_id, candidate_profile_id, is_active, unit_type, status)`; `GIN(tag_ids)`.
+- `embeddings`: `HNSW ((embedding::vector(D)) vector_cosine_ops) WHERE embedding_model_id = N` per active model; `BTREE(workspace_id, embedding_model_id)`.
+- Filtered ANN caveat: HNSW + strict WHERE filters can return fewer than k rows. At MVP scale (thousands of units per workspace) recommend: **exact (brute-force) scan within the tenant partition** is fast enough; enable HNSW + `hnsw.ef_search` / iterative index scans (pgvector ≥ 0.8 `hnsw.iterative_scan` **[VERIFY]**) once units > ~50k. Spike S3 measures this.
+- Other: `job_applications(workspace_id, status, deadline_at)`, `(workspace_id, assigned_user_id, status)`; `knowledge_proposals(workspace_id, status, created_at)`; `audit_events(workspace_id, created_at desc)`; `claims(candidate_profile_id, status, kind)`; trigram index on `claims` statement (via `claim_revisions`) for near-duplicate detection (`pg_trgm`).
+
+## 3.6 Access control & tenant isolation (MVP: simple, future-proof)
+With one workspace and one candidate, the real MVP boundary is **role** (candidate vs VA) and **authentication** (nobody else sees anything). Plan:
+1. **Laravel authorisation** (MVP, primary): policies + gates for every action (`verify-claim`, `approve-proposal`, `manage-vas`, `manage-budget` → candidate only). All routes behind `auth` + 2FA for the candidate.
+2. **Tenant scoping kept in code from day one, cheaply**: every tenant table has `workspace_id`; a `BelongsToWorkspace` trait sets it on create and a global scope filters by the current workspace (resolved from the user's single membership — no `/w/{workspace}` URLs in MVP). Retrieval SQL always filters by `workspace_id` + `candidate_profile_id`. Composite FKs where cheap.
+3. **PostgreSQL RLS: deferred to Phase 3** (multi-team SaaS). With a single tenant it adds friction without protecting against a realistic MVP threat. The `workspace_id` columns + scope make adding RLS later a migration + middleware, not a redesign. A small test suite with a second seeded workspace still runs in CI so the scoping code stays correct.
+
+## 3.7 Data lifecycle & migrations
+- Migrations via Laravel; raw SQL statements for pgvector/RLS/partial indexes (`DB::statement`). `CREATE EXTENSION vector, pg_trgm, citext` in the first migration (requires managed-PG support **[VERIFY]**).
+- Backups: managed PG daily snapshots + PITR (≥ 7 days); export ZIPs auto-deleted after 24h; quarterly restore drill (documented runbook).
+- Retention: `generation_payloads` 14 days; `audit_events` 2 years; deleted applications purged after 30 days.
+- **Answer export (MVP)**: plain text only — per answer copy button, and "Export application" producing a `.txt` (question headings + final approved answers + cover letter). No Markdown/DOCX/PDF in MVP.
+- **Data export (backup/portability)**: candidate-only ZIP (JSON of all knowledge + revisions + applications) via queued job, signed URL, expires in 24h.
+- **Deletion**: profile/workspace deletion job — hard deletes rows (cascade), export files, embeddings, generation payloads; writes a tombstone audit event without content. Note Anthropic/Voyage-side retention is governed by their policies **[VERIFY]**.
+- Re-embedding: new `embedding_models` row → backfill job → flip `is_active_for_read` → drop old vectors after a grace period.
