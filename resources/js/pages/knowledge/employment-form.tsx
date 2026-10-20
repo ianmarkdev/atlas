@@ -1,6 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import EmploymentController from '@/actions/App/Http/Controllers/Knowledge/EmploymentController';
 import Heading from '@/components/heading';
+import { ProposingNotice } from '@/components/proposing-notice';
 import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,9 @@ import type { Employment, SelectOption } from '@/types';
 export default function EmploymentForm({
     employment,
     employmentTypes,
+    proposing = false,
 }: {
+    proposing?: boolean;
     employment: Employment | null;
     employmentTypes: SelectOption[];
 }) {
@@ -159,8 +162,14 @@ export default function EmploymentForm({
                                 <InputError message={errors.summary} />
                             </div>
 
+                            {proposing && (
+                                <ProposingNotice error={errors.rationale} />
+                            )}
+
                             <div className="flex gap-2">
-                                <Button disabled={processing}>Save</Button>
+                                <Button disabled={processing}>
+                                    {proposing ? 'Send suggestion' : 'Save'}
+                                </Button>
                                 <Button variant="ghost" type="button" asChild>
                                     <Link href={index()}>Cancel</Link>
                                 </Button>

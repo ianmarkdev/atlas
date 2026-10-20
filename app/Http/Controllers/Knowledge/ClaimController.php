@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Concerns\ProposesKnowledgeChanges;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimKind;
 use App\Domain\Knowledge\ClaimService;
@@ -22,6 +23,8 @@ use Inertia\Response;
 
 class ClaimController extends Controller
 {
+    use ProposesKnowledgeChanges;
+
     public function __construct(private ClaimService $claims) {}
 
     public function create(Request $request): Response
@@ -56,9 +59,9 @@ class ClaimController extends Controller
         return to_route('knowledge.index');
     }
 
-    public function edit(Claim $claim): Response
+    public function edit(Request $request, Claim $claim): Response
     {
-        Gate::authorize('update', $claim);
+        $proposing = $this->proposing($request->user(), $claim);
 
         $claim->load(['currentRevision', 'subject']);
 
@@ -66,13 +69,20 @@ class ClaimController extends Controller
             'claim' => ClaimResource::make($claim)->resolve(),
             'subjectLabel' => $this->subjectLabel($claim->subject),
             'defaultSubject' => null,
+            'proposing' => $proposing,
             ...$this->formOptions(),
         ]);
     }
 
     public function update(SaveClaimRequest $request, Claim $claim): RedirectResponse
     {
-        Gate::authorize('update', $claim);
+        if ($this->proposing($request->user(), $claim)) {
+            return $this->proposeChange($claim, [
+                'statement' => $request->string('statement')->toString(),
+                'kind' => ($request->enum('kind', ClaimKind::class) ?? $claim->kind)->value,
+                'change_reason' => $request->input('change_reason'),
+            ], $request);
+        }
 
         $claim->load(['currentRevision', 'subject']);
 

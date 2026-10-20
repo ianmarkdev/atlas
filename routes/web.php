@@ -5,6 +5,7 @@ use App\Http\Controllers\Knowledge\CredentialController;
 use App\Http\Controllers\Knowledge\EmploymentController;
 use App\Http\Controllers\Knowledge\KnowledgeController;
 use App\Http\Controllers\Knowledge\ProjectController;
+use App\Http\Controllers\Knowledge\ProposalController;
 use App\Http\Controllers\Knowledge\SkillController;
 use App\Http\Controllers\Profile\ContactController;
 use App\Http\Controllers\Profile\LanguageController;
@@ -67,6 +68,12 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
             Route::post('skills', [SkillController::class, 'store'])->name('skills.store');
             Route::patch('skills/{skill}', [SkillController::class, 'update'])->name('skills.update');
             Route::delete('skills/{skill}', [SkillController::class, 'destroy'])->name('skills.destroy');
+        });
+
+        Route::get('proposals', [ProposalController::class, 'index'])->name('proposals.index');
+        Route::middleware('can:approve-proposals')->group(function () {
+            Route::patch('proposals/{proposal}/approve', [ProposalController::class, 'approve'])->name('proposals.approve');
+            Route::patch('proposals/{proposal}/reject', [ProposalController::class, 'reject'])->name('proposals.reject');
         });
 
         Route::get('claims/bulk', [ClaimController::class, 'bulkCreate'])->name('claims.bulk.create');

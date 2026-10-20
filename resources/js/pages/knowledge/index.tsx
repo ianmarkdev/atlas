@@ -9,6 +9,10 @@ import { Input } from '@/components/ui/input';
 import { ClaimList } from '@/components/claim-list';
 import Heading from '@/components/heading';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
+import {
+    PendingChangeBadge,
+    PendingChangesContext,
+} from '@/components/pending-changes';
 import { Button } from '@/components/ui/button';
 import { index } from '@/routes/knowledge';
 import type {
@@ -51,7 +55,9 @@ export default function KnowledgeIndex({
     canEditSkills,
     showArchived,
     usedIn,
+    pendingChanges,
 }: {
+    pendingChanges: string[];
     employments: Employment[];
     standaloneProjects: Project[];
     generalClaims: Claim[];
@@ -65,7 +71,7 @@ export default function KnowledgeIndex({
     const isEmpty = employments.length === 0 && standaloneProjects.length === 0;
 
     return (
-        <>
+        <PendingChangesContext value={new Set(pendingChanges)}>
             <Head title="Library" />
 
             <div className="flex flex-col gap-8 p-4 lg:max-w-4xl">
@@ -122,6 +128,7 @@ export default function KnowledgeIndex({
                                     status={employment.status}
                                     can={employment.can}
                                     usedIn={usedIn.employments[employment.ulid]}
+                                    itemKey={`employment:${employment.ulid}`}
                                     editHref={EmploymentController.edit(
                                         employment.ulid,
                                     )}
@@ -240,7 +247,7 @@ export default function KnowledgeIndex({
                         : 'Show archived records'}
                 </Link>
             </div>
-        </>
+        </PendingChangesContext>
     );
 }
 
@@ -265,6 +272,7 @@ function ProjectItem({
                 status={project.status}
                 can={project.can}
                 usedIn={usedIn}
+                itemKey={`project:${project.ulid}`}
                 editHref={ProjectController.edit(project.ulid)}
                 actions={{
                     verify: ProjectController.verify.form(project.ulid),
@@ -333,6 +341,7 @@ function CredentialList({
                                 status={credential.status}
                                 can={credential.can}
                                 usedIn={usedIn[credential.ulid]}
+                                itemKey={`credential:${credential.ulid}`}
                                 editHref={CredentialController.edit(
                                     credential.ulid,
                                 )}
@@ -442,6 +451,7 @@ function RecordHeader({
     status,
     can,
     usedIn,
+    itemKey,
     editHref,
     actions,
 }: {
@@ -450,6 +460,8 @@ function RecordHeader({
     status: Employment['status'];
     can: KnowledgeAbilities;
     usedIn?: string[];
+    /** `type:ulid`, to show a pending suggested change */
+    itemKey: string;
     editHref: ReturnType<typeof EmploymentController.edit>;
     actions: RecordActions;
 }) {
@@ -459,6 +471,7 @@ function RecordHeader({
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{title}</span>
                     <KnowledgeStatusBadge status={status} />
+                    <PendingChangeBadge itemKey={itemKey} />
                 </div>
                 {subtitle && (
                     <p className="text-sm text-muted-foreground">{subtitle}</p>
@@ -486,6 +499,11 @@ function RecordHeader({
                 {can.update && (
                     <Button size="sm" variant="outline" asChild>
                         <Link href={editHref}>Edit</Link>
+                    </Button>
+                )}
+                {can.propose && (
+                    <Button size="sm" variant="outline" asChild>
+                        <Link href={editHref}>Suggest change</Link>
                     </Button>
                 )}
                 {can.archive && (

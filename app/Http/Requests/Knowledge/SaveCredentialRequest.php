@@ -33,6 +33,8 @@ class SaveCredentialRequest extends FormRequest
             'credential_url' => ['nullable', 'url:http,https', 'max:2048'],
             'summary' => ['nullable', 'string', 'max:2000'],
             'lock_version' => [Rule::requiredIf($this->route('credential') !== null), 'integer'],
+            // A VA's note to the candidate when suggesting a change to a verified item.
+            'rationale' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -43,7 +45,7 @@ class SaveCredentialRequest extends FormRequest
      */
     public function credentialAttributes(): array
     {
-        $validated = $this->safe()->except('lock_version');
+        $validated = $this->safe()->except(['lock_version', 'rationale']);
         $month = fn (?string $value): ?string => $value === null ? null : "{$value}-01";
 
         return [
@@ -62,6 +64,7 @@ class SaveCredentialRequest extends FormRequest
             'field_of_study' => false,
             'credential_url' => false,
             'summary' => true,
+            'rationale' => true,
         ];
     }
 }

@@ -8,8 +8,10 @@ use App\Domain\Knowledge\ClaimStatus;
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\CredentialType;
 use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\KnowledgeStatus;
 use App\Domain\Knowledge\Project;
+use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeUsage;
 use App\Http\Controllers\Controller;
@@ -78,7 +80,28 @@ class KnowledgeController extends Controller
             'certifications' => CredentialResource::collection($credentials->where('type', CredentialType::Certification)->values())->resolve(),
             'skills' => array_values(Skill::query()->alphabetical()->get()->map(SkillController::present(...))->all()),
             'canEditSkills' => $request->user()->can('edit-candidate-profile'),
+            'pendingChanges' => $this->pendingChangeKeys(),
             'showArchived' => $showArchived,
         ]);
+    }
+
+    /**
+     * Items with a suggested change waiting for the candidate, as `type:ulid` keys.
+     *
+     * @return list<string>
+     */
+    private function pendingChangeKeys(): array
+    {
+        $keys = [];
+
+        foreach (KnowledgeProposal::query()->where('status', ProposalStatus::Pending)->with('target')->get() as $proposal) {
+            $target = $proposal->target;
+
+            if ($target !== null) {
+                $keys[] = "{$proposal->target_type}:{$target->getAttribute('ulid')}";
+            }
+        }
+
+        return $keys;
     }
 }

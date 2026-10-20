@@ -7,8 +7,8 @@ use App\Domain\Knowledge\ClaimStatus;
 use App\Models\User;
 
 /**
- * The candidate edits live claims; a VA edits only proposed ones (D5). Changing a verified
- * claim as a VA becomes a `revise_claim` proposal (M3 slice 4). Only the candidate verifies,
+ * The candidate edits live claims; a VA edits only proposed ones (D5). A VA's change to a
+ * verified claim becomes a `revise_claim` proposal instead (`propose`). Only the candidate verifies,
  * rejects, archives and restores.
  */
 class ClaimPolicy
@@ -20,6 +20,14 @@ class ClaimPolicy
         }
 
         return $claim->status === ClaimStatus::Proposed;
+    }
+
+    /**
+     * A VA suggests a change to a verified claim; the candidate approves it (ProposalService).
+     */
+    public function propose(User $user, Claim $claim): bool
+    {
+        return ! $user->isCandidate() && $claim->status === ClaimStatus::Verified;
     }
 
     public function verify(User $user, Claim $claim): bool

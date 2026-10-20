@@ -6,6 +6,7 @@ use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
@@ -50,6 +51,7 @@ class AppServiceProvider extends ServiceProvider
             'claim' => Claim::class,
             'credential' => Credential::class,
             'skill' => Skill::class,
+            'knowledge_proposal' => KnowledgeProposal::class,
             'resume_variant' => ResumeVariant::class,
         ]);
 
@@ -69,6 +71,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('manage-budget', fn (User $user): bool => $user->isCandidate());
         Gate::define('edit-candidate-profile', fn (User $user): bool => $user->isCandidate());
         Gate::define('edit-resumes', fn (User $user): bool => $user->isCandidate());
+        Gate::define('approve-proposals', fn (User $user): bool => $user->isCandidate());
     }
 
     /**

@@ -3,6 +3,7 @@ import {
     BookOpen,
     BookUser,
     FolderGit2,
+    GitPullRequestArrow,
     IdCard,
     LayoutGrid,
     Users,
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as knowledge } from '@/routes/knowledge';
+import { index as proposals } from '@/routes/knowledge/proposals';
 import { index as profile } from '@/routes/resumes';
 import { index as team } from '@/routes/team';
 import type { NavItem } from '@/types';
@@ -58,11 +60,23 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
-    const { auth } = usePage().props;
+    const { auth, pendingProposals } = usePage().props;
+    const pendingCount = Number(pendingProposals ?? 0);
 
-    const navItems: NavItem[] = auth.can.manageVas
-        ? [...mainNavItems, { title: 'Team', href: team(), icon: Users }]
-        : mainNavItems;
+    const navItems: NavItem[] = [
+        ...mainNavItems,
+        {
+            title:
+                pendingCount > 0
+                    ? `Suggestions (${pendingCount})`
+                    : 'Suggestions',
+            href: proposals(),
+            icon: GitPullRequestArrow,
+        },
+        ...(auth.can.manageVas
+            ? [{ title: 'Team', href: team(), icon: Users }]
+            : []),
+    ];
 
     return (
         <Sidebar collapsible="icon" variant="inset">

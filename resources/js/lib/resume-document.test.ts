@@ -4,6 +4,7 @@ import { indexLibrary, moveItem, resumeToPlainText } from './resume-document';
 
 const can = {
     update: true,
+    propose: false,
     verify: false,
     archive: true,
     restore: false,

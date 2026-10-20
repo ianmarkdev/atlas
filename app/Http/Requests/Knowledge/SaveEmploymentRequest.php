@@ -32,6 +32,8 @@ class SaveEmploymentRequest extends FormRequest
             'end_date' => ['nullable', 'date_format:Y-m', 'after_or_equal:start_date'],
             'summary' => ['nullable', 'string', 'max:5000'],
             'lock_version' => [Rule::requiredIf($this->route('employment') !== null), 'integer'],
+            // A VA's note to the candidate when suggesting a change to a verified item.
+            'rationale' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -42,7 +44,7 @@ class SaveEmploymentRequest extends FormRequest
      */
     public function employmentAttributes(): array
     {
-        $validated = $this->safe()->except('lock_version');
+        $validated = $this->safe()->except(['lock_version', 'rationale']);
 
         return [
             ...$validated,
@@ -58,6 +60,7 @@ class SaveEmploymentRequest extends FormRequest
             'title' => false,
             'location' => false,
             'summary' => true,
+            'rationale' => true,
         ];
     }
 }

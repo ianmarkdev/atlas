@@ -24,6 +24,14 @@ class KnowledgeRecordPolicy
         return $record->status === KnowledgeStatus::Proposed;
     }
 
+    /**
+     * A VA suggests a change to a verified record; the candidate approves it (ProposalService).
+     */
+    public function propose(User $user, Employment|Project|Credential $record): bool
+    {
+        return ! $user->isCandidate() && $record->status === KnowledgeStatus::Verified;
+    }
+
     public function verify(User $user, Employment|Project|Credential $record): bool
     {
         return $user->isCandidate() && $record->status === KnowledgeStatus::Proposed;

@@ -2,6 +2,7 @@
 
 use App\Domain\Audit\AuditEvent;
 use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\KnowledgeStatus;
 use App\Domain\Knowledge\Project;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -112,15 +113,16 @@ describe('update', function () {
             ->status->toBe(KnowledgeStatus::Proposed);
     });
 
-    test('a VA cannot edit a verified employment', function () {
+    test('a VA\'s edit of a verified employment becomes a suggestion and leaves it unchanged', function () {
         $candidate = candidateWithTwoFactor();
         $employment = Employment::factory()->forProfile(profileOf($candidate))->verified($candidate)->create(['title' => 'Original']);
 
         $this->actingAs(vaOf($candidate))
             ->put(route('knowledge.employments.update', $employment), employmentInput(['title' => 'Changed', 'lock_version' => 0]))
-            ->assertForbidden();
+            ->assertRedirect(route('knowledge.index'));
 
-        expect($employment->refresh()->title)->toBe('Original');
+        expect($employment->refresh()->title)->toBe('Original')
+            ->and(inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole()->payload['title']))->toBe('Changed');
     });
 
     test('an employment of another workspace responds 404', function () {

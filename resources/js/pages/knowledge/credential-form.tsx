@@ -2,6 +2,7 @@ import { Form, Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import CredentialController from '@/actions/App/Http/Controllers/Knowledge/CredentialController';
 import Heading from '@/components/heading';
+import { ProposingNotice } from '@/components/proposing-notice';
 import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,9 @@ import type { Credential } from '@/types';
 export default function CredentialForm({
     credential,
     defaultType,
+    proposing = false,
 }: {
+    proposing?: boolean;
     credential: Credential | null;
     defaultType: 'education' | 'certification';
 }) {
@@ -216,8 +219,14 @@ export default function CredentialForm({
                                 <InputError message={errors.summary} />
                             </div>
 
+                            {proposing && (
+                                <ProposingNotice error={errors.rationale} />
+                            )}
+
                             <div className="flex gap-2">
-                                <Button disabled={processing}>Save</Button>
+                                <Button disabled={processing}>
+                                    {proposing ? 'Send suggestion' : 'Save'}
+                                </Button>
                                 <Button variant="ghost" type="button" asChild>
                                     <Link href={index()}>Cancel</Link>
                                 </Button>

@@ -101,7 +101,7 @@ class ClaimService
      *
      * @throws ValidationException on a stale edit or a duplicate
      */
-    public function revise(Claim $claim, string $statement, ClaimKind $kind, ?string $changeReason, int $expectedLockVersion, User $actor, bool $allowNearDuplicate = false): void
+    public function revise(Claim $claim, string $statement, ClaimKind $kind, ?string $changeReason, int $expectedLockVersion, User $actor, bool $allowNearDuplicate = false, string $via = 'manual'): void
     {
         $statementChanged = Claim::hashStatement($statement) !== $claim->normalized_hash
             || $statement !== $claim->statement();
@@ -110,7 +110,7 @@ class ClaimService
             $this->guardDuplicates($claim->candidate_profile_id, $statement, $claim->subject, $claim->id, $allowNearDuplicate);
         }
 
-        $this->translateRace(fn () => DB::transaction(function () use ($claim, $statement, $kind, $changeReason, $expectedLockVersion, $actor, $statementChanged): void {
+        $this->translateRace(fn () => DB::transaction(function () use ($claim, $statement, $kind, $changeReason, $expectedLockVersion, $actor, $statementChanged, $via): void {
             $current = Claim::query()->whereKey($claim->id)->lockForUpdate()->firstOrFail();
 
             if ($current->lock_version !== $expectedLockVersion) {
@@ -120,7 +120,7 @@ class ClaimService
             }
 
             if ($statementChanged) {
-                $revision = $this->appendRevision($claim, $statement, $changeReason, $actor);
+                $revision = $this->appendRevision($claim, $statement, $changeReason, $actor, $via);
                 $claim->normalized_hash = Claim::hashStatement($statement);
 
                 if ($claim->status === ClaimStatus::Verified) {
@@ -199,7 +199,7 @@ class ClaimService
         }
     }
 
-    private function appendRevision(Claim $claim, string $statement, ?string $changeReason, User $actor): ClaimRevision
+    private function appendRevision(Claim $claim, string $statement, ?string $changeReason, User $actor, string $via = 'manual'): ClaimRevision
     {
         $nextNumber = (int) ClaimRevision::query()->where('claim_id', $claim->id)->max('revision_no') + 1;
 
@@ -209,7 +209,7 @@ class ClaimService
             'statement' => $statement,
             'change_reason' => $changeReason,
             'created_by' => $actor->id,
-            'created_via' => 'manual',
+            'created_via' => $via,
         ]);
 
         $claim->current_revision_id = $revision->id;

@@ -14,12 +14,13 @@ use App\Models\User;
 class KnowledgeAbilities
 {
     /**
-     * @return array{update: bool, verify: bool, archive: bool, restore: bool}
+     * @return array{update: bool, propose: bool, verify: bool, archive: bool, restore: bool}
      */
     public static function for(?User $user, Employment|Project|Credential $record): array
     {
         return [
             'update' => $user?->can('update', $record) ?? false,
+            'propose' => $user?->can('propose', $record) ?? false,
             'verify' => $user?->can('verify', $record) ?? false,
             'archive' => $user?->can('archive', $record) ?? false,
             'restore' => $user?->can('restore', $record) ?? false,

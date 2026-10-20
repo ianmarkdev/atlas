@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\KnowledgeStatus;
 use App\Domain\Knowledge\Project;
 
@@ -58,13 +59,23 @@ test('a project link that is not http or https is rejected', function () {
         ->assertSessionHasErrors(['url' => 'The url field must be a valid URL.']);
 });
 
-test('a VA cannot edit a verified project', function () {
+test('a VA\'s edit of a verified project becomes a suggestion and leaves it unchanged', function () {
     $candidate = candidateWithTwoFactor();
-    $project = Project::factory()->forProfile(profileOf($candidate))->verified($candidate)->create(['name' => 'Original']);
+    $project = Project::factory()->forProfile(profileOf($candidate))->verified($candidate)->create(['name' => 'Original', 'lock_version' => 0]);
+
+    $this->actingAs(vaOf($candidate))
+        ->put(route('knowledge.projects.update', $project), ['name' => 'Changed', 'lock_version' => 0])
+        ->assertRedirect(route('knowledge.index'));
+
+    expect($project->refresh()->name)->toBe('Original')
+        ->and(inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole()->payload['name']))->toBe('Changed');
+});
+
+test('a VA cannot touch an archived project at all', function () {
+    $candidate = candidateWithTwoFactor();
+    $project = Project::factory()->forProfile(profileOf($candidate))->archived()->create(['lock_version' => 0]);
 
     $this->actingAs(vaOf($candidate))
         ->put(route('knowledge.projects.update', $project), ['name' => 'Changed', 'lock_version' => 0])
         ->assertForbidden();
-
-    expect($project->refresh()->name)->toBe('Original');
 });

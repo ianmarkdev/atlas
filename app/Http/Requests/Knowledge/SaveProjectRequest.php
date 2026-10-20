@@ -41,6 +41,8 @@ class SaveProjectRequest extends FormRequest
             'summary' => ['nullable', 'string', 'max:5000'],
             'url' => ['nullable', 'url:http,https', 'max:2048'],
             'lock_version' => [Rule::requiredIf($this->route('project') !== null), 'integer'],
+            // A VA's note to the candidate when suggesting a change to a verified item.
+            'rationale' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -51,7 +53,7 @@ class SaveProjectRequest extends FormRequest
      */
     public function projectAttributes(): array
     {
-        $validated = $this->safe()->except(['lock_version', 'employment']);
+        $validated = $this->safe()->except(['lock_version', 'employment', 'rationale']);
         $employmentUlid = $this->validated('employment');
 
         return [
@@ -69,6 +71,7 @@ class SaveProjectRequest extends FormRequest
             'client_name' => false,
             'role' => false,
             'summary' => true,
+            'rationale' => true,
             'url' => false,
         ];
     }

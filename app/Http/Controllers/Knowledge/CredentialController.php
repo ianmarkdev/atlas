@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Concerns\ProposesKnowledgeChanges;
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\CredentialType;
 use App\Domain\Knowledge\KnowledgeRecordService;
@@ -20,6 +21,8 @@ use Inertia\Response;
  */
 class CredentialController extends Controller
 {
+    use ProposesKnowledgeChanges;
+
     public function __construct(private KnowledgeRecordService $records) {}
 
     public function create(Request $request): Response
@@ -46,19 +49,20 @@ class CredentialController extends Controller
         return to_route('knowledge.index');
     }
 
-    public function edit(Credential $credential): Response
+    public function edit(Request $request, Credential $credential): Response
     {
-        Gate::authorize('update', $credential);
-
         return Inertia::render('knowledge/credential-form', [
             'credential' => CredentialResource::make($credential)->resolve(),
             'defaultType' => $credential->type->value,
+            'proposing' => $this->proposing($request->user(), $credential),
         ]);
     }
 
     public function update(SaveCredentialRequest $request, Credential $credential): RedirectResponse
     {
-        Gate::authorize('update', $credential);
+        if ($this->proposing($request->user(), $credential)) {
+            return $this->proposeChange($credential, $request->credentialAttributes(), $request);
+        }
 
         $this->records->update($credential, $request->credentialAttributes(), $request->integer('lock_version'), $request->user());
 

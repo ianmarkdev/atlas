@@ -2,6 +2,8 @@ export type KnowledgeStatus = 'verified' | 'proposed' | 'archived';
 
 export type KnowledgeAbilities = {
     update: boolean;
+    /** A VA may suggest a change to a verified item; the candidate approves it. */
+    propose: boolean;
     verify: boolean;
     archive: boolean;
     restore: boolean;
@@ -83,6 +85,28 @@ export type ContactLink = {
     kind: string;
     label: string;
     url: string;
+};
+
+export type ProposalStatus =
+    | 'pending'
+    | 'approved'
+    | 'rejected'
+    | 'superseded'
+    | 'conflict';
+
+export type KnowledgeProposal = {
+    ulid: string;
+    status: ProposalStatus;
+    target_type: 'claim' | 'employment' | 'project' | 'credential';
+    target_label: string;
+    changes: { label: string; from: string | null; to: string | null }[];
+    rationale: string | null;
+    proposed_by: string | null;
+    created_at: string | null;
+    decided_by: string | null;
+    decided_at: string | null;
+    decision_note: string | null;
+    can: { decide: boolean };
 };
 
 export type SelectOption = {

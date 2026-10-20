@@ -30,6 +30,7 @@ class ProjectFactory extends Factory
             'role' => fake()->jobTitle(),
             'summary' => fake()->sentence(),
             'status' => KnowledgeStatus::Proposed,
+            'lock_version' => 0,
         ];
     }
 

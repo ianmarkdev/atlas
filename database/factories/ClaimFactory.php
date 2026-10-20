@@ -34,6 +34,7 @@ class ClaimFactory extends Factory
             'kind' => ClaimKind::Achievement,
             'status' => ClaimStatus::Proposed,
             'origin' => 'user_entered',
+            'lock_version' => 0,
             'normalized_hash' => fn () => Claim::hashStatement(fake()->unique()->sentence()),
         ];
     }

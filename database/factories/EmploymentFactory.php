@@ -35,6 +35,7 @@ class EmploymentFactory extends Factory
             'start_date' => $start->format('Y-m-01'),
             'end_date' => fake()->dateTimeBetween($start, '-1 month')->format('Y-m-01'),
             'status' => KnowledgeStatus::Proposed,
+            'lock_version' => 0,
         ];
     }
 

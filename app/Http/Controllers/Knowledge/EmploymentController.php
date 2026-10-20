@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Concerns\ProposesKnowledgeChanges;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\EmploymentType;
 use App\Domain\Knowledge\KnowledgeRecordService;
@@ -17,6 +18,8 @@ use Inertia\Response;
 
 class EmploymentController extends Controller
 {
+    use ProposesKnowledgeChanges;
+
     public function __construct(private KnowledgeRecordService $records) {}
 
     public function create(): Response
@@ -45,19 +48,20 @@ class EmploymentController extends Controller
         return to_route('knowledge.index');
     }
 
-    public function edit(Employment $employment): Response
+    public function edit(Request $request, Employment $employment): Response
     {
-        Gate::authorize('update', $employment);
-
         return Inertia::render('knowledge/employment-form', [
             'employment' => EmploymentResource::make($employment)->resolve(),
             'employmentTypes' => $this->employmentTypes(),
+            'proposing' => $this->proposing($request->user(), $employment),
         ]);
     }
 
     public function update(SaveEmploymentRequest $request, Employment $employment): RedirectResponse
     {
-        Gate::authorize('update', $employment);
+        if ($this->proposing($request->user(), $employment)) {
+            return $this->proposeChange($employment, $request->employmentAttributes(), $request);
+        }
 
         $this->records->update($employment, $request->employmentAttributes(), $request->integer('lock_version'), $request->user());
 

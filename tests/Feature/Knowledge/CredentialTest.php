@@ -2,6 +2,7 @@
 
 use App\Domain\Knowledge\Credential;
 use App\Domain\Knowledge\CredentialType;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\KnowledgeStatus;
 
 test('education the candidate adds is verified, with months stored as dates', function () {
@@ -61,7 +62,7 @@ test('an end month before the start month is rejected', function () {
         ->assertSessionHasErrors('end_date');
 });
 
-test('a VA cannot edit verified education', function () {
+test('a VA\'s edit of verified education becomes a suggestion and leaves it unchanged', function () {
     $candidate = candidateWithTwoFactor();
     $credential = Credential::factory()->forProfile(profileOf($candidate))->verified($candidate)->create(['name' => 'BSc']);
 
@@ -72,7 +73,9 @@ test('a VA cannot edit verified education', function () {
             'name' => 'PhD',
             'lock_version' => 0,
         ])
-        ->assertForbidden();
+        ->assertRedirect(route('knowledge.index'));
+
+    expect(inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole()->payload['name']))->toBe('PhD');
 
     expect($credential->refresh()->name)->toBe('BSc');
 });

@@ -6,6 +6,7 @@ use App\Domain\Knowledge\ClaimKind;
 use App\Domain\Knowledge\ClaimRevision;
 use App\Domain\Knowledge\ClaimSource;
 use App\Domain\Knowledge\ClaimStatus;
+use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\Project;
 use Illuminate\Database\QueryException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -161,13 +162,16 @@ describe('revise', function () {
         expect($claim->refresh()->load('currentRevision')->statement())->toBe('Original statement');
     });
 
-    test('a VA cannot edit a verified claim', function () {
+    test('a VA\'s edit of a verified claim becomes a suggestion and leaves the claim unchanged', function () {
         $candidate = candidateWithTwoFactor();
         $claim = claimOf($candidate, 'Original statement');
 
         $this->actingAs(vaOf($candidate))
             ->put(route('knowledge.claims.update', $claim), ['kind' => 'achievement', 'statement' => 'Changed', 'lock_version' => 0])
-            ->assertForbidden();
+            ->assertRedirect(route('knowledge.index'));
+
+        expect($claim->refresh()->load('currentRevision')->statement())->toBe('Original statement')
+            ->and(inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole()->payload['statement']))->toBe('Changed');
     });
 
     test('a VA edits a proposed claim', function () {

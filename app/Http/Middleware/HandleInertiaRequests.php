@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Domain\Knowledge\KnowledgeProposal;
+use App\Domain\Knowledge\ProposalStatus;
+use App\Domain\Tenancy\TenantContext;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -46,6 +49,10 @@ class HandleInertiaRequests extends Middleware
                 ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // Lazy: resolved when the page renders, after the tenant context is set. Candidate only.
+            'pendingProposals' => fn (): int => $request->user()?->can('approve-proposals') && app(TenantContext::class)->hasWorkspace()
+                ? KnowledgeProposal::query()->where('status', ProposalStatus::Pending)->count()
+                : 0,
         ];
     }
 }

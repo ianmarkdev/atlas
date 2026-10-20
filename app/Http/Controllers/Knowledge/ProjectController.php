@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Concerns\ProposesKnowledgeChanges;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeRecordService;
 use App\Domain\Knowledge\Project;
@@ -17,6 +18,8 @@ use Inertia\Response;
 
 class ProjectController extends Controller
 {
+    use ProposesKnowledgeChanges;
+
     public function __construct(private KnowledgeRecordService $records) {}
 
     public function create(Request $request): Response
@@ -46,20 +49,21 @@ class ProjectController extends Controller
         return to_route('knowledge.index');
     }
 
-    public function edit(Project $project): Response
+    public function edit(Request $request, Project $project): Response
     {
-        Gate::authorize('update', $project);
-
         return Inertia::render('knowledge/project-form', [
             'project' => ProjectResource::make($project->load('employment'))->resolve(),
             'employments' => $this->employmentOptions(),
             'defaultEmployment' => null,
+            'proposing' => $this->proposing($request->user(), $project),
         ]);
     }
 
     public function update(SaveProjectRequest $request, Project $project): RedirectResponse
     {
-        Gate::authorize('update', $project);
+        if ($this->proposing($request->user(), $project)) {
+            return $this->proposeChange($project, $request->projectAttributes(), $request);
+        }
 
         $this->records->update($project, $request->projectAttributes(), $request->integer('lock_version'), $request->user());
 

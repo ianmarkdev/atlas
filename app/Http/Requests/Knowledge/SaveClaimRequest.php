@@ -36,6 +36,8 @@ class SaveClaimRequest extends FormRequest
             'change_reason' => ['nullable', 'string', 'max:255'],
             'allow_near_duplicate' => ['boolean'],
             'lock_version' => [Rule::requiredIf($isUpdate), 'integer'],
+            // A VA's note to the candidate when suggesting a change to a verified item.
+            'rationale' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -60,6 +62,6 @@ class SaveClaimRequest extends FormRequest
 
     protected function plainTextFields(): array
     {
-        return ['statement' => false, 'change_reason' => false];
+        return ['statement' => false, 'change_reason' => false, 'rationale' => true];
     }
 }

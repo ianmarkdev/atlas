@@ -1,6 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import ClaimController from '@/actions/App/Http/Controllers/Knowledge/ClaimController';
 import Heading from '@/components/heading';
+import { ProposingNotice } from '@/components/proposing-notice';
 import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,9 @@ export default function ClaimForm({
     defaultSubject,
     kinds,
     subjects,
+    proposing = false,
 }: {
+    proposing?: boolean;
     claim: Claim | null;
     subjectLabel: string | null;
     defaultSubject: string | null;
@@ -138,8 +141,14 @@ export default function ClaimForm({
                                 </div>
                             )}
 
+                            {proposing && (
+                                <ProposingNotice error={errors.rationale} />
+                            )}
+
                             <div className="flex gap-2">
-                                <Button disabled={processing}>Save</Button>
+                                <Button disabled={processing}>
+                                    {proposing ? 'Send suggestion' : 'Save'}
+                                </Button>
                                 <Button variant="ghost" type="button" asChild>
                                     <Link href={index()}>Cancel</Link>
                                 </Button>

@@ -2,6 +2,7 @@ import { Form, Link } from '@inertiajs/react';
 import { ListPlus, Plus } from 'lucide-react';
 import ClaimController from '@/actions/App/Http/Controllers/Knowledge/ClaimController';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
+import { PendingChangeBadge } from '@/components/pending-changes';
 import { Button } from '@/components/ui/button';
 import type { Claim } from '@/types';
 
@@ -66,6 +67,7 @@ function ClaimRow({ claim }: { claim: Claim }) {
                     </p>
                     <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="capitalize">{claim.kind}</span>
+                        <PendingChangeBadge itemKey={`claim:${claim.ulid}`} />
                         {claim.status !== 'verified' && (
                             <KnowledgeStatusBadge status={claim.status} />
                         )}
@@ -91,6 +93,13 @@ function ClaimRow({ claim }: { claim: Claim }) {
                     <Button size="sm" variant="ghost" asChild>
                         <Link href={ClaimController.edit(claim.ulid)}>
                             Edit
+                        </Link>
+                    </Button>
+                )}
+                {claim.can.propose && (
+                    <Button size="sm" variant="ghost" asChild>
+                        <Link href={ClaimController.edit(claim.ulid)}>
+                            Suggest change
                         </Link>
                     </Button>
                 )}

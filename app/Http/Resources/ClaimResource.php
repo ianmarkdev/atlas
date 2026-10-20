@@ -29,6 +29,7 @@ class ClaimResource extends JsonResource
             'lock_version' => $this->lock_version,
             'can' => [
                 'update' => $user?->can('update', $this->resource) ?? false,
+                'propose' => $user?->can('propose', $this->resource) ?? false,
                 'verify' => $user?->can('verify', $this->resource) ?? false,
                 'reject' => $user?->can('reject', $this->resource) ?? false,
                 'archive' => $user?->can('archive', $this->resource) ?? false,
