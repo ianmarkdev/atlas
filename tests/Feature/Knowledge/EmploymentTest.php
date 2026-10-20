@@ -3,6 +3,7 @@
 use App\Domain\Audit\AuditEvent;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeStatus;
+use App\Domain\Knowledge\Project;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /**
@@ -187,6 +188,18 @@ describe('overview', function () {
                 ->where('employments.0.ulid', $current->ulid)
                 ->where('employments.0.can.update', true)
                 ->where('employments.0.can.verify', false));
+    });
+
+    test('the overview nests each employment\'s projects as a list', function () {
+        $candidate = candidateWithTwoFactor();
+        $employment = Employment::factory()->forProfile(profileOf($candidate))->verified($candidate)->create();
+        $project = Project::factory()->forProfile(profileOf($candidate))->create(['employment_id' => $employment->id]);
+
+        $this->actingAs($candidate)->get(route('knowledge.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('employments.0.projects', 1)
+                ->where('employments.0.projects.0.ulid', $project->ulid)
+                ->where('employments.0.projects.0.employment', $employment->ulid));
     });
 
     test('the overview includes archived employments when asked', function () {

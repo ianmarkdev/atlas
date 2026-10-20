@@ -41,6 +41,13 @@ class ProjectFactory extends Factory
         ]);
     }
 
+    public function archived(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => KnowledgeStatus::Archived,
+        ]);
+    }
+
     public function verified(?User $verifier = null): static
     {
         return $this->state(fn (array $attributes) => [

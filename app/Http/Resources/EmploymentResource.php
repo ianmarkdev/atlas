@@ -29,7 +29,8 @@ class EmploymentResource extends JsonResource
             'summary' => $this->summary,
             'status' => $this->status->value,
             'lock_version' => $this->lock_version,
-            'projects' => ProjectResource::collection($this->whenLoaded('projects')),
+            // Resolved to a plain list: Inertia would otherwise serialise a nested resource as `{ data: [...] }`.
+            'projects' => $this->whenLoaded('projects', fn () => ProjectResource::collection($this->projects)->resolve($request)),
             'can' => KnowledgeAbilities::for($request->user(), $this->resource),
         ];
     }
