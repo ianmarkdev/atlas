@@ -123,4 +123,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Workspace Team
+    |--------------------------------------------------------------------------
+    |
+    | The maximum number of active virtual assistant (VA) accounts, and whether
+    | the candidate must enable two-factor authentication before using the app.
+    |
+    */
+
+    'max_vas' => (int) env('APP_MAX_VAS', 3),
+
+    'require_candidate_two_factor' => (bool) env('APP_REQUIRE_CANDIDATE_TWO_FACTOR', true),
+
 ];

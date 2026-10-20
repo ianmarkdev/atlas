@@ -2,6 +2,10 @@
 
 namespace Database\Factories;
 
+use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Tenancy\Role;
+use App\Domain\Tenancy\Workspace;
+use App\Domain\Tenancy\WorkspaceMembership;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -43,6 +47,52 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * The workspace's candidate, with their candidate profile. Creates a workspace when none is given.
+     */
+    public function candidate(?Workspace $workspace = null): static
+    {
+        return $this->afterCreating(function (User $user) use ($workspace): void {
+            $workspace ??= Workspace::factory()->create(['created_by' => $user->id]);
+
+            WorkspaceMembership::factory()->create([
+                'workspace_id' => $workspace->id,
+                'user_id' => $user->id,
+                'role' => Role::Candidate,
+            ]);
+
+            CandidateProfile::factory()->create([
+                'workspace_id' => $workspace->id,
+                'user_id' => $user->id,
+                'display_name' => $user->name,
+            ]);
+        });
+    }
+
+    /**
+     * A virtual assistant in the given workspace.
+     */
+    public function va(Workspace $workspace): static
+    {
+        return $this->afterCreating(function (User $user) use ($workspace): void {
+            WorkspaceMembership::factory()->create([
+                'workspace_id' => $workspace->id,
+                'user_id' => $user->id,
+                'role' => Role::Va,
+            ]);
+        });
+    }
+
+    /**
+     * Indicate that the user has been deactivated.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
         ]);
     }
 

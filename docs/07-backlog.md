@@ -3,7 +3,7 @@
 ### Technical spikes (do first)
 - [ ] S1 Claude from PHP: SDK vs HTTP, forced-tool structured output, caching, usage fields, error types
 - [ ] S2 Embedding provider: model/dims/price/limits; produce fixture embeddings
-- [ ] S3 Hybrid SQL perf: exact vs HNSW + filters at 20k / 200k units
+- [x] S3 Hybrid SQL perf: exact vs HNSW + filters at 20k / 200k units — `docs/spikes/S3.md`
 - [ ] S6 Hosting: pgvector version, extensions, backups/PITR, region
 
 ### MVP epics

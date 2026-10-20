@@ -10,8 +10,14 @@ export type User = {
     [key: string]: unknown;
 };
 
+export type Role = 'candidate' | 'va';
+
 export type Auth = {
     user: User;
+    role: Role | null;
+    can: {
+        manageVas: boolean;
+    };
 };
 
 export type Passkey = {

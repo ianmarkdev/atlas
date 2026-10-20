@@ -331,7 +331,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 ### Retrieval (derived, rebuildable)
 - **retrieval_units**: id, workspace_id, candidate_profile_id (nullable for workspace-shared), visibility, unit_type (`claim|library_answer|project_summary|employment_summary`), source_type, source_id, source_revision_id, status (copied from source: `verified|proposed|approved`), search_text, tsv `tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED`, tag_ids int[], employer_normalized, date_to, specificity_score real, content_hash, is_active bool, updated_at. `UNIQUE(source_type, source_id)`.
 - **embedding_models**: id, provider, model, dimensions, distance (`cosine`), input_type_doc, input_type_query, is_active_for_write, is_active_for_read, created_at.
-- **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `vector` (no fixed dimension at column level), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
+- **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `halfvec` (no fixed dimension at column level; `ALTER COLUMN embedding SET STORAGE PLAIN` so values stay inline instead of TOASTed — S3), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
 
 ### Applications
 - **jd_collections**: id, workspace_id, name, description, use_for_eval bool, created_by. `UNIQUE(workspace_id, name)`.
@@ -363,15 +363,15 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **Verification status**: `claims.status` + `verified_by/at` CHECK; `answer_claims.classification` + validator flags.
 - **Versioning**: append-only `*_revisions`/`answer_versions`; heads carry `current_revision_id` + `lock_version`.
 - **Private vs shared**: `candidate_profile_id` (private to profile) vs `NULL` + `visibility='workspace'` (shared templates); `writing_preferences.scope` for user-level.
-- **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `vector` column with per-model partial expression HNSW indexes (pgvector supports indexing an expression cast like `(embedding::vector(1024))` with `WHERE embedding_model_id = N` — **[VERIFY]** current pgvector README; dims limit for HNSW on `vector` is 2,000, `halfvec` 4,000 **[VERIFY]**).
+- **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `halfvec` column with per-model partial expression HNSW indexes when needed (`(embedding::halfvec(1024))` with `WHERE embedding_model_id = N`; the same pattern on `vector` was verified to work in S3; HNSW dimension limit for `halfvec` is 4,000 **[VERIFY]** against the pgvector README before adding the index).
 - **Efficient hybrid retrieval**: one table (`retrieval_units`) with GIN on `tsv`, btree on `(workspace_id, candidate_profile_id, unit_type, status)`, GIN on `tag_ids`, HNSW per model on `embeddings`.
 - **Concurrent edit/approval**: `lock_version` checks (409 on mismatch with merge UI), `SELECT … FOR UPDATE` on proposal + target in `ProposalApplier`, base-revision conflict detection.
 - **Tenant isolation**: `workspace_id` everywhere, global scope, policies; RLS later (3.6).
 
 ## 3.5 Indexes & pgvector strategy
 - `retrieval_units`: `GIN(tsv)`; `BTREE(workspace_id, candidate_profile_id, is_active, unit_type, status)`; `GIN(tag_ids)`.
-- `embeddings`: `HNSW ((embedding::vector(D)) vector_cosine_ops) WHERE embedding_model_id = N` per active model; `BTREE(workspace_id, embedding_model_id)`.
-- Filtered ANN caveat: HNSW + strict WHERE filters can return fewer than k rows. At MVP scale (thousands of units per workspace) recommend: **exact (brute-force) scan within the tenant partition** is fast enough; enable HNSW + `hnsw.ef_search` / iterative index scans (pgvector ≥ 0.8 `hnsw.iterative_scan` **[VERIFY]**) once units > ~50k. Spike S3 measures this.
+- `embeddings`: `BTREE(workspace_id, embedding_model_id)` from the start. HNSW `((embedding::halfvec(D)) halfvec_cosine_ops) WHERE embedding_model_id = N` per active model **only once needed** (see below).
+- **Measured in S3 (`docs/spikes/S3.md`)**: exact scan within the tenant/profile filter takes ≤ 15 ms for ~7k matching rows with `halfvec`, so the **MVP ships without a vector index**. Add HNSW when a profile exceeds ~10k active units or retrieval p95 > 150 ms. Once an HNSW index exists, HybridSearch must run `SET LOCAL hnsw.iterative_scan = relaxed_order` in its transaction: without it, filtered HNSW silently returns too few rows (14 of 40 in S3), and with it recall is ~0.96.
 - Other: `job_applications(workspace_id, status, deadline_at)`, `(workspace_id, assigned_user_id, status)`; `knowledge_proposals(workspace_id, status, created_at)`; `audit_events(workspace_id, created_at desc)`; `claims(candidate_profile_id, status, kind)`; trigram index on `claims` statement (via `claim_revisions`) for near-duplicate detection (`pg_trgm`).
 
 ## 3.6 Access control & tenant isolation (MVP: simple, future-proof)
@@ -419,7 +419,7 @@ Embedding versioning: `content_hash = sha256(model_id + search_text)`; `EmbedRet
 
 **SQL (single round trip, CTEs):**
 1. `semantic`: top 40 by cosine distance from `embeddings` joined to filtered `retrieval_units`.
-2. `lexical`: top 40 by `ts_rank_cd(tsv, websearch_to_tsquery('english', :q))`.
+2. `lexical`: top 40 by `ts_rank_cd(tsv, websearch_to_tsquery('english', :q))`, with the query terms joined by `or` (AND semantics match almost nothing for multi-term requirements).
 3. `fused`: Reciprocal Rank Fusion `Σ 1/(60 + rank)`; return top 30 with both ranks.
 
 **App-side reranking (`EvidenceRanker`)**: `final = rrf_norm * w1 + status_boost (verified 1.0, approved 0.9, proposed 0.4) * w2 + specificity (has metric/named tech/date) * w3 + freshness decay (half-life ~5y on date_to) * w4`. Weights in config, tuned by eval. Then **MMR**-style dedupe: drop items with cosine > 0.9 to an already-selected item or same `source_id` lineage (a claim vs. its parent employment/project summary — prefer the claim). Cap: ~8 items per requirement, ~25 per generation, token budget ~6k for evidence.
@@ -528,6 +528,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: N/A (measurements recorded).
 - **DoD**: each spike has a written decision; ADRs updated.
 - **Risks**: SDK immaturity → fall back to HTTP client behind `LlmClient`.
+- **Status (2026-10-20)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S1, S2, S6 open.
 
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
@@ -546,6 +547,15 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: role matrix (VA cannot verify/approve/manage VAs/change budget); 4th VA rejected; deactivated VA cannot log in; second seeded workspace's rows never returned (scoping suite, extended by later milestones).
 - **DoD**: candidate can add 3 VAs; permission matrix green in CI.
 - **Risks**: minimal.
+- **Done (2026-10-20)** — implementation notes:
+  - Models live in `app/Domain/{Tenancy,Knowledge,Audit}` (factories via `#[UseFactory]`); `User` stays in `app/Models`.
+  - `WorkspaceScope` fails closed: querying a tenant model with no workspace in context throws. `SetTenantContext` runs before route-model binding.
+  - Fortify self-registration is turned off (no `/register`); deactivated users cannot sign in, and open sessions are ended on the next request (covers passkey logins).
+  - VA accounts get a random unusable password; the candidate is shown a one-time **set-password link to share** (no email needed; link lifetime = `auth.passwords.users.expire`, default 60 min, regenerate from the Team page). VA emails count as verified because the candidate vouches for them.
+  - `audit_events` is protected by a trigger that rejects UPDATE; DELETE stays possible so workspace deletion (M12) can cascade.
+  - The candidate cannot delete their own account from settings (that is the full data deletion in M12).
+  - Seat-limit concurrency is guarded by `FOR UPDATE` on the workspace row; no automated concurrency test.
+  - The DB session timezone is pinned to UTC (`config/database.php`).
 
 ### M3 — Career knowledge manager (7–10 days)
 - **Objective**: manual knowledge base with verification, revisions and provenance — usable on its own before any AI exists.
@@ -569,7 +579,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 
 ### M6 — Retrieval index, embeddings & retrieval eval (5–7 days)
 - **Objective**: measurable hybrid retrieval.
-- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, hybrid SQL, `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
+- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
 - **Files**: `app/Domain/Retrieval/*`, `app/Domain/Embeddings/*`, `tests/Eval/*`.
 - **Tests**: leakage tests at SQL level, ranking unit tests, re-embed skipped when unchanged, model switch backfill.
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
@@ -659,7 +669,7 @@ Total ≈ 11–14 working weeks solo (rough; refine after M0).
 ### Technical spikes (do first)
 - [ ] S1 Claude from PHP: SDK vs HTTP, forced-tool structured output, caching, usage fields, error types
 - [ ] S2 Embedding provider: model/dims/price/limits; produce fixture embeddings
-- [ ] S3 Hybrid SQL perf: exact vs HNSW + filters at 20k / 200k units
+- [x] S3 Hybrid SQL perf: exact vs HNSW + filters at 20k / 200k units — `docs/spikes/S3.md`
 - [ ] S6 Hosting: pgvector version, extensions, backups/PITR, region
 
 ### MVP epics

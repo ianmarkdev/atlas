@@ -161,7 +161,7 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // No self-signup: the candidate is created by `app:install`, VAs by the candidate.
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([

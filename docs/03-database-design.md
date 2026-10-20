@@ -88,7 +88,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 ### Retrieval (derived, rebuildable)
 - **retrieval_units**: id, workspace_id, candidate_profile_id (nullable for workspace-shared), visibility, unit_type (`claim|library_answer|project_summary|employment_summary`), source_type, source_id, source_revision_id, status (copied from source: `verified|proposed|approved`), search_text, tsv `tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED`, tag_ids int[], employer_normalized, date_to, specificity_score real, content_hash, is_active bool, updated_at. `UNIQUE(source_type, source_id)`.
 - **embedding_models**: id, provider, model, dimensions, distance (`cosine`), input_type_doc, input_type_query, is_active_for_write, is_active_for_read, created_at.
-- **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `vector` (no fixed dimension at column level), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
+- **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `halfvec` (no fixed dimension at column level; `ALTER COLUMN embedding SET STORAGE PLAIN` so values stay inline instead of TOASTed — S3), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
 
 ### Applications
 - **jd_collections**: id, workspace_id, name, description, use_for_eval bool, created_by. `UNIQUE(workspace_id, name)`.
@@ -120,15 +120,15 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **Verification status**: `claims.status` + `verified_by/at` CHECK; `answer_claims.classification` + validator flags.
 - **Versioning**: append-only `*_revisions`/`answer_versions`; heads carry `current_revision_id` + `lock_version`.
 - **Private vs shared**: `candidate_profile_id` (private to profile) vs `NULL` + `visibility='workspace'` (shared templates); `writing_preferences.scope` for user-level.
-- **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `vector` column with per-model partial expression HNSW indexes (pgvector supports indexing an expression cast like `(embedding::vector(1024))` with `WHERE embedding_model_id = N` — **[VERIFY]** current pgvector README; dims limit for HNSW on `vector` is 2,000, `halfvec` 4,000 **[VERIFY]**).
+- **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `halfvec` column with per-model partial expression HNSW indexes when needed (`(embedding::halfvec(1024))` with `WHERE embedding_model_id = N`; the same pattern on `vector` was verified to work in S3; HNSW dimension limit for `halfvec` is 4,000 **[VERIFY]** against the pgvector README before adding the index).
 - **Efficient hybrid retrieval**: one table (`retrieval_units`) with GIN on `tsv`, btree on `(workspace_id, candidate_profile_id, unit_type, status)`, GIN on `tag_ids`, HNSW per model on `embeddings`.
 - **Concurrent edit/approval**: `lock_version` checks (409 on mismatch with merge UI), `SELECT … FOR UPDATE` on proposal + target in `ProposalApplier`, base-revision conflict detection.
 - **Tenant isolation**: `workspace_id` everywhere, global scope, policies; RLS later (3.6).
 
 ## 3.5 Indexes & pgvector strategy
 - `retrieval_units`: `GIN(tsv)`; `BTREE(workspace_id, candidate_profile_id, is_active, unit_type, status)`; `GIN(tag_ids)`.
-- `embeddings`: `HNSW ((embedding::vector(D)) vector_cosine_ops) WHERE embedding_model_id = N` per active model; `BTREE(workspace_id, embedding_model_id)`.
-- Filtered ANN caveat: HNSW + strict WHERE filters can return fewer than k rows. At MVP scale (thousands of units per workspace) recommend: **exact (brute-force) scan within the tenant partition** is fast enough; enable HNSW + `hnsw.ef_search` / iterative index scans (pgvector ≥ 0.8 `hnsw.iterative_scan` **[VERIFY]**) once units > ~50k. Spike S3 measures this.
+- `embeddings`: `BTREE(workspace_id, embedding_model_id)` from the start. HNSW `((embedding::halfvec(D)) halfvec_cosine_ops) WHERE embedding_model_id = N` per active model **only once needed** (see below).
+- **Measured in S3 (`docs/spikes/S3.md`)**: exact scan within the tenant/profile filter takes ≤ 15 ms for ~7k matching rows with `halfvec`, so the **MVP ships without a vector index**. Add HNSW when a profile exceeds ~10k active units or retrieval p95 > 150 ms. Once an HNSW index exists, HybridSearch must run `SET LOCAL hnsw.iterative_scan = relaxed_order` in its transaction: without it, filtered HNSW silently returns too few rows (14 of 40 in S3), and with it recall is ~0.96.
 - Other: `job_applications(workspace_id, status, deadline_at)`, `(workspace_id, assigned_user_id, status)`; `knowledge_proposals(workspace_id, status, created_at)`; `audit_events(workspace_id, created_at desc)`; `claims(candidate_profile_id, status, kind)`; trigram index on `claims` statement (via `claim_revisions`) for near-duplicate detection (`pg_trgm`).
 
 ## 3.6 Access control & tenant isolation (MVP: simple, future-proof)

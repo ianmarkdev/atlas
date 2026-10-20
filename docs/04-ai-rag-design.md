@@ -26,7 +26,7 @@ Embedding versioning: `content_hash = sha256(model_id + search_text)`; `EmbedRet
 
 **SQL (single round trip, CTEs):**
 1. `semantic`: top 40 by cosine distance from `embeddings` joined to filtered `retrieval_units`.
-2. `lexical`: top 40 by `ts_rank_cd(tsv, websearch_to_tsquery('english', :q))`.
+2. `lexical`: top 40 by `ts_rank_cd(tsv, websearch_to_tsquery('english', :q))`, with the query terms joined by `or` (AND semantics match almost nothing for multi-term requirements).
 3. `fused`: Reciprocal Rank Fusion `Σ 1/(60 + rank)`; return top 30 with both ranks.
 
 **App-side reranking (`EvidenceRanker`)**: `final = rrf_norm * w1 + status_boost (verified 1.0, approved 0.9, proposed 0.4) * w2 + specificity (has metric/named tech/date) * w3 + freshness decay (half-life ~5y on date_to) * w4`. Weights in config, tuned by eval. Then **MMR**-style dedupe: drop items with cosine > 0.9 to an already-selected item or same `source_id` lineage (a claim vs. its parent employment/project summary — prefer the claim). Cap: ~8 items per requirement, ~25 per generation, token budget ~6k for evidence.

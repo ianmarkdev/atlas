@@ -10,6 +10,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: N/A (measurements recorded).
 - **DoD**: each spike has a written decision; ADRs updated.
 - **Risks**: SDK immaturity → fall back to HTTP client behind `LlmClient`.
+- **Status (2026-10-20)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S1, S2, S6 open.
 
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
@@ -28,6 +29,15 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: role matrix (VA cannot verify/approve/manage VAs/change budget); 4th VA rejected; deactivated VA cannot log in; second seeded workspace's rows never returned (scoping suite, extended by later milestones).
 - **DoD**: candidate can add 3 VAs; permission matrix green in CI.
 - **Risks**: minimal.
+- **Done (2026-10-20)** — implementation notes:
+  - Models live in `app/Domain/{Tenancy,Knowledge,Audit}` (factories via `#[UseFactory]`); `User` stays in `app/Models`.
+  - `WorkspaceScope` fails closed: querying a tenant model with no workspace in context throws. `SetTenantContext` runs before route-model binding.
+  - Fortify self-registration is turned off (no `/register`); deactivated users cannot sign in, and open sessions are ended on the next request (covers passkey logins).
+  - VA accounts get a random unusable password; the candidate is shown a one-time **set-password link to share** (no email needed; link lifetime = `auth.passwords.users.expire`, default 60 min, regenerate from the Team page). VA emails count as verified because the candidate vouches for them.
+  - `audit_events` is protected by a trigger that rejects UPDATE; DELETE stays possible so workspace deletion (M12) can cascade.
+  - The candidate cannot delete their own account from settings (that is the full data deletion in M12).
+  - Seat-limit concurrency is guarded by `FOR UPDATE` on the workspace row; no automated concurrency test.
+  - The DB session timezone is pinned to UTC (`config/database.php`).
 
 ### M3 — Career knowledge manager (7–10 days)
 - **Objective**: manual knowledge base with verification, revisions and provenance — usable on its own before any AI exists.
@@ -51,7 +61,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 
 ### M6 — Retrieval index, embeddings & retrieval eval (5–7 days)
 - **Objective**: measurable hybrid retrieval.
-- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, hybrid SQL, `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
+- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
 - **Files**: `app/Domain/Retrieval/*`, `app/Domain/Embeddings/*`, `tests/Eval/*`.
 - **Tests**: leakage tests at SQL level, ranking unit tests, re-embed skipped when unchanged, model switch backfill.
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
