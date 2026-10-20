@@ -51,7 +51,7 @@ Hard rules:
 Future-proofing kept cheap: tables still carry `workspace_id` and `candidate_profile_id` so multi-team SaaS later is an additive change, but the MVP UI never exposes workspaces/profiles and there is no profile-level access control, reviewer, or viewer role.
 
 ## 1.4 Core workflows
-1. **Onboard knowledge**: type or paste career history as plain text into UI forms (employments, projects, credentials, one statement per claim, or bulk-add one claim per line) → candidate verifies → verified knowledge base. No file uploads, no document parsing, no AI extraction (D8).
+1. **Onboard knowledge**: type or paste career history as plain text into UI forms (employments, projects, credentials, one statement per claim, or bulk-add one claim per line) plus standard question/answer pairs for the answer library → candidate verifies/approves → verified knowledge base, usable (copy-ready answers) before any AI feature exists. No file uploads, no document parsing, no AI extraction (D8).
 2. **New application (fast path)**: paste JD (+ URL, company, role, deadline) → analysis job → review brief (requirements, questions, evidence matches, gaps) → answer clarification questions → generate → edit with evidence panel → resolve flagged claims → approve → copy/export.
 3. **Achievement discovery**: AI flags thin records ("API integration, no outcome") → asks targeted questions → candidate confirms/revises/rejects → confirmed items become verified claims.
 4. **Feedback learning**: edited answer → diff analysis → classified suggestions (fact correction / reusable answer / writing preference / one-off) → approval queue → versioned knowledge.
@@ -396,10 +396,11 @@ With one workspace and one candidate, the real MVP boundary is **role** (candida
 ## 4.1 Knowledge entry (plain text only — D8)
 No file uploads, no PDF/DOCX parsing, no chunking and no AI claim extraction. Knowledge enters the system only through UI forms.
 1. **Structured forms**: employments, projects, credentials, writing preferences and library answers are created through Inertia forms with plain-text fields (`<textarea>` / `<input>`, no rich text).
-2. **Claims**: one statement per claim, attached to an employment/project/credential or `general`. **Bulk add**: paste a list into a textarea and each non-empty line becomes a draft claim under the chosen subject. This is a deterministic split with no AI, previewed before saving.
-3. **Server-side normalisation** (Form Requests): trim, Unicode NFC, collapse whitespace, strip control and zero-width characters, length limits (claim ≤ 1,000 chars, summaries ≤ 5,000, JD ≤ 50,000).
-4. **Status on save**: claims the candidate enters can be saved as `verified` directly, with `claim_sources(user_confirmation)`. Claims a VA enters are saved as `proposed`, and a VA's change to a verified claim becomes a `revise_claim` proposal (D5).
-5. **Duplicate detection** before insert: exact `normalized_hash`; near-dup via `pg_trgm similarity > 0.6` within same subject, then embedding cosine > 0.92 **[tune in eval]** → surfaced as "possible duplicate of …: merge / keep both".
+2. **Answer library**: question + answer pairs entered by hand (or several pasted at once, separated by a `---` line), with category and optional linked claims. Candidate entries are `approved`, VA entries stay `draft` until the candidate approves them. They are indexed as `library_answer` retrieval units from M6 on.
+3. **Claims**: one statement per claim, attached to an employment/project/credential or `general`. **Bulk add**: paste a list into a textarea and each non-empty line becomes a draft claim under the chosen subject. This is a deterministic split with no AI, previewed before saving.
+4. **Server-side normalisation** (Form Requests): trim, Unicode NFC, collapse whitespace, strip control and zero-width characters, length limits (claim ≤ 1,000 chars, summaries ≤ 5,000, JD ≤ 50,000).
+5. **Status on save**: claims the candidate enters can be saved as `verified` directly, with `claim_sources(user_confirmation)`. Claims a VA enters are saved as `proposed`, and a VA's change to a verified claim becomes a `revise_claim` proposal (D5).
+6. **Duplicate detection** before insert: exact `normalized_hash`; near-dup via `pg_trgm similarity > 0.6` within same subject, then embedding cosine > 0.92 **[tune in eval]** → surfaced as "possible duplicate of …: merge / keep both".
 
 ## 4.2 What to embed
 | Embed | Why |
@@ -531,8 +532,9 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
 - **Already done**: `career-engine` created with Laravel 13, Inertia 3 + React 19 + TS, Tailwind 4, Fortify (auth + 2FA), Wayfinder, Pest 5, Laravel Boost, PHPStan, Pint.
-- **Scope (remaining)**: switch to PostgreSQL + extensions migration (`vector`, `pg_trgm`, `citext`); Redis; Horizon; Vitest + React Testing Library; ESLint/Prettier check; GitHub Actions; Sentry; staging deploy.
-- **Files**: `composer.json`, `config/ai.php`, `.github/workflows/ci.yml`, `database/migrations/0001_extensions.php`, `resources/js/Layouts/AppLayout.tsx`.
+- **Done (2026-10-20)**: PostgreSQL 18 + pgvector 0.8.7 locally (native Windows); first migration `0000_00_00_000000_enable_postgres_extensions` (`vector`, `pg_trgm`, `citext`); PHP tests run on Postgres (`career_engine_test`) instead of SQLite; CI starts a `pgvector/pgvector:pg18` service; Vitest via vite-plus (`npm run test`, wired into `composer ci:check`); lint/format already covered by `vp check` (Oxlint/Oxfmt); PHPStan run with `--memory-limit=1G`.
+- **Scope (remaining)**: Redis + Horizon (moved to the staging setup — Horizon needs `pcntl`/`posix`, unavailable on Windows; local dev uses the database queue); React Testing Library + jsdom (add with the first component tests; adding npm packages currently needs `--legacy-peer-deps` because of the vite-plus `vite` alias); Sentry; staging deploy.
+- **Files**: `composer.json`, `phpunit.xml`, `vite.config.ts`, `.github/workflows/tests.yml`, `database/migrations/0000_00_00_000000_enable_postgres_extensions.php`.
 - **Tests**: auth feature tests, CI green, smoke test page.
 - **DoD**: login/2FA on staging; CI runs PHP + JS tests + static analysis.
 - **Risks**: starter-kit churn between Laravel versions.
@@ -545,12 +547,12 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **DoD**: candidate can add 3 VAs; permission matrix green in CI.
 - **Risks**: minimal.
 
-### M3 — Career knowledge manager (6–8 days)
-- **Objective**: manual knowledge base with verification, revisions and provenance.
-- **Scope**: employments, projects, credentials, claims + revisions + sources, tags, writing preferences; all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
+### M3 — Career knowledge manager (7–10 days)
+- **Objective**: manual knowledge base with verification, revisions and provenance — usable on its own before any AI exists.
+- **Scope**: edit candidate profile (display name, headline); employments, projects, credentials, claims + revisions + sources, tags, writing preferences; **manual answer library** (question + your answer as plain text, category, optional linked claims; candidate saves as `approved`, VA saves as `draft` pending candidate approval; revisions; bulk paste of several Q&A pairs separated by a `---` line, previewed before saving, no AI; search/filter by category and text; copy button); all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
 - **Files**: `app/Domain/Knowledge/*`, `app/Http/Controllers/Knowledge/*`, `app/Http/Requests/Knowledge/*`, `resources/js/Pages/Knowledge/*`.
-- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10).
-- **DoD**: you can enter your real career data and see full history.
+- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; library entry by candidate is `approved`, by VA is `draft` and only the candidate can approve it; editing an entry appends a revision; Q&A bulk paste splits on `---` and rejects a pair without a question or an answer; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10).
+- **DoD**: you can enter your real career data and your standard Q&A answers, copy them out, and see full history.
 - **Risks**: over-modelling — keep claim `kind` list small.
 
 ### M4 — AI gateway & usage tracking (4–5 days)
@@ -590,7 +592,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Tests**: proposed claim never becomes verified without candidate confirmation; rejection suppression.
 
 ### M10 — Feedback learning & approval queue (5–6 days)
-- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, answer library (save approved answer as reusable), writing preferences from proposals.
+- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, "save approved answer to library" (adds the AI path on top of the manual library from M3), writing preferences from proposals.
 - **Tests**: version history integrity, conflict path, VA cannot approve factual proposals, approved knowledge appears in next retrieval; one_off creates no proposal.
 
 ### M11 — VA workflow (4–5 days)
@@ -663,14 +665,14 @@ Total ≈ 11–14 working weeks solo (rough; refine after M0).
 ### MVP epics
 **E1 Foundation** — repo, starter kit, CI, static analysis, Sentry, staging deploy, 2FA.
 **E2 Users & security** — install command (workspace + candidate + profile); candidate/VA roles; VA management with 3-seat limit; workspace scope trait; gates/policies; audit logger; scoping test suite; secure headers.
-**E3 Knowledge** — employments/projects/credentials CRUD (plain-text forms); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
+**E3 Knowledge** — edit candidate profile; employments/projects/credentials CRUD (plain-text forms); manual answer library (Q&A CRUD, draft→approved for VA entries, revisions, bulk paste, copy); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
 **E4 AI gateway** — LlmClient + Anthropic impl + fake; prompt registry; schema validation + repair; runs + payloads; cost table; retries/rate limit; monthly budget ceiling (BudgetGuard, warning, hard stop, settings); usage page.
 **E5 Ingestion** — removed (D8 / ADR-8): no uploads or extraction.
 **E6 Retrieval** — retrieval_units sync; embedding provider + jobs; hybrid SQL; ranker; MMR; context builder; eval fixtures + command; search playground.
 **E7 Applications & analysis** — application CRUD; JD collections; job postings; analysis prompt; requirements/questions; evidence matrix; clarifications; injection warnings.
 **E8 Generation & editor** — generation prompt; validator; versions/claims/evidence; editor + highlights; evidence panel; regenerate; copy.
 **E9 Claim review & achievements** — review queue; convert to proposal; suggestion flow; suppression.
-**E10 Feedback** — diff; analysis job; proposals; approval queue; applier with conflicts; answer library.
+**E10 Feedback** — diff; analysis job; proposals; approval queue; applier with conflicts; save approved answer to library.
 **E11 VA workflow** — assignment; status machine; deadlines; review/approve; activity timeline; dashboard.
 **E12 Privacy & ops** — plain-text export; eval snapshot of real JD collections; data export; deletion; retention; backups/restore drill; prod deploy; runbooks; E2E tests.
 

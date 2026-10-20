@@ -14,8 +14,9 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
 - **Already done**: `career-engine` created with Laravel 13, Inertia 3 + React 19 + TS, Tailwind 4, Fortify (auth + 2FA), Wayfinder, Pest 5, Laravel Boost, PHPStan, Pint.
-- **Scope (remaining)**: switch to PostgreSQL + extensions migration (`vector`, `pg_trgm`, `citext`); Redis; Horizon; Vitest + React Testing Library; ESLint/Prettier check; GitHub Actions; Sentry; staging deploy.
-- **Files**: `composer.json`, `config/ai.php`, `.github/workflows/ci.yml`, `database/migrations/0001_extensions.php`, `resources/js/Layouts/AppLayout.tsx`.
+- **Done (2026-10-20)**: PostgreSQL 18 + pgvector 0.8.7 locally (native Windows); first migration `0000_00_00_000000_enable_postgres_extensions` (`vector`, `pg_trgm`, `citext`); PHP tests run on Postgres (`career_engine_test`) instead of SQLite; CI starts a `pgvector/pgvector:pg18` service; Vitest via vite-plus (`npm run test`, wired into `composer ci:check`); lint/format already covered by `vp check` (Oxlint/Oxfmt); PHPStan run with `--memory-limit=1G`.
+- **Scope (remaining)**: Redis + Horizon (moved to the staging setup — Horizon needs `pcntl`/`posix`, unavailable on Windows; local dev uses the database queue); React Testing Library + jsdom (add with the first component tests; adding npm packages currently needs `--legacy-peer-deps` because of the vite-plus `vite` alias); Sentry; staging deploy.
+- **Files**: `composer.json`, `phpunit.xml`, `vite.config.ts`, `.github/workflows/tests.yml`, `database/migrations/0000_00_00_000000_enable_postgres_extensions.php`.
 - **Tests**: auth feature tests, CI green, smoke test page.
 - **DoD**: login/2FA on staging; CI runs PHP + JS tests + static analysis.
 - **Risks**: starter-kit churn between Laravel versions.
@@ -28,12 +29,12 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **DoD**: candidate can add 3 VAs; permission matrix green in CI.
 - **Risks**: minimal.
 
-### M3 — Career knowledge manager (6–8 days)
-- **Objective**: manual knowledge base with verification, revisions and provenance.
-- **Scope**: employments, projects, credentials, claims + revisions + sources, tags, writing preferences; all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
+### M3 — Career knowledge manager (7–10 days)
+- **Objective**: manual knowledge base with verification, revisions and provenance — usable on its own before any AI exists.
+- **Scope**: edit candidate profile (display name, headline); employments, projects, credentials, claims + revisions + sources, tags, writing preferences; **manual answer library** (question + your answer as plain text, category, optional linked claims; candidate saves as `approved`, VA saves as `draft` pending candidate approval; revisions; bulk paste of several Q&A pairs separated by a `---` line, previewed before saving, no AI; search/filter by category and text; copy button); all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
 - **Files**: `app/Domain/Knowledge/*`, `app/Http/Controllers/Knowledge/*`, `app/Http/Requests/Knowledge/*`, `resources/js/Pages/Knowledge/*`.
-- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10).
-- **DoD**: you can enter your real career data and see full history.
+- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; library entry by candidate is `approved`, by VA is `draft` and only the candidate can approve it; editing an entry appends a revision; Q&A bulk paste splits on `---` and rejects a pair without a question or an answer; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10).
+- **DoD**: you can enter your real career data and your standard Q&A answers, copy them out, and see full history.
 - **Risks**: over-modelling — keep claim `kind` list small.
 
 ### M4 — AI gateway & usage tracking (4–5 days)
@@ -73,7 +74,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Tests**: proposed claim never becomes verified without candidate confirmation; rejection suppression.
 
 ### M10 — Feedback learning & approval queue (5–6 days)
-- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, answer library (save approved answer as reusable), writing preferences from proposals.
+- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, "save approved answer to library" (adds the AI path on top of the manual library from M3), writing preferences from proposals.
 - **Tests**: version history integrity, conflict path, VA cannot approve factual proposals, approved knowledge appears in next retrieval; one_off creates no proposal.
 
 ### M11 — VA workflow (4–5 days)

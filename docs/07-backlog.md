@@ -9,14 +9,14 @@
 ### MVP epics
 **E1 Foundation** — repo, starter kit, CI, static analysis, Sentry, staging deploy, 2FA.
 **E2 Users & security** — install command (workspace + candidate + profile); candidate/VA roles; VA management with 3-seat limit; workspace scope trait; gates/policies; audit logger; scoping test suite; secure headers.
-**E3 Knowledge** — employments/projects/credentials CRUD (plain-text forms); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
+**E3 Knowledge** — edit candidate profile; employments/projects/credentials CRUD (plain-text forms); manual answer library (Q&A CRUD, draft→approved for VA entries, revisions, bulk paste, copy); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
 **E4 AI gateway** — LlmClient + Anthropic impl + fake; prompt registry; schema validation + repair; runs + payloads; cost table; retries/rate limit; monthly budget ceiling (BudgetGuard, warning, hard stop, settings); usage page.
 **E5 Ingestion** — removed (D8 / ADR-8): no uploads or extraction.
 **E6 Retrieval** — retrieval_units sync; embedding provider + jobs; hybrid SQL; ranker; MMR; context builder; eval fixtures + command; search playground.
 **E7 Applications & analysis** — application CRUD; JD collections; job postings; analysis prompt; requirements/questions; evidence matrix; clarifications; injection warnings.
 **E8 Generation & editor** — generation prompt; validator; versions/claims/evidence; editor + highlights; evidence panel; regenerate; copy.
 **E9 Claim review & achievements** — review queue; convert to proposal; suggestion flow; suppression.
-**E10 Feedback** — diff; analysis job; proposals; approval queue; applier with conflicts; answer library.
+**E10 Feedback** — diff; analysis job; proposals; approval queue; applier with conflicts; save approved answer to library.
 **E11 VA workflow** — assignment; status machine; deadlines; review/approve; activity timeline; dashboard.
 **E12 Privacy & ops** — plain-text export; eval snapshot of real JD collections; data export; deletion; retention; backups/restore drill; prod deploy; runbooks; E2E tests.
 
