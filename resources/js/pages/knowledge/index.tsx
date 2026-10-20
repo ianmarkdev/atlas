@@ -1,5 +1,6 @@
 import { Form, Head, Link } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
+import { useState } from 'react';
 import EmploymentController from '@/actions/App/Http/Controllers/Knowledge/EmploymentController';
 import CredentialController from '@/actions/App/Http/Controllers/Knowledge/CredentialController';
 import ProjectController from '@/actions/App/Http/Controllers/Knowledge/ProjectController';
@@ -7,6 +8,8 @@ import SkillController from '@/actions/App/Http/Controllers/Knowledge/SkillContr
 import InputError from '@/components/input-error';
 import { Input } from '@/components/ui/input';
 import { ClaimList } from '@/components/claim-list';
+import { LibraryUsageContext, usageLabel } from '@/components/library-usage';
+import { NativeSelect } from '@/components/native-select';
 import Heading from '@/components/heading';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
 import {
@@ -14,6 +17,8 @@ import {
     PendingChangesContext,
 } from '@/components/pending-changes';
 import { Button } from '@/components/ui/button';
+import { filterLibrary, isFiltering } from '@/lib/library-filter';
+import type { LibraryFilterMode } from '@/lib/library-filter';
 import { index } from '@/routes/knowledge';
 import type {
     Claim,
@@ -55,9 +60,11 @@ export default function KnowledgeIndex({
     canEditSkills,
     showArchived,
     usedIn,
+    answerCitations,
     pendingChanges,
 }: {
     pendingChanges: string[];
+    answerCitations: Record<string, number>;
     employments: Employment[];
     standaloneProjects: Project[];
     generalClaims: Claim[];
@@ -68,185 +75,282 @@ export default function KnowledgeIndex({
     showArchived: boolean;
     usedIn: ResumeUsage;
 }) {
+    const [text, setText] = useState('');
+    const [mode, setMode] = useState<LibraryFilterMode>('all');
+    const filter = { text, mode };
+    const filtering = isFiltering(filter);
     const isEmpty = employments.length === 0 && standaloneProjects.length === 0;
+    const shown = filterLibrary(
+        {
+            employments,
+            standaloneProjects,
+            generalClaims,
+            education,
+            certifications,
+            skills,
+        },
+        usedIn,
+        filter,
+    );
+    const nothingMatches =
+        filtering && Object.values(shown).every((items) => items.length === 0);
 
     return (
         <PendingChangesContext value={new Set(pendingChanges)}>
-            <Head title="Library" />
+            <LibraryUsageContext
+                value={{ resumes: usedIn.claims, answers: answerCitations }}
+            >
+                <Head title="Library" />
 
-            <div className="flex flex-col gap-8 p-4 lg:max-w-4xl">
-                <Heading
-                    title="Library"
-                    description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
-                />
+                <div className="flex flex-col gap-8 p-4 lg:max-w-4xl">
+                    <Heading
+                        title="Library"
+                        description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
+                    />
 
-                <section className="space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <Heading
-                            variant="small"
-                            title="Experience"
-                            description="Each role, with the projects you did there and their bullet points."
-                        />
-                        <div className="flex gap-2">
-                            <Button size="sm" asChild>
-                                <Link href={EmploymentController.create()}>
-                                    <Plus /> Add experience
-                                </Link>
-                            </Button>
-                            <Button size="sm" variant="outline" asChild>
-                                <Link href={ProjectController.create()}>
-                                    <Plus /> Add project
-                                </Link>
-                            </Button>
+                    {!isEmpty && (
+                        <div
+                            role="search"
+                            className="sticky top-0 z-10 -mx-1 flex flex-wrap gap-2 bg-background/95 px-1 py-2 backdrop-blur"
+                        >
+                            <div className="relative min-w-56 flex-1">
+                                <Search
+                                    className="absolute top-2.5 left-2.5 size-4 text-muted-foreground"
+                                    aria-hidden
+                                />
+                                <Input
+                                    type="search"
+                                    value={text}
+                                    onChange={(event) =>
+                                        setText(event.target.value)
+                                    }
+                                    placeholder="Filter by job, project, bullet point or skill"
+                                    aria-label="Filter the library"
+                                    className="pl-8"
+                                />
+                            </div>
+                            <NativeSelect
+                                className="w-56"
+                                value={mode}
+                                onChange={(event) =>
+                                    setMode(
+                                        event.target.value as LibraryFilterMode,
+                                    )
+                                }
+                                options={[
+                                    { value: 'all', label: 'Everything' },
+                                    {
+                                        value: 'unverified',
+                                        label: 'Needs verification',
+                                    },
+                                    {
+                                        value: 'unused',
+                                        label: 'Not on any resume',
+                                    },
+                                ]}
+                                aria-label="Show"
+                            />
+                            {filtering && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => {
+                                        setText('');
+                                        setMode('all');
+                                    }}
+                                >
+                                    Clear
+                                </Button>
+                            )}
                         </div>
-                    </div>
+                    )}
 
-                    {isEmpty && (
+                    {nothingMatches && (
                         <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                            Nothing here yet. Start with your current or most
-                            recent job.
+                            Nothing matches these filters.
                         </p>
                     )}
 
-                    <ul className="space-y-4">
-                        {employments.map((employment) => (
-                            <li
-                                key={employment.ulid}
-                                className="rounded-lg border p-4"
-                            >
-                                <RecordHeader
-                                    title={`${employment.title} · ${employment.employer_name}`}
-                                    subtitle={[
-                                        formatPeriod(
-                                            employment.start_date,
-                                            employment.end_date,
-                                        ),
-                                        employment.location,
-                                    ]
-                                        .filter(Boolean)
-                                        .join(' · ')}
-                                    status={employment.status}
-                                    can={employment.can}
-                                    usedIn={usedIn.employments[employment.ulid]}
-                                    itemKey={`employment:${employment.ulid}`}
-                                    editHref={EmploymentController.edit(
-                                        employment.ulid,
-                                    )}
-                                    actions={{
-                                        verify: EmploymentController.verify.form(
-                                            employment.ulid,
-                                        ),
-                                        archive:
-                                            EmploymentController.archive.form(
-                                                employment.ulid,
-                                            ),
-                                        restore:
-                                            EmploymentController.restore.form(
-                                                employment.ulid,
-                                            ),
-                                    }}
-                                />
-
-                                {employment.summary && (
-                                    <p className="mt-3 text-sm whitespace-pre-line">
-                                        {employment.summary}
-                                    </p>
-                                )}
-
-                                <div className="mt-3">
-                                    <ClaimList
-                                        claims={employment.claims ?? []}
-                                        subject={`employment:${employment.ulid}`}
-                                    />
-                                </div>
-
-                                <div className="mt-4 space-y-2 border-l-2 pl-4">
-                                    {(employment.projects ?? []).map(
-                                        (project) => (
-                                            <ProjectItem
-                                                key={project.ulid}
-                                                project={project}
-                                                usedIn={
-                                                    usedIn.projects[
-                                                        project.ulid
-                                                    ]
-                                                }
-                                            />
-                                        ),
-                                    )}
-                                    <Link
-                                        href={ProjectController.create({
-                                            query: {
-                                                employment: employment.ulid,
-                                            },
-                                        })}
-                                        className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
-                                    >
-                                        <Plus className="size-3.5" /> Add a
-                                        project at {employment.employer_name}
-                                    </Link>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                </section>
-
-                {standaloneProjects.length > 0 && (
                     <section className="space-y-4">
-                        <Heading
-                            variant="small"
-                            title="Other projects"
-                            description="Freelance, side and personal projects not tied to an experience."
-                        />
-                        <ul className="space-y-2">
-                            {standaloneProjects.map((project) => (
-                                <li key={project.ulid}>
-                                    <ProjectItem
-                                        project={project}
-                                        usedIn={usedIn.projects[project.ulid]}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Heading
+                                variant="small"
+                                title="Experience"
+                                description="Each role, with the projects you did there and their bullet points."
+                            />
+                            <div className="flex gap-2">
+                                <Button size="sm" asChild>
+                                    <Link href={EmploymentController.create()}>
+                                        <Plus /> Add experience
+                                    </Link>
+                                </Button>
+                                <Button size="sm" variant="outline" asChild>
+                                    <Link href={ProjectController.create()}>
+                                        <Plus /> Add project
+                                    </Link>
+                                </Button>
+                            </div>
+                        </div>
+
+                        {isEmpty && (
+                            <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                                Nothing here yet. Start with your current or
+                                most recent job.
+                            </p>
+                        )}
+
+                        <ul className="space-y-4">
+                            {shown.employments.map((employment) => (
+                                <li
+                                    key={employment.ulid}
+                                    className="rounded-lg border p-4"
+                                >
+                                    <RecordHeader
+                                        title={`${employment.title} · ${employment.employer_name}`}
+                                        subtitle={[
+                                            formatPeriod(
+                                                employment.start_date,
+                                                employment.end_date,
+                                            ),
+                                            employment.location,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' · ')}
+                                        status={employment.status}
+                                        can={employment.can}
+                                        usedIn={
+                                            usedIn.employments[employment.ulid]
+                                        }
+                                        itemKey={`employment:${employment.ulid}`}
+                                        editHref={EmploymentController.edit(
+                                            employment.ulid,
+                                        )}
+                                        actions={{
+                                            verify: EmploymentController.verify.form(
+                                                employment.ulid,
+                                            ),
+                                            archive:
+                                                EmploymentController.archive.form(
+                                                    employment.ulid,
+                                                ),
+                                            restore:
+                                                EmploymentController.restore.form(
+                                                    employment.ulid,
+                                                ),
+                                        }}
                                     />
+
+                                    {employment.summary && (
+                                        <p className="mt-3 text-sm whitespace-pre-line">
+                                            {employment.summary}
+                                        </p>
+                                    )}
+
+                                    <div className="mt-3">
+                                        <ClaimList
+                                            claims={employment.claims ?? []}
+                                            subject={`employment:${employment.ulid}`}
+                                        />
+                                    </div>
+
+                                    <div className="mt-4 space-y-2 border-l-2 pl-4">
+                                        {(employment.projects ?? []).map(
+                                            (project) => (
+                                                <ProjectItem
+                                                    key={project.ulid}
+                                                    project={project}
+                                                    usedIn={
+                                                        usedIn.projects[
+                                                            project.ulid
+                                                        ]
+                                                    }
+                                                />
+                                            ),
+                                        )}
+                                        <Link
+                                            href={ProjectController.create({
+                                                query: {
+                                                    employment: employment.ulid,
+                                                },
+                                            })}
+                                            className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
+                                        >
+                                            <Plus className="size-3.5" /> Add a
+                                            project at{' '}
+                                            {employment.employer_name}
+                                        </Link>
+                                    </div>
                                 </li>
                             ))}
                         </ul>
                     </section>
-                )}
 
-                <CredentialList
-                    title="Education"
-                    type="education"
-                    credentials={education}
-                    usedIn={usedIn.credentials}
-                />
+                    {shown.standaloneProjects.length > 0 && (
+                        <section className="space-y-4">
+                            <Heading
+                                variant="small"
+                                title="Other projects"
+                                description="Freelance, side and personal projects not tied to an experience."
+                            />
+                            <ul className="space-y-2">
+                                {shown.standaloneProjects.map((project) => (
+                                    <li key={project.ulid}>
+                                        <ProjectItem
+                                            project={project}
+                                            usedIn={
+                                                usedIn.projects[project.ulid]
+                                            }
+                                        />
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
 
-                <CredentialList
-                    title="Certifications"
-                    type="certification"
-                    credentials={certifications}
-                    usedIn={usedIn.credentials}
-                />
-
-                <SkillManager skills={skills} canEdit={canEditSkills} />
-
-                <section className="space-y-4">
-                    <Heading
-                        variant="small"
-                        title="Other facts"
-                        description="Skills, qualifications and other bullet points not tied to one experience or project."
+                    <CredentialList
+                        title="Education"
+                        type="education"
+                        credentials={shown.education}
+                        usedIn={usedIn.credentials}
                     />
-                    <ClaimList claims={generalClaims} subject="general" />
-                </section>
 
-                <Link
-                    href={index({
-                        query: showArchived ? {} : { archived: 1 },
-                    })}
-                    className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                >
-                    {showArchived
-                        ? 'Hide archived records'
-                        : 'Show archived records'}
-                </Link>
-            </div>
+                    <CredentialList
+                        title="Certifications"
+                        type="certification"
+                        credentials={shown.certifications}
+                        usedIn={usedIn.credentials}
+                    />
+
+                    <SkillManager
+                        skills={shown.skills}
+                        usedIn={usedIn.skills}
+                        canEdit={canEditSkills}
+                    />
+
+                    <section className="space-y-4">
+                        <Heading
+                            variant="small"
+                            title="Other facts"
+                            description="Skills, qualifications and other bullet points not tied to one experience or project."
+                        />
+                        <ClaimList
+                            claims={shown.generalClaims}
+                            subject="general"
+                        />
+                    </section>
+
+                    <Link
+                        href={index({
+                            query: showArchived ? {} : { archived: 1 },
+                        })}
+                        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+                    >
+                        {showArchived
+                            ? 'Hide archived records'
+                            : 'Show archived records'}
+                    </Link>
+                </div>
+            </LibraryUsageContext>
         </PendingChangesContext>
     );
 }
@@ -367,9 +471,11 @@ function CredentialList({
 
 function SkillManager({
     skills,
+    usedIn,
     canEdit,
 }: {
     skills: Skill[];
+    usedIn: Record<string, string[]>;
     canEdit: boolean;
 }) {
     return (
@@ -383,34 +489,50 @@ function SkillManager({
                 <p className="text-sm text-muted-foreground">No skills yet.</p>
             ) : (
                 <ul className="flex flex-wrap gap-2">
-                    {skills.map((skill) => (
-                        <li
-                            key={skill.ulid}
-                            className="flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-3 text-sm"
-                        >
-                            {skill.name}
-                            {canEdit && (
-                                <Form
-                                    {...SkillController.destroy.form(
-                                        skill.ulid,
-                                    )}
-                                    options={{ preserveScroll: true }}
-                                >
-                                    {({ processing }) => (
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            className="h-6 px-2 text-xs"
-                                            disabled={processing}
-                                            aria-label={`Remove ${skill.name}`}
-                                        >
-                                            ×
-                                        </Button>
-                                    )}
-                                </Form>
-                            )}
-                        </li>
-                    ))}
+                    {skills.map((skill) => {
+                        const resumes = usedIn[skill.ulid] ?? [];
+
+                        return (
+                            <li
+                                key={skill.ulid}
+                                title={usageLabel(resumes)}
+                                className="flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-3 text-sm"
+                            >
+                                {skill.name}
+                                <span className="text-xs text-muted-foreground">
+                                    {resumes.length > 0
+                                        ? `· ${resumes.length}`
+                                        : '· unused'}
+                                </span>
+                                {canEdit && (
+                                    <Form
+                                        {...SkillController.destroy.form(
+                                            skill.ulid,
+                                        )}
+                                        options={{ preserveScroll: true }}
+                                        onBefore={() =>
+                                            resumes.length === 0 ||
+                                            window.confirm(
+                                                `"${skill.name}" is on ${resumes.join(', ')}. Remove it from your skills? Those resumes will ask you to take it out next time you save them.`,
+                                            )
+                                        }
+                                    >
+                                        {({ processing }) => (
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 px-2 text-xs"
+                                                disabled={processing}
+                                                aria-label={`Remove ${skill.name}`}
+                                            >
+                                                ×
+                                            </Button>
+                                        )}
+                                    </Form>
+                                )}
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
             {canEdit && (
@@ -477,9 +599,7 @@ function RecordHeader({
                     <p className="text-sm text-muted-foreground">{subtitle}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                    {usedIn && usedIn.length > 0
-                        ? `Used in: ${usedIn.join(', ')}`
-                        : 'Not on any resume yet'}
+                    {usageLabel(usedIn)}
                 </p>
             </div>
 

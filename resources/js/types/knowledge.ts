@@ -106,6 +106,15 @@ export type Answer = {
     };
 };
 
+export type TextRevision = {
+    revision_no: number;
+    text: string;
+    change_reason: string | null;
+    author: string | null;
+    from_suggestion: boolean;
+    created_at: string;
+};
+
 export type EvidenceGroup = {
     label: string;
     claims: { ulid: string; statement: string }[];

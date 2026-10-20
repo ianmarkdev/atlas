@@ -14,6 +14,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\BulkStoreClaimsRequest;
 use App\Http\Requests\Knowledge\SaveClaimRequest;
 use App\Http\Resources\ClaimResource;
+use App\Http\Resources\TextRevisionResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -70,6 +71,9 @@ class ClaimController extends Controller
             'subjectLabel' => $this->subjectLabel($claim->subject),
             'defaultSubject' => null,
             'proposing' => $proposing,
+            'history' => TextRevisionResource::collection(
+                $claim->revisions()->with('author:id,name')->reorder('revision_no', 'desc')->limit(30)->get(),
+            )->resolve(),
             ...$this->formOptions(),
         ]);
     }

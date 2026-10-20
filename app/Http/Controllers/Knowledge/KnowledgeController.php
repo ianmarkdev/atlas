@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Domain\Knowledge\AnswerCitations;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimStatus;
@@ -73,6 +74,7 @@ class KnowledgeController extends Controller
                 'display_name' => $profile->display_name,
             ],
             'usedIn' => ResumeUsage::map(),
+            'answerCitations' => AnswerCitations::countsByClaim(),
             'employments' => EmploymentResource::collection($employments)->resolve(),
             'standaloneProjects' => ProjectResource::collection($standaloneProjects)->resolve(),
             'generalClaims' => ClaimResource::collection($generalClaims)->resolve(),

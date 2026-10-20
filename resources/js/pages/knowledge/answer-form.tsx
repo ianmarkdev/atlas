@@ -12,14 +12,22 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { wordCount } from '@/lib/resume-document';
 import { index } from '@/routes/knowledge/answers';
-import type { Answer, EvidenceGroup, SelectOption } from '@/types';
+import { VersionHistory } from '@/components/version-history';
+import type {
+    Answer,
+    EvidenceGroup,
+    SelectOption,
+    TextRevision,
+} from '@/types';
 
 export default function AnswerForm({
     answer,
     proposing,
     categories,
     evidence,
+    history = [],
 }: {
+    history?: TextRevision[];
     answer: Answer | null;
     proposing: boolean;
     categories: SelectOption[];
@@ -45,6 +53,11 @@ export default function AnswerForm({
                     title={isEditing ? 'Edit answer' : 'Add answer'}
                     description="Your own wording, in plain text. Every save keeps the previous version."
                 />
+                {history.length > 0 && (
+                    <div className="-mt-4">
+                        <VersionHistory revisions={history} />
+                    </div>
+                )}
 
                 <Form
                     {...(isEditing

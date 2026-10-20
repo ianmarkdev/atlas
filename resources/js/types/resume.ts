@@ -67,6 +67,7 @@ export type ResumeUsage = {
     projects: Record<string, string[]>;
     claims: Record<string, string[]>;
     credentials: Record<string, string[]>;
+    skills: Record<string, string[]>;
 };
 
 export type Contact = {

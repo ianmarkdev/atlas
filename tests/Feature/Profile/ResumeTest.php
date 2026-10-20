@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\CandidateLanguage;
 use App\Domain\Knowledge\CandidateLink;
 use App\Domain\Knowledge\Claim;
@@ -431,6 +432,22 @@ describe('profile page and status', function () {
         $this->actingAs($candidate)->get(route('knowledge.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->where("usedIn.employments.{$employment->ulid}", ['PHP focused']));
+    });
+
+    test('the library shows which resumes use each skill and how many current answers rely on each bullet point', function () {
+        $candidate = candidateWithTwoFactor();
+        $php = Skill::factory()->inWorkspace(workspaceOf($candidate))->create(['name' => 'PHP']);
+        resumeOf($candidate, ['skills' => [['label' => null, 'items' => [$php->ulid]]]], ['name' => 'PHP focused']);
+        $claim = claimOf($candidate, 'Led a team of four');
+        $answers = AnswerLibraryEntry::factory()->forProfile(profileOf($candidate))->answering('I led four engineers.', [$claim->ulid]);
+        $answers->approved($candidate)->create();
+        $answers->create();
+        $answers->archived()->create();
+
+        $this->actingAs($candidate)->get(route('knowledge.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where("usedIn.skills.{$php->ulid}", ['PHP focused'])
+                ->where("answerCitations.{$claim->ulid}", 2));
     });
 });
 

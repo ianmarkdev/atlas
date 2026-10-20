@@ -136,6 +136,26 @@ describe('revise', function () {
             ->and($claim->lock_version)->toBe(1);
     });
 
+    test('the edit page lists earlier wordings newest first, marking ones from an approved suggestion', function () {
+        $candidate = candidateWithTwoFactor();
+        $claim = claimOf($candidate, 'Led a team of four');
+        $this->actingAs(vaOf($candidate))->put(route('knowledge.claims.update', $claim), [
+            'kind' => 'achievement',
+            'statement' => 'Led a team of five',
+            'lock_version' => 0,
+        ]);
+        $proposal = inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole());
+        $this->actingAs($candidate)->patch(route('knowledge.proposals.approve', $proposal));
+
+        $this->actingAs($candidate)->get(route('knowledge.claims.edit', $claim))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('history', 2)
+                ->where('history.0.text', 'Led a team of five')
+                ->where('history.0.from_suggestion', true)
+                ->where('history.1.text', 'Led a team of four')
+                ->where('history.1.from_suggestion', false));
+    });
+
     test('changing only the kind does not add a revision', function () {
         $candidate = candidateWithTwoFactor();
         $claim = claimOf($candidate, 'Laravel');

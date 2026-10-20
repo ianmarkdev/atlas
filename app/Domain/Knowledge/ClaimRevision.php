@@ -3,6 +3,7 @@
 namespace App\Domain\Knowledge;
 
 use App\Domain\Tenancy\BelongsToWorkspace;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $created_by
  * @property string $created_via
  * @property CarbonImmutable $created_at
+ * @property-read User|null $author
  */
 #[Fillable(['workspace_id', 'claim_id', 'revision_no', 'statement', 'change_reason', 'created_by', 'created_via'])]
 class ClaimRevision extends Model
@@ -28,6 +30,14 @@ class ClaimRevision extends Model
     use BelongsToWorkspace;
 
     public const UPDATED_AT = null;
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function author(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 
     /**
      * @return BelongsTo<Claim, $this>

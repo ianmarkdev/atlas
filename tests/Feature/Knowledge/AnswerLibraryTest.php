@@ -193,6 +193,28 @@ describe('edit', function () {
             ->and($proposal->refresh()->status)->toBe(ProposalStatus::Approved);
     });
 
+    test('the edit page lists earlier versions newest first, marking ones from an approved suggestion', function () {
+        $candidate = candidateWithTwoFactor();
+        $answer = answerOf($candidate, 'Why us?', 'Because.');
+        $this->actingAs($candidate)->put(route('knowledge.answers.update', $answer), [
+            'question' => 'Why us?',
+            'category' => 'motivation',
+            'body' => 'Because of your mission.',
+            'change_reason' => 'More specific',
+            'lock_version' => 0,
+        ]);
+
+        $this->actingAs($candidate)->get(route('knowledge.answers.edit', $answer))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('history', 2)
+                ->where('history.0.revision_no', 2)
+                ->where('history.0.text', 'Because of your mission.')
+                ->where('history.0.change_reason', 'More specific')
+                ->where('history.0.author', $candidate->name)
+                ->where('history.0.from_suggestion', false)
+                ->where('history.1.text', 'Because.'));
+    });
+
     test('an answer of another workspace responds 404', function () {
         $foreign = answerOf(candidateWithTwoFactor(), 'Why us?', 'Because.');
 

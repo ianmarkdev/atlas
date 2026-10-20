@@ -13,6 +13,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\BulkStoreAnswersRequest;
 use App\Http\Requests\Knowledge\SaveAnswerRequest;
 use App\Http\Resources\AnswerResource;
+use App\Http\Resources\TextRevisionResource;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -89,6 +90,9 @@ class AnswerLibraryController extends Controller
         return Inertia::render('knowledge/answer-form', [
             'answer' => AnswerResource::make($answer->load('currentRevision'))->resolve(),
             'proposing' => $this->proposing($request->user(), $answer),
+            'history' => TextRevisionResource::collection(
+                $answer->revisions()->with('author:id,name')->limit(30)->get(),
+            )->resolve(),
             ...$this->formOptions(),
         ]);
     }

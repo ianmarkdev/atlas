@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { index } from '@/routes/knowledge';
-import type { Claim, SelectOption } from '@/types';
+import { VersionHistory } from '@/components/version-history';
+import type { Claim, SelectOption, TextRevision } from '@/types';
 
 export default function ClaimForm({
     claim,
@@ -19,8 +20,10 @@ export default function ClaimForm({
     kinds,
     subjects,
     proposing = false,
+    history = [],
 }: {
     proposing?: boolean;
+    history?: TextRevision[];
     claim: Claim | null;
     subjectLabel: string | null;
     defaultSubject: string | null;
@@ -40,6 +43,11 @@ export default function ClaimForm({
                     title={isEditing ? 'Edit bullet point' : 'Add bullet point'}
                     description="One achievement or responsibility per bullet point, in plain text, e.g. “Cut the nightly invoice run from 4 hours to 20 minutes.” Add numbers only if you can stand behind them."
                 />
+                {history.length > 0 && (
+                    <div className="-mt-4">
+                        <VersionHistory revisions={history} />
+                    </div>
+                )}
 
                 <Form
                     {...(isEditing

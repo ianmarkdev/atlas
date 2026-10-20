@@ -2,6 +2,7 @@ import { Form, Link } from '@inertiajs/react';
 import { ListPlus, Plus } from 'lucide-react';
 import ClaimController from '@/actions/App/Http/Controllers/Knowledge/ClaimController';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
+import { ClaimUsage } from '@/components/library-usage';
 import { PendingChangeBadge } from '@/components/pending-changes';
 import { Button } from '@/components/ui/button';
 import type { Claim } from '@/types';
@@ -67,6 +68,7 @@ function ClaimRow({ claim }: { claim: Claim }) {
                     </p>
                     <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="capitalize">{claim.kind}</span>
+                        <ClaimUsage ulid={claim.ulid} />
                         <PendingChangeBadge itemKey={`claim:${claim.ulid}`} />
                         {claim.status !== 'verified' && (
                             <KnowledgeStatusBadge status={claim.status} />
