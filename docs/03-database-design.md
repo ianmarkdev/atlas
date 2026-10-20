@@ -21,6 +21,14 @@ erDiagram
   candidate_profiles ||--o{ projects : has
   employments ||--o{ projects : "optional parent"
   candidate_profiles ||--o{ claims : has
+  candidate_profiles ||--o{ credentials : "education, certifications"
+  candidate_profiles ||--o{ candidate_languages : speaks
+  candidate_profiles ||--o{ candidate_links : links
+  candidate_profiles ||--o{ resume_variants : "resume variants"
+  resume_variants ||--o{ resume_variant_revisions : versions
+  job_applications ||--o| application_resumes : "tailored resume"
+  application_resumes ||--o{ application_resume_versions : versions
+  application_resume_versions ||--o{ resume_claims : contains
   claims ||--o{ claim_revisions : versions
   claims ||--o{ claim_sources : provenance
   claims }o--o{ tags : tagged
@@ -55,7 +63,7 @@ erDiagram
 - **users**: id, ulid, name, email (unique, citext), password, two_factor_*, is_active, last_login_at.
 - **workspaces**: id, ulid, name, settings jsonb (default models), monthly_ai_budget_micros bigint (default 30_000_000 = US$30), budget_warn_pct smallint (default 80), created_by. MVP: exactly one row, created by a seeder/install command.
 - **workspace_memberships**: id, workspace_id, user_id, role (`candidate|va`), created_by. `UNIQUE(workspace_id, user_id)`; partial unique `UNIQUE(workspace_id) WHERE role='candidate'` (exactly one candidate); VA seat limit (≤ 3 active) enforced in `MembershipService` inside a transaction with `FOR UPDATE` on the workspace row.
-- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, headline. `UNIQUE(workspace_id, id)`. MVP: one row.
+- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, contact info shared by every resume variant (email citext, phone, location), headline (**to be removed in M3 slice 6**: copied into the default resume variant's title). `UNIQUE(workspace_id, id)`. MVP: one row — the *person*; resume variants are separate rows (see "Resumes").
 - (Dropped for MVP: invitations table — candidate creates VA accounts directly and shares a password-reset link; candidate_profile_members; extra roles.)
 
 ### Career knowledge (canonical)
@@ -63,7 +71,7 @@ erDiagram
 - **projects**: id, workspace_id, candidate_profile_id, employment_id (nullable), name, client_name (nullable — careful: confidential), role, start/end, summary, url, status, lock_version.
 - **claims** — the atomic, citable unit:
   - id, ulid, workspace_id, candidate_profile_id
-  - subject_type (`employment|project|education|certification|general`), subject_id (nullable)
+  - subject_type (`employment|project|credential|general`), subject_id (nullable)
   - kind (`responsibility|achievement|metric|skill|technology|qualification|domain|preference|other`)
   - current_revision_id (FK claim_revisions)
   - status (`verified|proposed|rejected|archived`) — **only verified claims can back a `verified` label**
@@ -75,7 +83,10 @@ erDiagram
 - **claim_sources** (provenance, many per claim): id, workspace_id, claim_id, claim_revision_id, source_type (`user_confirmation|project|employment|external_url|answer_version`), source_id, quote/excerpt (short span), confirmed_by, created_at. Note: `answer_version` source is allowed only to record *where it was first suggested*; it never satisfies verification on its own (enforced in `KnowledgeService::verify`, which requires a `user_confirmation` source).
 - **tags**: id, workspace_id, kind (`skill|technology|domain|industry`), name, normalized_name. `UNIQUE(workspace_id, kind, normalized_name)`.
 - **taggables**: tag_id, taggable_type, taggable_id, workspace_id.
-- **education / certifications**: modelled as `subject_type` records in a small `credentials` table (id, workspace_id, profile_id, type, institution, name, awarded_on, status).
+- **credentials** (education and certifications): id, ulid, workspace_id, candidate_profile_id, type (`education|certification`), institution (school / issuer), name (degree / certificate), field_of_study, start_date, end_date (awarded), expires_on, credential_url, summary, status (`verified|proposed|archived`), verified_by/at, created_by, lock_version. Same lifecycle as employments/projects; claims can have `subject_type = credential`.
+- **candidate_languages**: id, workspace_id, candidate_profile_id, language, proficiency (`native|fluent|professional|conversational|basic`), position.
+- **candidate_links**: id, workspace_id, candidate_profile_id, kind (`portfolio|github|linkedin|website|other`), label, url (http/https only), position.
+- **Skills**: `tags` (kind `skill|technology|domain`) attached to the candidate profile via `taggables`; claims are tagged the same way.
 
 ### No documents tables (D8)
 There are no `documents` / `document_chunks` tables: nothing is uploaded or extracted. All knowledge is plain text stored directly on the canonical rows (`claim_revisions.statement`, `employments.summary`, `projects.summary`, library answer bodies). Longer context, such as a case study, goes into a project's `summary` as plain text.
@@ -100,11 +111,26 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **application_questions**: id, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`), prompt_text, word_limit, char_limit, position, status.
 - **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
 
+### Resumes (D9, ADR-9)
+Facts live once in the master record; resume variants and tailored resumes only **choose, order and word** them.
+- **resume_variants** (M3): id, ulid, workspace_id, candidate_profile_id, name (internal, e.g. "Laravel backend"), is_default (partial unique per profile `WHERE is_default`), status (`active|archived`), current_revision_id, lock_version.
+- **resume_variant_revisions** (append-only, M3): id, workspace_id, resume_variant_id, revision_no, document jsonb, created_by, created_via (`manual|duplicated:{id}|from_application:{id}|proposal:{id}`), created_at. `UNIQUE(resume_variant_id, revision_no)`.
+- **application_resumes** (M7): id, ulid, workspace_id, job_application_id (unique), based_on_variant_id, based_on_revision_id, current_version_id, approved_version_id, status (`draft|in_review|approved`), lock_version.
+- **application_resume_versions** (append-only, M7): id, workspace_id, application_resume_id, version_no, document jsonb, facts_snapshot jsonb (employer/title/dates/degree as they were when the version was made, so a submitted resume can be reproduced), author_type (`user|ai`), author_user_id, generation_run_id, parent_version_id, created_at. An approved version is frozen; if the master record changes later, the UI shows "facts changed since this version".
+- **resume_claims** (M8): same shape as `answer_claims` (classification, validation flags, resolution), plus `path` into the document (e.g. `experience.0.bullets.2`).
+
+**Resume document** (`schema_version`, validated by a `ResumeDocument` DTO + JSON schema on every save; one format for variants and tailored versions):
+`{schema_version, title, summary, sections: [{type: experience|education|certifications|skills|languages|links, items: [{ref: "employment:01J…", summary?, bullets: [{text, claims: ["claim:01J…"]}], projects: [{ref: "project:01J…", summary?, bullets: []}]}]}]}`
+- Facts (employer, job title, dates, institution) and contact details are **not** in the document: they are read from the master record by `ref`, so they cannot be changed per variant or per job.
+- On save: every `ref` exists in this workspace and is not archived; projects sit under their own employment; each cited claim belongs to that item; plain-text normalisation and length limits apply.
+- Trade-off (ADR-9): refs inside JSON have no foreign key. An archived or removed item shows as "Removed from your record" in the editor.
+- Variants and tailored versions are **never embedded or retrieved as evidence**.
+
 ### Answers, versions, claims, evidence
 - **answer_drafts**: id, workspace_id, application_question_id, current_version_id, approved_version_id, status (`generating|draft|in_review|approved`), lock_version.
 - **answer_versions** (append-only): id, workspace_id, answer_draft_id, version_no, body text, author_type (`ai|user`), author_user_id, generation_run_id, parent_version_id, created_at. `UNIQUE(answer_draft_id, version_no)`.
 - **answer_claims**: id, workspace_id, answer_version_id, span_start, span_end, text, classification (`verified|inferred|proposed|hypothetical`), model_classification (what the LLM said, for eval), validation_flags text[] (e.g. `downgraded_no_verified_evidence`, `metric_without_source`), resolution (`open|accepted|removed|converted_to_proposal`), resolved_by.
-- **evidence_references**: id, workspace_id, referrer_type (`answer_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
+- **evidence_references**: id, workspace_id, referrer_type (`answer_claim|resume_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
 
 ### Feedback & proposals
 - **feedback_events**: id, workspace_id, answer_draft_id, from_version_id, to_version_id, user_id, diff jsonb (computed server-side), analysis jsonb (Claude output), generation_run_id, status (`pending_analysis|analysed|failed`).

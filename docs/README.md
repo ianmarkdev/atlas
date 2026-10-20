@@ -25,6 +25,7 @@ The user and their virtual assistants (VAs) prepare many job applications. Gener
 - D6. Export format: **plain text** only (plus copy-to-clipboard).
 - D7. Evaluation set: you will group real JD records as you apply; these become the real-world eval set alongside synthetic CI fixtures.
 - D8. **Plain-text input only**: everything is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction, no AI claim extraction (ADR-8; M5 removed).
+- D9. **Resume variants, tailored per job**: one verified master record → several resume variants → a versioned tailored resume per application, which the cover letter is written from. Facts are never edited per variant or job; only selection, order and wording vary (ADR-9).
 
 ## Documents
 

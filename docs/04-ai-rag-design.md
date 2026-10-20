@@ -15,7 +15,7 @@ No file uploads, no PDF/DOCX parsing, no chunking and no AI claim extraction. Kn
 | Claims (verified + proposed, current revision; text includes subject context: "At Acme (2021–23), Senior Dev: …") | Primary evidence |
 | Approved library answers (question_pattern + body) | Reuse and style |
 | Employment/project summaries | Broad context matching; fallback evidence for context not yet split into claims |
-| **Do not embed**: generated answer versions (prevents laundering), audit/ops data, job postings (they're queries, embed transiently or cache per analysis), writing preferences (always included by rule, not retrieved), rejected/archived items |
+| **Do not embed**: generated answer versions and resume variants / tailored resume versions (prevents laundering — wording is not evidence), audit/ops data, job postings (they're queries, embed transiently or cache per analysis), writing preferences (always included by rule, not retrieved), rejected/archived items |
 
 Embedding versioning: `content_hash = sha256(model_id + search_text)`; `EmbedRetrievalUnitsJob` skips when hash unchanged. Regenerate when: source revision changes, `search_text` template version changes (bump `RETRIEVAL_TEXT_VERSION`), or model changes (backfill).
 
@@ -120,3 +120,12 @@ For each claim from the model:
 | Usability | Paste-to-approved for a 5-question application (moderated test with a VA) | ≤ 20 min, no help needed for core flow |
 
 LLMs cannot guarantee zero hallucinations; the guarantees above are about **labelling and gating** (enforced by code), while the rates are statistical targets.
+
+## 4.10 Tailored resumes and the cover-letter storyline (D9)
+- **Inputs**: the application brief (requirements, employer language), the base resume variant revision the application was created from, and the evidence pack (claims with stable IDs `E1..En`).
+- **Output** (M8, `prompts/resume_tailoring/v1`): a full resume document in the same JSON schema as variants (`docs/03-database-design.md` → Resumes): title, summary, which experiences/projects/credentials/skills to include and in what order, item summaries and bullet wording. Each bullet lists the evidence IDs it relies on; the server maps them to claim refs.
+- **Facts cannot be generated**: the schema has no fields for employer, job title, dates or institution, so the model can only select and word, never alter facts. Refs the model returns must exist in the base variant's master record set; unknown refs are dropped and flagged.
+- **Validation**: `ClaimValidator` runs over every bullet and the summary exactly as for answers (4.5): fabricated evidence IDs stripped, `verified` needs a verified claim, unsupported specifics (numbers, organisations, certifications) flagged. Results land in `resume_claims`; the approval gate blocks approving a tailored version with open flagged or unbacked bullets.
+- **Stored as a new version** (`application_resume_versions.author_type = ai`), never overwriting the user's version; the user edits, compares with the variant, and approves.
+- **Cover letter**: generated after the tailored resume. It uses the approved (or current) tailored version as the storyline: the chosen experiences in their order, the bullets as proof points with their evidence IDs. The cover letter's `answer_version` records which resume version it was written from.
+- **Learning** (M10): edits to a tailored version can become proposals: "apply this summary to the variant", "save this bullet as a new claim" (proposed for VAs, verified when the candidate confirms).

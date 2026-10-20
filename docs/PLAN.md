@@ -52,11 +52,12 @@ Future-proofing kept cheap: tables still carry `workspace_id` and `candidate_pro
 
 ## 1.4 Core workflows
 1. **Onboard knowledge**: type or paste career history as plain text into UI forms (employments, projects, credentials, one statement per claim, or bulk-add one claim per line) plus standard question/answer pairs for the answer library → candidate verifies/approves → verified knowledge base, usable (copy-ready answers) before any AI feature exists. No file uploads, no document parsing, no AI extraction (D8).
-2. **New application (fast path)**: paste JD (+ URL, company, role, deadline) → analysis job → review brief (requirements, questions, evidence matches, gaps) → answer clarification questions → generate → edit with evidence panel → resolve flagged claims → approve → copy/export.
-3. **Achievement discovery**: AI flags thin records ("API integration, no outcome") → asks targeted questions → candidate confirms/revises/rejects → confirmed items become verified claims.
-4. **Feedback learning**: edited answer → diff analysis → classified suggestions (fact correction / reusable answer / writing preference / one-off) → approval queue → versioned knowledge.
-5. **JD collections**: as you apply, JDs are grouped into named collections (e.g. "Laravel backend roles", "Agency roles"); a collection can be flagged `use_for_eval` so its JDs + your approved answers become evaluation cases.
-6. **VA workflow**: candidate assigns application to VA → VA prepares → submits for review → candidate approves or requests changes → marked submitted externally.
+2. **Resume variants**: from the verified master record, build several reusable resume variants (e.g. "Laravel backend", "Full-stack React"), each with its own title, summary, chosen and ordered experiences/projects, education, certifications, skills, languages and links, and bullets that cite claims. Facts (employers, titles, dates, degrees) come from the master record and are never edited per variant (D9).
+3. **New application (fast path)**: paste JD (+ URL, company, role, deadline) → pick a resume variant (copied into the application's **tailored resume**) → analysis job → review brief (requirements, questions, evidence matches, gaps) → answer clarification questions → tailor the resume (manually in M7, AI-generated from M8) → generate answers and a cover letter that tells the story of the tailored resume → edit with evidence panel → resolve flagged claims → approve → copy/export.
+4. **Achievement discovery**: AI flags thin records ("API integration, no outcome") → asks targeted questions → candidate confirms/revises/rejects → confirmed items become verified claims.
+5. **Feedback learning**: edited answer → diff analysis → classified suggestions (fact correction / reusable answer / writing preference / one-off) → approval queue → versioned knowledge.
+6. **JD collections**: as you apply, JDs are grouped into named collections (e.g. "Laravel backend roles", "Agency roles"); a collection can be flagged `use_for_eval` so its JDs + your approved answers become evaluation cases.
+7. **VA workflow**: candidate assigns application to VA → VA prepares → submits for review → candidate approves or requests changes → marked submitted externally.
 
 ## 1.5 MVP vs later
 
@@ -64,6 +65,7 @@ Future-proofing kept cheap: tables still carry `workspace_id` and `candidate_pro
 |---|---|---|
 | Auth, 1 candidate + ≤3 VAs, two roles | Reviewer role, multiple candidate profiles | Multiple workspaces, self-serve signup, billing, SSO, Postgres RLS |
 | Manual knowledge entry via plain-text UI forms (no file uploads) | Portfolio URL import, LinkedIn export import | Per-tenant encryption keys |
+| Resume variants + per-application tailored resume (manual in M7, AI in M8) | PDF/DOCX resume export with templates | |
 | Claims with verification + provenance + revisions | Duplicate merge UI with semantic clustering | Data residency options |
 | JD analysis → brief | JD import from URL (fetched server-side, sanitised) | Browser extension for copy-fill |
 | Evidence-first generation, claim labels, evidence panel | Reranker model, retrieval tuning UI | Graph agent framework if justified (see ADR-4) |
@@ -96,6 +98,7 @@ Confirmed decisions (2026-10-20):
 - D6. Export format: **plain text** only (plus copy-to-clipboard).
 - D7. Evaluation set: you will group real JD records as you apply; these become the real-world eval set alongside synthetic CI fixtures.
 - D8. **Plain-text input only**: every input (career knowledge, JDs, questions, answers, preferences) is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction from files, no AI claim extraction from documents.
+- D9. **Resume variants, tailored per job — facts once, wording varies**: one candidate has one verified master record (contact, employments, projects, claims, education, certifications, skills, languages, links) and several reusable **resume variants**. Each job application gets a **tailored resume** copied from a variant, with its own versioned title, summary, selection/order and wording, and the cover letter is written from that tailored resume. Employers, job titles, dates, degrees and issuers are never copied or edited per variant or per job; bullets cite claims (ADR-9).
 
 Remaining assumptions:
 - A1. Content is English.
@@ -264,6 +267,14 @@ erDiagram
   candidate_profiles ||--o{ projects : has
   employments ||--o{ projects : "optional parent"
   candidate_profiles ||--o{ claims : has
+  candidate_profiles ||--o{ credentials : "education, certifications"
+  candidate_profiles ||--o{ candidate_languages : speaks
+  candidate_profiles ||--o{ candidate_links : links
+  candidate_profiles ||--o{ resume_variants : "resume variants"
+  resume_variants ||--o{ resume_variant_revisions : versions
+  job_applications ||--o| application_resumes : "tailored resume"
+  application_resumes ||--o{ application_resume_versions : versions
+  application_resume_versions ||--o{ resume_claims : contains
   claims ||--o{ claim_revisions : versions
   claims ||--o{ claim_sources : provenance
   claims }o--o{ tags : tagged
@@ -298,7 +309,7 @@ erDiagram
 - **users**: id, ulid, name, email (unique, citext), password, two_factor_*, is_active, last_login_at.
 - **workspaces**: id, ulid, name, settings jsonb (default models), monthly_ai_budget_micros bigint (default 30_000_000 = US$30), budget_warn_pct smallint (default 80), created_by. MVP: exactly one row, created by a seeder/install command.
 - **workspace_memberships**: id, workspace_id, user_id, role (`candidate|va`), created_by. `UNIQUE(workspace_id, user_id)`; partial unique `UNIQUE(workspace_id) WHERE role='candidate'` (exactly one candidate); VA seat limit (≤ 3 active) enforced in `MembershipService` inside a transaction with `FOR UPDATE` on the workspace row.
-- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, headline. `UNIQUE(workspace_id, id)`. MVP: one row.
+- **candidate_profiles**: id, ulid, workspace_id, user_id (the candidate's account), display_name, contact info shared by every resume variant (email citext, phone, location), headline (**to be removed in M3 slice 6**: copied into the default resume variant's title). `UNIQUE(workspace_id, id)`. MVP: one row — the *person*; resume variants are separate rows (see "Resumes").
 - (Dropped for MVP: invitations table — candidate creates VA accounts directly and shares a password-reset link; candidate_profile_members; extra roles.)
 
 ### Career knowledge (canonical)
@@ -306,7 +317,7 @@ erDiagram
 - **projects**: id, workspace_id, candidate_profile_id, employment_id (nullable), name, client_name (nullable — careful: confidential), role, start/end, summary, url, status, lock_version.
 - **claims** — the atomic, citable unit:
   - id, ulid, workspace_id, candidate_profile_id
-  - subject_type (`employment|project|education|certification|general`), subject_id (nullable)
+  - subject_type (`employment|project|credential|general`), subject_id (nullable)
   - kind (`responsibility|achievement|metric|skill|technology|qualification|domain|preference|other`)
   - current_revision_id (FK claim_revisions)
   - status (`verified|proposed|rejected|archived`) — **only verified claims can back a `verified` label**
@@ -318,7 +329,10 @@ erDiagram
 - **claim_sources** (provenance, many per claim): id, workspace_id, claim_id, claim_revision_id, source_type (`user_confirmation|project|employment|external_url|answer_version`), source_id, quote/excerpt (short span), confirmed_by, created_at. Note: `answer_version` source is allowed only to record *where it was first suggested*; it never satisfies verification on its own (enforced in `KnowledgeService::verify`, which requires a `user_confirmation` source).
 - **tags**: id, workspace_id, kind (`skill|technology|domain|industry`), name, normalized_name. `UNIQUE(workspace_id, kind, normalized_name)`.
 - **taggables**: tag_id, taggable_type, taggable_id, workspace_id.
-- **education / certifications**: modelled as `subject_type` records in a small `credentials` table (id, workspace_id, profile_id, type, institution, name, awarded_on, status).
+- **credentials** (education and certifications): id, ulid, workspace_id, candidate_profile_id, type (`education|certification`), institution (school / issuer), name (degree / certificate), field_of_study, start_date, end_date (awarded), expires_on, credential_url, summary, status (`verified|proposed|archived`), verified_by/at, created_by, lock_version. Same lifecycle as employments/projects; claims can have `subject_type = credential`.
+- **candidate_languages**: id, workspace_id, candidate_profile_id, language, proficiency (`native|fluent|professional|conversational|basic`), position.
+- **candidate_links**: id, workspace_id, candidate_profile_id, kind (`portfolio|github|linkedin|website|other`), label, url (http/https only), position.
+- **Skills**: `tags` (kind `skill|technology|domain`) attached to the candidate profile via `taggables`; claims are tagged the same way.
 
 ### No documents tables (D8)
 There are no `documents` / `document_chunks` tables: nothing is uploaded or extracted. All knowledge is plain text stored directly on the canonical rows (`claim_revisions.statement`, `employments.summary`, `projects.summary`, library answer bodies). Longer context, such as a case study, goes into a project's `summary` as plain text.
@@ -343,11 +357,26 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **application_questions**: id, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`), prompt_text, word_limit, char_limit, position, status.
 - **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
 
+### Resumes (D9, ADR-9)
+Facts live once in the master record; resume variants and tailored resumes only **choose, order and word** them.
+- **resume_variants** (M3): id, ulid, workspace_id, candidate_profile_id, name (internal, e.g. "Laravel backend"), is_default (partial unique per profile `WHERE is_default`), status (`active|archived`), current_revision_id, lock_version.
+- **resume_variant_revisions** (append-only, M3): id, workspace_id, resume_variant_id, revision_no, document jsonb, created_by, created_via (`manual|duplicated:{id}|from_application:{id}|proposal:{id}`), created_at. `UNIQUE(resume_variant_id, revision_no)`.
+- **application_resumes** (M7): id, ulid, workspace_id, job_application_id (unique), based_on_variant_id, based_on_revision_id, current_version_id, approved_version_id, status (`draft|in_review|approved`), lock_version.
+- **application_resume_versions** (append-only, M7): id, workspace_id, application_resume_id, version_no, document jsonb, facts_snapshot jsonb (employer/title/dates/degree as they were when the version was made, so a submitted resume can be reproduced), author_type (`user|ai`), author_user_id, generation_run_id, parent_version_id, created_at. An approved version is frozen; if the master record changes later, the UI shows "facts changed since this version".
+- **resume_claims** (M8): same shape as `answer_claims` (classification, validation flags, resolution), plus `path` into the document (e.g. `experience.0.bullets.2`).
+
+**Resume document** (`schema_version`, validated by a `ResumeDocument` DTO + JSON schema on every save; one format for variants and tailored versions):
+`{schema_version, title, summary, sections: [{type: experience|education|certifications|skills|languages|links, items: [{ref: "employment:01J…", summary?, bullets: [{text, claims: ["claim:01J…"]}], projects: [{ref: "project:01J…", summary?, bullets: []}]}]}]}`
+- Facts (employer, job title, dates, institution) and contact details are **not** in the document: they are read from the master record by `ref`, so they cannot be changed per variant or per job.
+- On save: every `ref` exists in this workspace and is not archived; projects sit under their own employment; each cited claim belongs to that item; plain-text normalisation and length limits apply.
+- Trade-off (ADR-9): refs inside JSON have no foreign key. An archived or removed item shows as "Removed from your record" in the editor.
+- Variants and tailored versions are **never embedded or retrieved as evidence**.
+
 ### Answers, versions, claims, evidence
 - **answer_drafts**: id, workspace_id, application_question_id, current_version_id, approved_version_id, status (`generating|draft|in_review|approved`), lock_version.
 - **answer_versions** (append-only): id, workspace_id, answer_draft_id, version_no, body text, author_type (`ai|user`), author_user_id, generation_run_id, parent_version_id, created_at. `UNIQUE(answer_draft_id, version_no)`.
 - **answer_claims**: id, workspace_id, answer_version_id, span_start, span_end, text, classification (`verified|inferred|proposed|hypothetical`), model_classification (what the LLM said, for eval), validation_flags text[] (e.g. `downgraded_no_verified_evidence`, `metric_without_source`), resolution (`open|accepted|removed|converted_to_proposal`), resolved_by.
-- **evidence_references**: id, workspace_id, referrer_type (`answer_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
+- **evidence_references**: id, workspace_id, referrer_type (`answer_claim|resume_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
 
 ### Feedback & proposals
 - **feedback_events**: id, workspace_id, answer_draft_id, from_version_id, to_version_id, user_id, diff jsonb (computed server-side), analysis jsonb (Claude output), generation_run_id, status (`pending_analysis|analysed|failed`).
@@ -408,7 +437,7 @@ No file uploads, no PDF/DOCX parsing, no chunking and no AI claim extraction. Kn
 | Claims (verified + proposed, current revision; text includes subject context: "At Acme (2021–23), Senior Dev: …") | Primary evidence |
 | Approved library answers (question_pattern + body) | Reuse and style |
 | Employment/project summaries | Broad context matching; fallback evidence for context not yet split into claims |
-| **Do not embed**: generated answer versions (prevents laundering), audit/ops data, job postings (they're queries, embed transiently or cache per analysis), writing preferences (always included by rule, not retrieved), rejected/archived items |
+| **Do not embed**: generated answer versions and resume variants / tailored resume versions (prevents laundering — wording is not evidence), audit/ops data, job postings (they're queries, embed transiently or cache per analysis), writing preferences (always included by rule, not retrieved), rejected/archived items |
 
 Embedding versioning: `content_hash = sha256(model_id + search_text)`; `EmbedRetrievalUnitsJob` skips when hash unchanged. Regenerate when: source revision changes, `search_text` template version changes (bump `RETRIEVAL_TEXT_VERSION`), or model changes (backfill).
 
@@ -514,6 +543,15 @@ For each claim from the model:
 
 LLMs cannot guarantee zero hallucinations; the guarantees above are about **labelling and gating** (enforced by code), while the rates are statistical targets.
 
+## 4.10 Tailored resumes and the cover-letter storyline (D9)
+- **Inputs**: the application brief (requirements, employer language), the base resume variant revision the application was created from, and the evidence pack (claims with stable IDs `E1..En`).
+- **Output** (M8, `prompts/resume_tailoring/v1`): a full resume document in the same JSON schema as variants (`docs/03-database-design.md` → Resumes): title, summary, which experiences/projects/credentials/skills to include and in what order, item summaries and bullet wording. Each bullet lists the evidence IDs it relies on; the server maps them to claim refs.
+- **Facts cannot be generated**: the schema has no fields for employer, job title, dates or institution, so the model can only select and word, never alter facts. Refs the model returns must exist in the base variant's master record set; unknown refs are dropped and flagged.
+- **Validation**: `ClaimValidator` runs over every bullet and the summary exactly as for answers (4.5): fabricated evidence IDs stripped, `verified` needs a verified claim, unsupported specifics (numbers, organisations, certifications) flagged. Results land in `resume_claims`; the approval gate blocks approving a tailored version with open flagged or unbacked bullets.
+- **Stored as a new version** (`application_resume_versions.author_type = ai`), never overwriting the user's version; the user edits, compares with the variant, and approves.
+- **Cover letter**: generated after the tailored resume. It uses the approved (or current) tailored version as the storyline: the chosen experiences in their order, the bullets as proof points with their evidence IDs. The cover letter's `answer_version` records which resume version it was written from.
+- **Learning** (M10): edits to a tailored version can become proposals: "apply this summary to the variant", "save this bullet as a new claim" (proposed for VAs, verified when the candidate confirms).
+
 ---
 
 # Deliverable 5 — Implementation roadmap
@@ -557,12 +595,21 @@ Ordering principle: security & data integrity foundations first, then knowledge,
   - Seat-limit concurrency is guarded by `FOR UPDATE` on the workspace row; no automated concurrency test.
   - The DB session timezone is pinned to UTC (`config/database.php`).
 
-### M3 — Career knowledge manager (7–10 days)
-- **Objective**: manual knowledge base with verification, revisions and provenance — usable on its own before any AI exists.
-- **Scope**: edit candidate profile (display name, headline); employments, projects, credentials, claims + revisions + sources, tags, writing preferences; **manual answer library** (question + your answer as plain text, category, optional linked claims; candidate saves as `approved`, VA saves as `draft` pending candidate approval; revisions; bulk paste of several Q&A pairs separated by a `---` line, previewed before saving, no AI; search/filter by category and text; copy button); all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
+### M3 — Career knowledge manager + resume variants (11–15 days)
+- **Objective**: manual knowledge base with verification, revisions and provenance, plus reusable resume variants built from it (D9) — usable on its own before any AI exists.
+- **Slices** (in order; claims come before variants because resume bullets cite claims):
+  1. Plain-text normalisation + edit candidate profile — **done**
+  2. Employments + projects — **done**
+  3. Claims: revisions, sources, verify/archive, exact + trigram duplicates, bulk add
+  4. VA edits of verified claims as `revise_claim` proposals + candidate approve/reject
+  5. Contact info (email, phone, location on `candidate_profiles`), education + certifications (`credentials`), skills (tags), languages, links
+  6. Resume variants: `resume_variants` + revisions, `ResumeDocument` validator, editor with live preview, plain-text copy; `headline` migrates into the default variant's title
+  7. Manual answer library
+  8. Polish: filters, revision history drawer
+- **Scope**: contact info; employments, projects, credentials (education, certifications), languages, links, claims + revisions + sources, tags, writing preferences; **manual answer library** (question + your answer as plain text, category, optional linked claims; candidate saves as `approved`, VA saves as `draft` pending candidate approval; revisions; bulk paste of several Q&A pairs separated by a `---` line, previewed before saving, no AI; search/filter by category and text; copy button); **resume variants** (several per candidate, e.g. "Laravel backend"; each with title, summary, chosen and ordered items, item summaries, bullets citing claims; facts read-only from the master record; candidate-only edits; append-only revisions; default variant; duplicate; plain-text copy); all entered as plain text in UI forms (D8); bulk-add claims (paste a list, one claim per line, preview, then save, with no AI); server-side text normalisation + length limits; verify/archive actions; optimistic locking; exact + trigram duplicate detection; knowledge manager UI (list by employment, filters by status/kind/tag, revision history drawer).
 - **Files**: `app/Domain/Knowledge/*`, `app/Http/Controllers/Knowledge/*`, `app/Http/Requests/Knowledge/*`, `resources/js/Pages/Knowledge/*`.
-- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; library entry by candidate is `approved`, by VA is `draft` and only the candidate can approve it; editing an entry appends a revision; Q&A bulk paste splits on `---` and rejects a pair without a question or an answer; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10).
-- **DoD**: you can enter your real career data and your standard Q&A answers, copy them out, and see full history.
+- **Tests**: verify requires candidate + confirmation source; bulk add splits lines and skips blanks/duplicates; library entry by candidate is `approved`, by VA is `draft` and only the candidate can approve it; editing an entry appends a revision; Q&A bulk paste splits on `---` and rejects a pair without a question or an answer; normalisation strips control/zero-width chars and enforces limits; revisions append-only; lock_version conflict → 409; duplicate guard; VA edit of a verified claim creates a pending `revise_claim` proposal and leaves the claim unchanged (minimal proposal table + candidate approve/reject lands here; the AI-driven feedback queue arrives in M10); resume document refs must belong to the workspace and not be archived; a document that tries to set employer/title/dates is rejected; a bullet citing another item's claim is rejected; each variant save appends a revision; VA cannot edit variants; one default variant per profile; `headline` → default variant migration.
+- **DoD**: you can enter your real career data and your standard Q&A answers, build two resume variants from it, copy them out as plain text, and see full history.
 - **Risks**: over-modelling — keep claim `kind` list small.
 
 ### M4 — AI gateway & usage tracking (4–5 days)
@@ -585,15 +632,15 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
 - **Risks**: weights over-fit to tiny dataset — keep defaults simple.
 
-### M7 — Applications & JD analysis (5–6 days)
-- **Objective**: paste JD → brief.
-- **Scope**: applications CRUD, JD collections (create/assign/filter, `use_for_eval` flag), immutable job_postings, analysis job (requirements, questions, employer language, injection warnings), per-requirement evidence matching, gaps → clarification requests, brief page (requirements ↔ evidence matrix, editable question list).
-- **Tests**: injection fixtures produce warnings and no state change beyond brief; JD stored verbatim; re-analysis creates new version.
+### M7 — Applications, JD analysis & tailored resume (7–9 days)
+- **Objective**: paste JD → brief, and a tailored resume per application.
+- **Scope**: applications CRUD, JD collections (create/assign/filter, `use_for_eval` flag), immutable job_postings, analysis job (requirements, questions, employer language, injection warnings), per-requirement evidence matching, gaps → clarification requests, brief page (requirements ↔ evidence matrix, editable question list); **tailored resume** (pick a variant when creating the application → copied into `application_resumes` v1 with `facts_snapshot`; same editor as variants; version dropdown; "changes vs. variant" diff; approve (frozen); "save back to variant"; plain-text export).
+- **Tests**: injection fixtures produce warnings and no state change beyond brief; JD stored verbatim; re-analysis creates new version; creating an application copies the variant revision into v1 with a facts snapshot; resume versions are append-only; an approved version cannot change.
 - **DoD**: brief for 10 eval JDs looks correct on manual review.
 
-### M8 — Answer generation, editor & evidence panel (8–10 days)
+### M8 — Answer generation, editor & evidence panel (10–12 days)
 - **Objective**: the core value.
-- **Scope**: generation job per question + cover letter; `ClaimValidator`; answer_versions/claims/evidence persistence; editor (textarea or lightweight rich editor — **decide**; recommend plain textarea + highlight overlay first), claim highlights by class, evidence side panel (open source record + revision), regenerate (whole / with instruction), optimistic locking, word/char counters, copy-to-clipboard per answer & all.
+- **Scope**: generation job per question + cover letter; **AI-tailored resume version** (title, summary, item selection/order, bullet wording from the brief + evidence; stored as a new `application_resume_versions` row with `author_type = ai`); **cover letter written from the tailored resume's storyline** (chosen experiences in order, claims as evidence); `ClaimValidator` (also over resume bullets → `resume_claims`); answer_versions/claims/evidence persistence; editor (textarea or lightweight rich editor — **decide**; recommend plain textarea + highlight overlay first), claim highlights by class, evidence side panel (open source record + revision), regenerate (whole / with instruction), optimistic locking, word/char counters, copy-to-clipboard per answer & all.
 - **Tests**: validator downgrade rules, fabricated citation stripping, approval blocked with open proposed claims, concurrent save conflict, a11y (keyboard nav, labels, colour not sole indicator).
 - **DoD**: end-to-end on eval JDs meets grounding targets; you complete one real application with it.
 
@@ -602,7 +649,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Tests**: proposed claim never becomes verified without candidate confirmation; rejection suppression.
 
 ### M10 — Feedback learning & approval queue (5–6 days)
-- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, "save approved answer to library" (adds the AI path on top of the manual library from M3), writing preferences from proposals.
+- **Scope**: feedback events, diff, analysis job, proposal routing by scope/role, approval queue UI (diff view, approve/edit-then-approve/reject), `ProposalApplier` with conflict detection, "save approved answer to library" (adds the AI path on top of the manual library from M3), writing preferences from proposals, tailored-resume edits → proposals ("apply this summary to the variant", "save bullet as new claim").
 - **Tests**: version history integrity, conflict path, VA cannot approve factual proposals, approved knowledge appears in next retrieval; one_off creates no proposal.
 
 ### M11 — VA workflow (4–5 days)
@@ -610,11 +657,11 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Tests**: transition guards, role checks, activity correctness.
 
 ### M12 — Export, privacy & production hardening (4–6 days)
-- **Scope**: plain-text answer/application export, `eval:snapshot` for real JD collections, data export ZIP, full data deletion, retention jobs, security headers/CSP, backups + restore drill, rate limiting, production deploy, runbooks, live eval run.
+- **Scope**: plain-text answer/application export (incl. the approved tailored resume), `eval:snapshot` for real JD collections, data export ZIP, full data deletion, retention jobs, security headers/CSP, backups + restore drill, rate limiting, production deploy, runbooks, live eval run.
 - **Tests**: deletion removes rows + export files + embeddings + payloads; export completeness; E2E (Playwright) happy path.
 - **DoD**: production launch checklist complete.
 
-Total ≈ 11–14 working weeks solo (rough; refine after M0).
+Total ≈ 12–16 working weeks solo (rough; refine after M0).
 
 ---
 
@@ -662,6 +709,12 @@ Total ≈ 11–14 working weeks solo (rough; refine after M0).
 - **Consequences**: smaller attack surface (no file handling or storage of uploads), less infrastructure (no ingest queue; object storage only for export ZIPs), no extraction cost. Onboarding takes more manual typing, which bulk add mitigates. Every claim is entered by a human, so its provenance is always `user_confirmation` or a proposal.
 - **Revisit when**: manual entry proves to be a real bottleneck, for example when onboarding another candidate. The first step would then be AI-suggested claims from pasted text, still landing as proposals.
 
+### ADR-9 Facts once, wording per variant and per job
+- **Context**: the candidate wants several resumes (e.g. backend vs. full-stack) and a version tailored to every job description, which the cover letter then follows. Copying employments and projects into each resume would duplicate facts, let them drift apart, and break verification.
+- **Decision**: three layers. (1) One verified **master record** (contact, employments, projects, claims, credentials, skills, languages, links). (2) **Resume variants** with append-only revisions. (3) A **tailored resume per application** with append-only versions. Variants and versions are stored as one JSON document format that **refers** to master-record items by ULID and holds only presentation: title, summary, selection, order, item summaries and bullet wording, with bullets citing claims. Facts are rendered from the master record; tailored versions also keep a `facts_snapshot` so a submitted resume can be reproduced.
+- **Alternatives**: normalised per-variant copy tables (facts duplicated, many tables, harder versioning); fully free-text resumes (no link to evidence, no validation).
+- **Consequences**: one editor, one validator and one schema for variants, tailored versions and AI output; facts can't be changed per job; the AI can only select and word. Refs inside JSON have no foreign key, so validation runs on every save and the editor shows "Removed from your record" for archived refs. Variants and tailored versions are never indexed as evidence.
+
 ---
 
 # Deliverable 7 — Initial implementation backlog
@@ -675,12 +728,12 @@ Total ≈ 11–14 working weeks solo (rough; refine after M0).
 ### MVP epics
 **E1 Foundation** — repo, starter kit, CI, static analysis, Sentry, staging deploy, 2FA.
 **E2 Users & security** — install command (workspace + candidate + profile); candidate/VA roles; VA management with 3-seat limit; workspace scope trait; gates/policies; audit logger; scoping test suite; secure headers.
-**E3 Knowledge** — edit candidate profile; employments/projects/credentials CRUD (plain-text forms); manual answer library (Q&A CRUD, draft→approved for VA entries, revisions, bulk paste, copy); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
+**E3 Knowledge** — contact info (email, phone, location, links, languages); employments/projects/credentials (education, certifications) CRUD (plain-text forms); skills; resume variants (document validator, editor with live preview, default variant, duplicate, revisions, plain-text copy); manual answer library (Q&A CRUD, draft→approved for VA entries, revisions, bulk paste, copy); claims + revisions + sources; bulk-add claims (one per line); text normalisation + limits; verify flow; tags; writing preferences; dup detection; knowledge manager UI; revision history UI.
 **E4 AI gateway** — LlmClient + Anthropic impl + fake; prompt registry; schema validation + repair; runs + payloads; cost table; retries/rate limit; monthly budget ceiling (BudgetGuard, warning, hard stop, settings); usage page.
 **E5 Ingestion** — removed (D8 / ADR-8): no uploads or extraction.
 **E6 Retrieval** — retrieval_units sync; embedding provider + jobs; hybrid SQL; ranker; MMR; context builder; eval fixtures + command; search playground.
-**E7 Applications & analysis** — application CRUD; JD collections; job postings; analysis prompt; requirements/questions; evidence matrix; clarifications; injection warnings.
-**E8 Generation & editor** — generation prompt; validator; versions/claims/evidence; editor + highlights; evidence panel; regenerate; copy.
+**E7 Applications & analysis** — application CRUD; JD collections; job postings; analysis prompt; requirements/questions; evidence matrix; clarifications; injection warnings; tailored resume per application (copy from variant, manual editor, versions, diff vs. variant, approve, save back to variant).
+**E8 Generation & editor** — generation prompt; AI-tailored resume version; cover letter from the tailored resume's storyline; validator (answers and resume bullets); versions/claims/evidence; editor + highlights; evidence panel; regenerate; copy.
 **E9 Claim review & achievements** — review queue; convert to proposal; suggestion flow; suppression.
 **E10 Feedback** — diff; analysis job; proposals; approval queue; applier with conflicts; save approved answer to library.
 **E11 VA workflow** — assignment; status machine; deadlines; review/approve; activity timeline; dashboard.
@@ -691,7 +744,7 @@ Total ≈ 11–14 working weeks solo (rough; refine after M0).
 - Realtime updates via Laravel Reverb; notifications (email/Slack)
 - Reranker model; grounding-check pass by default; in-app eval dashboard
 - JD import from URL (server-side fetch, SSRF protections)
-- Markdown/DOCX/PDF export; cover letter templates
+- Markdown/DOCX/PDF export (answers and resumes, with resume templates); cover letter templates
 - Multi-candidate / multi-team support, extra roles, Postgres RLS
 - Interview prep mode; question bank analytics
 - Semantic duplicate clustering & merge UI

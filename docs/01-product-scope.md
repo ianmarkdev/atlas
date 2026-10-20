@@ -34,11 +34,12 @@ Future-proofing kept cheap: tables still carry `workspace_id` and `candidate_pro
 
 ## 1.4 Core workflows
 1. **Onboard knowledge**: type or paste career history as plain text into UI forms (employments, projects, credentials, one statement per claim, or bulk-add one claim per line) plus standard question/answer pairs for the answer library → candidate verifies/approves → verified knowledge base, usable (copy-ready answers) before any AI feature exists. No file uploads, no document parsing, no AI extraction (D8).
-2. **New application (fast path)**: paste JD (+ URL, company, role, deadline) → analysis job → review brief (requirements, questions, evidence matches, gaps) → answer clarification questions → generate → edit with evidence panel → resolve flagged claims → approve → copy/export.
-3. **Achievement discovery**: AI flags thin records ("API integration, no outcome") → asks targeted questions → candidate confirms/revises/rejects → confirmed items become verified claims.
-4. **Feedback learning**: edited answer → diff analysis → classified suggestions (fact correction / reusable answer / writing preference / one-off) → approval queue → versioned knowledge.
-5. **JD collections**: as you apply, JDs are grouped into named collections (e.g. "Laravel backend roles", "Agency roles"); a collection can be flagged `use_for_eval` so its JDs + your approved answers become evaluation cases.
-6. **VA workflow**: candidate assigns application to VA → VA prepares → submits for review → candidate approves or requests changes → marked submitted externally.
+2. **Resume variants**: from the verified master record, build several reusable resume variants (e.g. "Laravel backend", "Full-stack React"), each with its own title, summary, chosen and ordered experiences/projects, education, certifications, skills, languages and links, and bullets that cite claims. Facts (employers, titles, dates, degrees) come from the master record and are never edited per variant (D9).
+3. **New application (fast path)**: paste JD (+ URL, company, role, deadline) → pick a resume variant (copied into the application's **tailored resume**) → analysis job → review brief (requirements, questions, evidence matches, gaps) → answer clarification questions → tailor the resume (manually in M7, AI-generated from M8) → generate answers and a cover letter that tells the story of the tailored resume → edit with evidence panel → resolve flagged claims → approve → copy/export.
+4. **Achievement discovery**: AI flags thin records ("API integration, no outcome") → asks targeted questions → candidate confirms/revises/rejects → confirmed items become verified claims.
+5. **Feedback learning**: edited answer → diff analysis → classified suggestions (fact correction / reusable answer / writing preference / one-off) → approval queue → versioned knowledge.
+6. **JD collections**: as you apply, JDs are grouped into named collections (e.g. "Laravel backend roles", "Agency roles"); a collection can be flagged `use_for_eval` so its JDs + your approved answers become evaluation cases.
+7. **VA workflow**: candidate assigns application to VA → VA prepares → submits for review → candidate approves or requests changes → marked submitted externally.
 
 ## 1.5 MVP vs later
 
@@ -46,6 +47,7 @@ Future-proofing kept cheap: tables still carry `workspace_id` and `candidate_pro
 |---|---|---|
 | Auth, 1 candidate + ≤3 VAs, two roles | Reviewer role, multiple candidate profiles | Multiple workspaces, self-serve signup, billing, SSO, Postgres RLS |
 | Manual knowledge entry via plain-text UI forms (no file uploads) | Portfolio URL import, LinkedIn export import | Per-tenant encryption keys |
+| Resume variants + per-application tailored resume (manual in M7, AI in M8) | PDF/DOCX resume export with templates | |
 | Claims with verification + provenance + revisions | Duplicate merge UI with semantic clustering | Data residency options |
 | JD analysis → brief | JD import from URL (fetched server-side, sanitised) | Browser extension for copy-fill |
 | Evidence-first generation, claim labels, evidence panel | Reranker model, retrieval tuning UI | Graph agent framework if justified (see ADR-4) |
@@ -78,6 +80,7 @@ Confirmed decisions (2026-10-20):
 - D6. Export format: **plain text** only (plus copy-to-clipboard).
 - D7. Evaluation set: you will group real JD records as you apply; these become the real-world eval set alongside synthetic CI fixtures.
 - D8. **Plain-text input only**: every input (career knowledge, JDs, questions, answers, preferences) is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction from files, no AI claim extraction from documents.
+- D9. **Resume variants, tailored per job — facts once, wording varies**: one candidate has one verified master record (contact, employments, projects, claims, education, certifications, skills, languages, links) and several reusable **resume variants**. Each job application gets a **tailored resume** copied from a variant, with its own versioned title, summary, selection/order and wording, and the cover letter is written from that tailored resume. Employers, job titles, dates, degrees and issuers are never copied or edited per variant or per job; bullets cite claims (ADR-9).
 
 Remaining assumptions:
 - A1. Content is English.
