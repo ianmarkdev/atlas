@@ -9,12 +9,15 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
+import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import {
     DeadlineBadge,
     StageBadge,
     StageSelect,
 } from '@/components/applications/stage';
+import { NativeSelect } from '@/components/native-select';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -39,11 +42,15 @@ export default function ApplicationShow({
     jobDescription,
     stages,
     employmentTypes,
+    tailoredResume,
+    variants,
 }: {
     application: JobApplicationDetail;
     jobDescription: JobDescription | null;
     stages: SelectOption[];
     employmentTypes: SelectOption[];
+    tailoredResume: TailoredResumeSummary | null;
+    variants: SelectOption[];
 }) {
     const employmentType = employmentTypes.find(
         (option) => option.value === application.employment_type,
@@ -152,6 +159,11 @@ export default function ApplicationShow({
 
                 <div className="grid gap-6 lg:grid-cols-3">
                     <div className="flex flex-col gap-6 lg:col-span-2">
+                        <TailoredResumeCard
+                            application={application}
+                            resume={tailoredResume}
+                            variants={variants}
+                        />
                         <JobDescriptionCard jobDescription={jobDescription} />
                     </div>
 
@@ -189,11 +201,6 @@ export default function ApplicationShow({
                             </Card>
                         )}
 
-                        <NextStepCard
-                            icon={FileText}
-                            title="Tailored resume"
-                            text="Next: copy one of your resumes into this application and adjust it for this job."
-                        />
                         <NextStepCard
                             icon={MessageSquareText}
                             title="Questions & cover letter"
@@ -257,6 +264,119 @@ function JobDescriptionCard({
                 <div className="max-h-[70vh] overflow-y-auto pr-2 text-sm leading-relaxed whitespace-pre-line text-text-secondary">
                     {jobDescription.text}
                 </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+type TailoredResumeSummary = {
+    status: 'draft' | 'approved';
+    version_no: number | null;
+    title: string | null;
+    jobs: number;
+    based_on: string | null;
+    updated_at: string | null;
+};
+
+function TailoredResumeCard({
+    application,
+    resume,
+    variants,
+}: {
+    application: JobApplicationDetail;
+    resume: TailoredResumeSummary | null;
+    variants: SelectOption[];
+}) {
+    if (resume !== null) {
+        return (
+            <Card>
+                <CardHeader>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <CardTitle className="flex items-center gap-2">
+                            <FileText className="size-4" aria-hidden /> Tailored
+                            resume
+                            {resume.status === 'approved' ? (
+                                <Badge>Approved</Badge>
+                            ) : (
+                                <Badge variant="outline">Draft</Badge>
+                            )}
+                        </CardTitle>
+                        <Button size="sm" asChild>
+                            <Link
+                                href={ApplicationResumeController.show(
+                                    application.ulid,
+                                )}
+                            >
+                                {resume.status === 'approved'
+                                    ? 'View'
+                                    : 'Open editor'}
+                            </Link>
+                        </Button>
+                    </div>
+                    <CardDescription>
+                        {[
+                            resume.title,
+                            `${resume.jobs} ${resume.jobs === 1 ? 'job' : 'jobs'}`,
+                            resume.based_on && `from “${resume.based_on}”`,
+                            `version ${resume.version_no ?? 1}`,
+                            resume.updated_at &&
+                                `edited ${timeAgo(resume.updated_at)}`,
+                        ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                    </CardDescription>
+                </CardHeader>
+            </Card>
+        );
+    }
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <FileText className="size-4" aria-hidden /> Tailored resume
+                </CardTitle>
+                <CardDescription>
+                    Copy one of your resumes into this application, then adjust
+                    it for this job: summary, which jobs and bullet points to
+                    show, their order and wording. Your library stays as it is.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {variants.length === 0 ? (
+                    <p className="type-body text-text-muted">
+                        You have no resumes yet. Create one on your Profile
+                        first.
+                    </p>
+                ) : application.can.update ? (
+                    <Form
+                        {...ApplicationResumeController.store.form(
+                            application.ulid,
+                        )}
+                        className="flex flex-wrap items-start gap-2"
+                    >
+                        {({ processing, errors }) => (
+                            <>
+                                <div className="min-w-56 flex-1 space-y-1">
+                                    <NativeSelect
+                                        name="variant"
+                                        options={variants}
+                                        aria-label="Resume to start from"
+                                        className="h-10"
+                                    />
+                                    {errors.variant && (
+                                        <p className="text-sm text-text-error">
+                                            {errors.variant}
+                                        </p>
+                                    )}
+                                </div>
+                                <Button disabled={processing}>
+                                    Start from this resume
+                                </Button>
+                            </>
+                        )}
+                    </Form>
+                ) : null}
             </CardContent>
         </Card>
     );

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Domain\Applications\ApplicationResumeService;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerCategory;
@@ -16,7 +17,12 @@ use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\EmploymentType;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\Skill;
+use App\Domain\Resumes\ResumeDocumentValidator;
+use App\Domain\Resumes\ResumeFacts;
 use App\Domain\Resumes\ResumeVariant;
+use App\Domain\Tenancy\TenantContext;
+use App\Http\Controllers\Profile\ContactController;
+use App\Http\Controllers\Profile\ResumeController;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Seeder;
@@ -272,6 +278,27 @@ class LocalDemoSeeder extends Seeder
                     'source_url' => 'https://jobs.example.com/'.str($company)->slug(),
                     'owner_user_id' => $owner->id,
                 ]);
+        }
+
+        // Tailored resumes: the sent application's is approved, the one in preparation is a VA draft.
+        app(TenantContext::class)->run($profile->workspace, function () use ($candidate, $va): void {
+            $this->tailor('Tailspin Labs', 'React focused', $candidate, approve: true);
+            $this->tailor('Contoso Commerce', 'PHP focused', $va, approve: false);
+        });
+    }
+
+    private function tailor(string $company, string $variantName, User $actor, bool $approve): void
+    {
+        $service = app(ApplicationResumeService::class);
+        $application = JobApplication::query()->where('company_name', $company)->firstOrFail();
+        $variant = ResumeVariant::query()->where('name', $variantName)->firstOrFail()->load('currentRevision');
+        $document = app(ResumeDocumentValidator::class)->validate($variant->document());
+        $snapshot = ResumeFacts::snapshot(ResumeController::editorLibrary(), ContactController::contactOf(CandidateProfile::current()), $document);
+
+        $resume = $service->start($application, $variant, $document, $snapshot, $actor);
+
+        if ($approve) {
+            $service->approve($resume, $actor);
         }
     }
 

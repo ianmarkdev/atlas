@@ -6,6 +6,7 @@ use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobApplicationService;
 use App\Domain\Knowledge\EmploymentType;
+use App\Domain\Resumes\ResumeVariant;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Applications\SaveJobApplicationRequest;
 use App\Http\Resources\JobApplicationResource;
@@ -78,7 +79,8 @@ class JobApplicationController extends Controller
 
     public function show(JobApplication $application): Response
     {
-        $application->load(['posting', 'owner:id,name']);
+        $application->load(['posting', 'owner:id,name', 'resume.currentVersion', 'resume.basedOn']);
+        $resume = $application->resume;
 
         return Inertia::render('applications/show', [
             'application' => [
@@ -87,6 +89,16 @@ class JobApplicationController extends Controller
                 'owner' => $application->owner?->name,
             ],
             'jobDescription' => $this->jobDescriptionOf($application),
+            'tailoredResume' => $resume === null ? null : [
+                'status' => $resume->status,
+                'version_no' => $resume->currentVersion?->version_no,
+                'title' => $resume->document()['title'] ?: null,
+                'jobs' => count($resume->document()['experience']),
+                'based_on' => $resume->basedOn?->name,
+                'updated_at' => $resume->updated_at?->toIso8601String(),
+            ],
+            'variants' => ResumeVariant::query()->active()->orderByDesc('is_default')->orderBy('name')->get(['ulid', 'name'])
+                ->map(fn (ResumeVariant $variant): array => ['value' => $variant->ulid, 'label' => $variant->name])->values()->all(),
             'stages' => self::stageOptions(),
             'employmentTypes' => self::employmentTypeOptions(),
         ]);

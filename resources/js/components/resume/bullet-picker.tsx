@@ -2,10 +2,10 @@ import { useHttp } from '@inertiajs/react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useState } from 'react';
 import ClaimController from '@/actions/App/Http/Controllers/Knowledge/ClaimController';
-import ResumeController from '@/actions/App/Http/Controllers/Profile/ResumeController';
 import InputError from '@/components/input-error';
 import { KnowledgeStatusBadge } from '@/components/knowledge-status-badge';
 import { PasteListDialog } from '@/components/resume/add-dialogs';
+import { useResumeEditorOptions } from '@/components/resume/editor-options';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,7 +26,6 @@ export function BulletPicker({
     onClaimsAdded,
     onClaimUpdated,
     usedElsewhere,
-    resumeUlid,
     canEdit,
 }: {
     subject: string;
@@ -36,7 +35,6 @@ export function BulletPicker({
     onClaimsAdded: (claims: Claim[], include: boolean) => void;
     onClaimUpdated: (claim: Claim) => void;
     usedElsewhere: Record<string, string[]>;
-    resumeUlid: string;
     canEdit: boolean;
 }) {
     const byUlid = new Map(claims.map((claim) => [claim.ulid, claim]));
@@ -77,7 +75,6 @@ export function BulletPicker({
                         }
                         onReword={(text) => update(index, { ...bullet, text })}
                         onClaimUpdated={onClaimUpdated}
-                        resumeUlid={resumeUlid}
                         canEdit={canEdit}
                     />
                 ))}
@@ -130,7 +127,6 @@ function IncludedBullet({
     onMove,
     onReword,
     onClaimUpdated,
-    resumeUlid,
     canEdit,
 }: {
     bullet: ResumeBullet;
@@ -141,9 +137,9 @@ function IncludedBullet({
     onMove: (delta: number) => void;
     onReword: (text: string | null) => void;
     onClaimUpdated: (claim: Claim) => void;
-    resumeUlid: string;
     canEdit: boolean;
 }) {
+    const { applyBulletUrl } = useResumeEditorOptions();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(bullet.text ?? claim.statement);
     const apply = useHttp<{ text: string }, { claim: Claim }>({ text: '' });
@@ -156,12 +152,14 @@ function IncludedBullet({
     };
 
     const applyEverywhere = async () => {
+        if (applyBulletUrl === null) {
+            return;
+        }
+
         apply.transform(() => ({ text: bullet.text ?? '' }));
 
         try {
-            const response = await apply.post(
-                ResumeController.applyBullet.url([resumeUlid, claim.ulid]),
-            );
+            const response = await apply.post(applyBulletUrl(claim.ulid));
             onClaimUpdated(response.claim);
             onReword(null);
         } catch {
@@ -283,7 +281,7 @@ function IncludedBullet({
                             >
                                 Revert to shared wording
                             </Button>
-                            {claim.can.update && (
+                            {claim.can.update && applyBulletUrl !== null && (
                                 <Button
                                     type="button"
                                     size="sm"

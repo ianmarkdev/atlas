@@ -45,6 +45,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonImmutable|null $deleted_at
  * @property-read JobPosting|null $posting
  * @property-read User|null $owner
+ * @property-read ApplicationResume|null $resume
  */
 #[UseFactory(JobApplicationFactory::class)]
 #[UsePolicy(JobApplicationPolicy::class)]
@@ -105,6 +106,14 @@ class JobApplication extends Model
     public function postings(): HasMany
     {
         return $this->hasMany(JobPosting::class)->orderByDesc('id');
+    }
+
+    /**
+     * @return HasOne<ApplicationResume, $this>
+     */
+    public function resume(): HasOne
+    {
+        return $this->hasOne(ApplicationResume::class);
     }
 
     /**

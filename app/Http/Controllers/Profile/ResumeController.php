@@ -91,24 +91,6 @@ class ResumeController extends Controller
     public function show(Request $request, ResumeVariant $resume): Response
     {
         $resume->load('currentRevision');
-        $liveClaims = fn ($query) => $query->whereIn('status', ClaimStatus::live())->with('currentRevision');
-
-        $employments = Employment::query()
-            ->notArchived()
-            ->with([
-                'claims' => $liveClaims,
-                'projects' => fn ($query) => $query->notArchived()->with(['employment', 'claims' => $liveClaims])->orderByDesc('start_date'),
-            ])
-            ->orderByRaw('end_date IS NOT NULL, end_date DESC')
-            ->orderByDesc('start_date')
-            ->get();
-
-        $standaloneProjects = Project::query()
-            ->notArchived()
-            ->whereNull('employment_id')
-            ->with(['claims' => $liveClaims])
-            ->orderByDesc('start_date')
-            ->get();
 
         $revisions = ResumeVariantRevision::query()
             ->where('resume_variant_id', $resume->id)
@@ -128,11 +110,7 @@ class ResumeController extends Controller
                 'document' => $resume->document(),
             ],
             'contact' => ContactController::contactOf(CandidateProfile::current()),
-            'library' => [
-                'employments' => EmploymentResource::collection($employments)->resolve(),
-                'standaloneProjects' => ProjectResource::collection($standaloneProjects)->resolve(),
-                ...self::sharedLibrary(),
-            ],
+            'library' => self::editorLibrary(),
             'usedElsewhere' => ResumeUsage::map(exceptResumeId: $resume->id),
             'revisions' => $revisions->map(fn (ResumeVariantRevision $revision): array => [
                 'id' => $revision->id,
@@ -143,6 +121,41 @@ class ResumeController extends Controller
             ])->values()->all(),
             'canEdit' => $request->user()->can('edit-resumes') && ! $resume->isArchived(),
         ]);
+    }
+
+    /**
+     * Everything a resume editor can pick from: live jobs with their projects and bullet points,
+     * standalone projects, plus the shared sections. Also the source of tailored resumes' facts
+     * snapshots.
+     *
+     * @return array<string, mixed>
+     */
+    public static function editorLibrary(): array
+    {
+        $liveClaims = fn ($query) => $query->whereIn('status', ClaimStatus::live())->with('currentRevision');
+
+        $employments = Employment::query()
+            ->notArchived()
+            ->with([
+                'claims' => $liveClaims,
+                'projects' => fn ($query) => $query->notArchived()->with(['employment', 'claims' => $liveClaims])->orderByDesc('start_date'),
+            ])
+            ->orderByRaw('end_date IS NOT NULL, end_date DESC')
+            ->orderByDesc('start_date')
+            ->get();
+
+        $standaloneProjects = Project::query()
+            ->notArchived()
+            ->whereNull('employment_id')
+            ->with(['claims' => $liveClaims])
+            ->orderByDesc('start_date')
+            ->get();
+
+        return [
+            'employments' => EmploymentResource::collection($employments)->resolve(),
+            'standaloneProjects' => ProjectResource::collection($standaloneProjects)->resolve(),
+            ...self::sharedLibrary(),
+        ];
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
@@ -59,6 +60,18 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
     Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
         ->withTrashed()->name('applications.restore');
+
+    // The resume tailored for one application (M7a slice B).
+    Route::prefix('applications/{application}/resume')->name('applications.resume.')->group(function () {
+        Route::get('/', [ApplicationResumeController::class, 'show'])->name('show');
+        Route::post('/', [ApplicationResumeController::class, 'store'])->name('store');
+        Route::put('/', [ApplicationResumeController::class, 'update'])->name('update');
+        Route::post('copy', [ApplicationResumeController::class, 'copy'])->name('copy');
+        Route::patch('approve', [ApplicationResumeController::class, 'approve'])->name('approve');
+        Route::patch('reopen', [ApplicationResumeController::class, 'reopen'])->name('reopen');
+        Route::post('save-back', [ApplicationResumeController::class, 'saveBack'])->name('save-back');
+        Route::post('claims/{claim}/apply', [ApplicationResumeController::class, 'applyBullet'])->name('apply-bullet');
+    });
 
     // Library: every job, project and bullet point (the shared facts behind all resumes).
     Route::prefix('library')->name('knowledge.')->group(function () {

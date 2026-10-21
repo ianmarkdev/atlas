@@ -27,6 +27,7 @@ class ActivityFeed
     private const NOUNS = [
         'answer' => 'an answer',
         'application' => 'an application',
+        'application_resume' => 'a tailored resume',
         'claim' => 'a bullet point',
         'employment' => 'an experience',
         'project' => 'a project',
@@ -47,6 +48,8 @@ class ActivityFeed
         'rejected' => 'rejected',
         'archived' => 'archived',
         'restored' => 'restored',
+        'reopened' => 'reopened',
+        'copied' => 'recopied',
         'approved' => 'approved',
         'deleted' => 'removed',
         'added' => 'added',
