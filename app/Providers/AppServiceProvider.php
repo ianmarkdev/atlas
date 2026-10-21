@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerLibraryEntry;
@@ -59,6 +60,7 @@ class AppServiceProvider extends ServiceProvider
             'resume_variant' => ResumeVariant::class,
             'job_application' => JobApplication::class,
             'application_resume' => ApplicationResume::class,
+            'application_question' => ApplicationQuestion::class,
         ]);
 
         Event::listen(function (Login $event): void {

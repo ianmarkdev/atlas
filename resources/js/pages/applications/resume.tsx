@@ -4,7 +4,6 @@ import {
     Check,
     CheckCircle2,
     Copy,
-    FileText,
     History,
     RotateCcw,
     Undo2,
@@ -14,6 +13,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
+import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
 import { NativeSelect } from '@/components/native-select';
 import { ResumeEditor } from '@/components/resume/resume-editor';
 import { ResumePreview } from '@/components/resume/resume-preview';
@@ -315,30 +315,6 @@ function ReadOnlyResume({
                 />
             </div>
         </div>
-    );
-}
-
-function JobDescriptionSheet({ text }: { text: string | null }) {
-    return (
-        <Sheet>
-            <SheetTrigger asChild>
-                <Button type="button" size="sm" variant="outline">
-                    <FileText /> Job description
-                </Button>
-            </SheetTrigger>
-            <SheetContent className="sm:max-w-xl">
-                <SheetHeader>
-                    <SheetTitle>Job description</SheetTitle>
-                    <SheetDescription>
-                        Keep it open while you tailor: match the employer’s
-                        words where your facts support them.
-                    </SheetDescription>
-                </SheetHeader>
-                <div className="overflow-y-auto px-4 pb-4 text-sm leading-relaxed whitespace-pre-line text-text-secondary">
-                    {text ?? 'No job description pasted yet.'}
-                </div>
-            </SheetContent>
-        </Sheet>
     );
 }
 

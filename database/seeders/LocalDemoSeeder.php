@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\ApplicationResumeService;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
@@ -284,7 +285,30 @@ class LocalDemoSeeder extends Seeder
         app(TenantContext::class)->run($profile->workspace, function () use ($candidate, $va): void {
             $this->tailor('Tailspin Labs', 'React focused', $candidate, approve: true);
             $this->tailor('Contoso Commerce', 'PHP focused', $va, approve: false);
+            $this->seedQuestions('Contoso Commerce', $candidate, $va);
         });
+    }
+
+    /**
+     * A form in progress: one answer from the library (approved), one VA draft, one open, and a
+     * cover letter.
+     */
+    private function seedQuestions(string $company, User $candidate, User $va): void
+    {
+        $service = app(ApplicationQuestionService::class);
+        $application = JobApplication::query()->where('company_name', $company)->firstOrFail();
+        $library = AnswerLibraryEntry::query()->where('question', 'What is your notice period?')->with('currentRevision')->firstOrFail();
+
+        [$motivation, $notice] = $service->addMany($application, [
+            ['prompt' => 'Why do you want to join Contoso Commerce?', 'word_limit' => 200, 'char_limit' => null],
+            ['prompt' => 'What is your notice period?', 'word_limit' => null, 'char_limit' => 100],
+            ['prompt' => 'Describe a system you made more reliable.', 'word_limit' => 300, 'char_limit' => null],
+        ], $va);
+
+        $service->saveAnswer($notice, $library->body(), $library, 0, $va);
+        $service->approveAnswer($notice->refresh(), $candidate);
+        $service->saveAnswer($motivation, 'Contoso builds payments for small merchants, which is exactly the work I have done at Northwind for four years.', null, 0, $va);
+        $service->coverLetter($application, $va);
     }
 
     private function tailor(string $company, string $variantName, User $actor, bool $approve): void

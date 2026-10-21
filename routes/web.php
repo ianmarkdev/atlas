@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
@@ -60,6 +61,21 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
     Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
         ->withTrashed()->name('applications.restore');
+
+    // The questions of one application form and their answers (M7a slice C).
+    Route::prefix('applications/{application}/questions')->name('applications.questions.')->scopeBindings()->group(function () {
+        Route::get('/', [ApplicationQuestionController::class, 'index'])->name('index');
+        Route::post('/', [ApplicationQuestionController::class, 'store'])->name('store');
+        Route::post('bulk', [ApplicationQuestionController::class, 'bulkStore'])->name('bulk');
+        Route::post('cover-letter', [ApplicationQuestionController::class, 'coverLetter'])->name('cover-letter');
+        Route::put('{question}', [ApplicationQuestionController::class, 'update'])->name('update');
+        Route::delete('{question}', [ApplicationQuestionController::class, 'destroy'])->name('destroy');
+        Route::patch('{question}/move', [ApplicationQuestionController::class, 'move'])->name('move');
+        Route::put('{question}/answer', [ApplicationQuestionController::class, 'saveAnswer'])->name('answer');
+        Route::patch('{question}/answer/approve', [ApplicationQuestionController::class, 'approve'])->name('approve');
+        Route::patch('{question}/answer/reopen', [ApplicationQuestionController::class, 'reopen'])->name('reopen');
+        Route::post('{question}/answer/library', [ApplicationQuestionController::class, 'saveToLibrary'])->name('save-to-library');
+    });
 
     // The resume tailored for one application (M7a slice B).
     Route::prefix('applications/{application}/resume')->name('applications.resume.')->group(function () {

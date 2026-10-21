@@ -46,14 +46,14 @@ erDiagram
   job_analyses ||--o{ requirements : extracts
   job_applications ||--o{ application_questions : has
   application_questions ||--o{ answer_drafts : answers
-  answer_drafts ||--o{ answer_versions : versions
-  answer_versions ||--o{ answer_claims : contains
+  answer_drafts ||--o{ answer_draft_versions : versions
+  answer_draft_versions ||--o{ answer_claims : contains
   answer_claims ||--o{ evidence_references : cites
   requirements ||--o{ evidence_references : "matched evidence"
 
-  answer_versions ||--o{ feedback_events : "diff from"
+  answer_draft_versions ||--o{ feedback_events : "diff from"
   feedback_events ||--o{ knowledge_proposals : suggests
-  generation_runs ||--o{ answer_versions : produced
+  generation_runs ||--o{ answer_draft_versions : produced
   workspaces ||--o{ audit_events : logs
 ```
 
@@ -108,7 +108,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **job_postings**: id, workspace_id, job_application_id (unique), raw_text (verbatim, immutable), raw_sha256, captured_at, captured_by.
 - **job_analyses**: id, workspace_id, job_application_id, generation_run_id, prompt_version, brief jsonb (validated: summary, employer language, seniority, must-haves, nice-to-haves, red flags, injection_warnings), status, created_at. Multiple per application (re-analysis); `job_applications.current_analysis_id`.
 - **requirements**: id, workspace_id, job_analysis_id, kind (`must|preferred|responsibility|employer_value`), text, importance smallint, verbatim_quote.
-- **application_questions**: id, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`), prompt_text, word_limit, char_limit, position, status.
+- **application_questions**: id, ulid, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`; at most one cover letter per application), prompt_text, word_limit, char_limit, position, created_by. Answer state lives on the answer draft.
 - **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
 
 ### Resumes (D9, ADR-9)
@@ -129,8 +129,8 @@ Facts live once in the master record; resume variants and tailored resumes only 
 - Variants and tailored versions are **never embedded or retrieved as evidence**.
 
 ### Answers, versions, claims, evidence
-- **answer_drafts**: id, workspace_id, application_question_id, current_version_id, approved_version_id, status (`generating|draft|in_review|approved`), lock_version.
-- **answer_versions** (append-only): id, workspace_id, answer_draft_id, version_no, body text, author_type (`ai|user`), author_user_id, generation_run_id, parent_version_id, created_at. `UNIQUE(answer_draft_id, version_no)`.
+- **answer_drafts** (M7a slice C): id, workspace_id, application_question_id (unique), current_version_id, approved_version_id, status (`draft|approved` now; `generating` arrives with M8), approved_by/at, lock_version.
+- **answer_draft_versions** (append-only; built in M7a slice C): id, workspace_id, answer_draft_id, version_no, body text, library_entry_id (the answer-library entry the text was inserted from), author_type (`ai|user`), author_user_id, created_via (`manual|library`), created_at; M8 adds generation_run_id and parent_version_id. `UNIQUE(answer_draft_id, version_no)`.
 - **answer_claims**: id, workspace_id, answer_version_id, span_start, span_end, text, classification (`verified|inferred|proposed|hypothetical`), model_classification (what the LLM said, for eval), validation_flags text[] (e.g. `downgraded_no_verified_evidence`, `metric_without_source`), resolution (`open|accepted|removed|converted_to_proposal`), resolved_by.
 - **evidence_references**: id, workspace_id, referrer_type (`answer_claim|resume_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
 
@@ -146,7 +146,7 @@ Facts live once in the master record; resume variants and tailored resumes only 
 ## 3.4 How the schema supports the requirements
 - **Provenance**: `claim_sources` (+ pinned `claim_revision_id`), `evidence_references.source_revision_id`, `knowledge_proposals.origin`.
 - **Verification status**: `claims.status` + `verified_by/at` CHECK; `answer_claims.classification` + validator flags.
-- **Versioning**: append-only `*_revisions`/`answer_versions`; heads carry `current_revision_id` + `lock_version`.
+- **Versioning**: append-only `*_revisions`/`answer_draft_versions`; heads carry `current_revision_id` + `lock_version`.
 - **Private vs shared**: `candidate_profile_id` (private to profile) vs `NULL` + `visibility='workspace'` (shared templates); `writing_preferences.scope` for user-level.
 - **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `halfvec` column with per-model partial expression HNSW indexes when needed (`(embedding::halfvec(1024))` with `WHERE embedding_model_id = N`; the same pattern on `vector` was verified to work in S3; HNSW dimension limit for `halfvec` is 4,000 **[VERIFY]** against the pgvector README before adding the index).
 - **Efficient hybrid retrieval**: one table (`retrieval_units`) with GIN on `tsv`, btree on `(workspace_id, candidate_profile_id, unit_type, status)`, GIN on `tag_ids`, HNSW per model on `embeddings`.

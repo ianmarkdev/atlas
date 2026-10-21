@@ -213,7 +213,7 @@ sequenceDiagram
   U->>C: poll / Inertia reload (or Reverb broadcast later)
 ```
 
-**Generation:** `POST /applications/{id}/generate` → `GenerateAnswersJob(application_id, question_ids, idempotency_key)` → for each question: RetrievalQuery → ContextBuilder (evidence pack with stable IDs `E1..En`) → Claude structured output → ClaimValidator → persist `answer_versions` + `answer_claims` + `evidence_references` in one transaction.
+**Generation:** `POST /applications/{id}/generate` → `GenerateAnswersJob(application_id, question_ids, idempotency_key)` → for each question: RetrievalQuery → ContextBuilder (evidence pack with stable IDs `E1..En`) → Claude structured output → ClaimValidator → persist `answer_draft_versions` + `answer_claims` + `evidence_references` in one transaction.
 
 **Feedback:** saving a human edit creates a new `answer_version` (author=user). On "Approve" or explicit "Learn from my edits", dispatch `AnalyseFeedbackJob(feedback_event_id)` → Claude classifies diff → `knowledge_proposals` (status `pending`) → approval queue → `ProposalApplier` writes new revisions in a transaction.
 
@@ -293,14 +293,14 @@ erDiagram
   job_analyses ||--o{ requirements : extracts
   job_applications ||--o{ application_questions : has
   application_questions ||--o{ answer_drafts : answers
-  answer_drafts ||--o{ answer_versions : versions
-  answer_versions ||--o{ answer_claims : contains
+  answer_drafts ||--o{ answer_draft_versions : versions
+  answer_draft_versions ||--o{ answer_claims : contains
   answer_claims ||--o{ evidence_references : cites
   requirements ||--o{ evidence_references : "matched evidence"
 
-  answer_versions ||--o{ feedback_events : "diff from"
+  answer_draft_versions ||--o{ feedback_events : "diff from"
   feedback_events ||--o{ knowledge_proposals : suggests
-  generation_runs ||--o{ answer_versions : produced
+  generation_runs ||--o{ answer_draft_versions : produced
   workspaces ||--o{ audit_events : logs
 ```
 
@@ -355,7 +355,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **job_postings**: id, workspace_id, job_application_id (unique), raw_text (verbatim, immutable), raw_sha256, captured_at, captured_by.
 - **job_analyses**: id, workspace_id, job_application_id, generation_run_id, prompt_version, brief jsonb (validated: summary, employer language, seniority, must-haves, nice-to-haves, red flags, injection_warnings), status, created_at. Multiple per application (re-analysis); `job_applications.current_analysis_id`.
 - **requirements**: id, workspace_id, job_analysis_id, kind (`must|preferred|responsibility|employer_value`), text, importance smallint, verbatim_quote.
-- **application_questions**: id, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`), prompt_text, word_limit, char_limit, position, status.
+- **application_questions**: id, ulid, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`; at most one cover letter per application), prompt_text, word_limit, char_limit, position, created_by. Answer state lives on the answer draft.
 - **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
 
 ### Resumes (D9, ADR-9)
@@ -376,8 +376,8 @@ Facts live once in the master record; resume variants and tailored resumes only 
 - Variants and tailored versions are **never embedded or retrieved as evidence**.
 
 ### Answers, versions, claims, evidence
-- **answer_drafts**: id, workspace_id, application_question_id, current_version_id, approved_version_id, status (`generating|draft|in_review|approved`), lock_version.
-- **answer_versions** (append-only): id, workspace_id, answer_draft_id, version_no, body text, author_type (`ai|user`), author_user_id, generation_run_id, parent_version_id, created_at. `UNIQUE(answer_draft_id, version_no)`.
+- **answer_drafts** (M7a slice C): id, workspace_id, application_question_id (unique), current_version_id, approved_version_id, status (`draft|approved` now; `generating` arrives with M8), approved_by/at, lock_version.
+- **answer_draft_versions** (append-only; built in M7a slice C): id, workspace_id, answer_draft_id, version_no, body text, library_entry_id (the answer-library entry the text was inserted from), author_type (`ai|user`), author_user_id, created_via (`manual|library`), created_at; M8 adds generation_run_id and parent_version_id. `UNIQUE(answer_draft_id, version_no)`.
 - **answer_claims**: id, workspace_id, answer_version_id, span_start, span_end, text, classification (`verified|inferred|proposed|hypothetical`), model_classification (what the LLM said, for eval), validation_flags text[] (e.g. `downgraded_no_verified_evidence`, `metric_without_source`), resolution (`open|accepted|removed|converted_to_proposal`), resolved_by.
 - **evidence_references**: id, workspace_id, referrer_type (`answer_claim|resume_claim|requirement`), referrer_id, retrieval_unit_id, source_type, source_id, source_revision_id (pin the exact revision cited), relevance_score, rank.
 
@@ -393,7 +393,7 @@ Facts live once in the master record; resume variants and tailored resumes only 
 ## 3.4 How the schema supports the requirements
 - **Provenance**: `claim_sources` (+ pinned `claim_revision_id`), `evidence_references.source_revision_id`, `knowledge_proposals.origin`.
 - **Verification status**: `claims.status` + `verified_by/at` CHECK; `answer_claims.classification` + validator flags.
-- **Versioning**: append-only `*_revisions`/`answer_versions`; heads carry `current_revision_id` + `lock_version`.
+- **Versioning**: append-only `*_revisions`/`answer_draft_versions`; heads carry `current_revision_id` + `lock_version`.
 - **Private vs shared**: `candidate_profile_id` (private to profile) vs `NULL` + `visibility='workspace'` (shared templates); `writing_preferences.scope` for user-level.
 - **Embedding model/dimension changes**: `embedding_models` + per-model rows in `embeddings`; untyped `halfvec` column with per-model partial expression HNSW indexes when needed (`(embedding::halfvec(1024))` with `WHERE embedding_model_id = N`; the same pattern on `vector` was verified to work in S3; HNSW dimension limit for `halfvec` is 4,000 **[VERIFY]** against the pgvector README before adding the index).
 - **Efficient hybrid retrieval**: one table (`retrieval_units`) with GIN on `tsv`, btree on `(workspace_id, candidate_profile_id, unit_type, status)`, GIN on `tag_ids`, HNSW per model on `embeddings`.
@@ -640,7 +640,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Slices**:
   A. **done** — Applications core: `job_applications` (stage + review status, soft delete) + immutable `job_postings` (JD pasted as plain text); add/edit/list (board by stage + table, search, filters); detail page; stage changes with dates (applied, interviewing…); dashboard pipeline with real counts; audit
   B. **done** — Tailored resume: `application_resumes` + append-only `application_resume_versions` (copy of a variant with a `facts_snapshot` of the facts it shows, taken on every save); the same editor as variants (extracted into a shared component); candidate and VAs tailor, but only the candidate changes display titles; approve (candidate only, refused while the resume shows unverified facts) freezes the version and the page then renders from its snapshot; reopen; start over from any variant; "save to <variant>" writes the tailored content back as a new variant revision; job description side panel; plain-text copy
-  C. Questions & answers: `application_questions` (word/char limits, order, cover letter as a question) + `answer_drafts` with versions; write by hand or insert from the answer library; copy; save an answer back to the library
+  C. **done** — Questions & answers: `application_questions` (word/char limits, order, one cover letter per application as a question with `origin = cover_letter`) + `answer_drafts` + append-only `answer_draft_versions` (provenance: typed, or inserted from an answer-library entry); add one question or paste the form's list ("Why us? (300 words)" picks up the limit, max 50); live word/character counters against the limits; insert from the answer library; copy; save an answer to the library (approved for the candidate, draft for a VA); approve (candidate only, refused when empty or over a limit) freezes the answer and its question until reopened; per-answer version history
   D. VA workflow: assignment, deadlines + overdue view, submit for review → approve / request changes (with note), activity timeline per application
 - **Later AI milestones** reuse these tables: M7 adds JD analysis and evidence matching, M8 generation into the same resume versions and answer drafts, M11 shrinks to what is left of the VA workflow.
 
@@ -652,7 +652,7 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 
 ### M8 — Answer generation, editor & evidence panel (10–12 days)
 - **Objective**: the core value.
-- **Scope**: generation job per question + cover letter; **AI-tailored resume version** (title, summary, item selection/order, bullet wording from the brief + evidence; stored as a new `application_resume_versions` row with `author_type = ai`); **cover letter written from the tailored resume's storyline** (chosen experiences in order, claims as evidence); `ClaimValidator` (also over resume bullets → `resume_claims`); answer_versions/claims/evidence persistence; editor (textarea or lightweight rich editor — **decide**; recommend plain textarea + highlight overlay first), claim highlights by class, evidence side panel (open source record + revision), regenerate (whole / with instruction), optimistic locking, word/char counters, copy-to-clipboard per answer & all.
+- **Scope**: generation job per question + cover letter; **AI-tailored resume version** (title, summary, item selection/order, bullet wording from the brief + evidence; stored as a new `application_resume_versions` row with `author_type = ai`); **cover letter written from the tailored resume's storyline** (chosen experiences in order, claims as evidence); `ClaimValidator` (also over resume bullets → `resume_claims`); answer_draft_versions/claims/evidence persistence; editor (textarea or lightweight rich editor — **decide**; recommend plain textarea + highlight overlay first), claim highlights by class, evidence side panel (open source record + revision), regenerate (whole / with instruction), optimistic locking, word/char counters, copy-to-clipboard per answer & all.
 - **Tests**: validator downgrade rules, fabricated citation stripping, approval blocked with open proposed claims, concurrent save conflict, a11y (keyboard nav, labels, colour not sole indicator).
 - **DoD**: end-to-end on eval JDs meets grounding targets; you complete one real application with it.
 

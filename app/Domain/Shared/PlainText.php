@@ -42,6 +42,14 @@ class PlainText
     /**
      * `preg_replace` returns null on invalid UTF-8; keep the input unchanged in that case.
      */
+    /**
+     * Words as the editors count them: runs of non-whitespace.
+     */
+    public static function wordCount(string $text): int
+    {
+        return count(preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+    }
+
     private static function replace(string $pattern, string $replacement, string $text): string
     {
         return preg_replace($pattern, $replacement, $text) ?? $text;

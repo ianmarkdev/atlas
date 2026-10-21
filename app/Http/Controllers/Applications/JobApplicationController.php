@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Applications;
 
+use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobApplicationService;
@@ -79,8 +80,9 @@ class JobApplicationController extends Controller
 
     public function show(JobApplication $application): Response
     {
-        $application->load(['posting', 'owner:id,name', 'resume.currentVersion', 'resume.basedOn']);
+        $application->load(['posting', 'owner:id,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion']);
         $resume = $application->resume;
+        $questions = $application->questions;
 
         return Inertia::render('applications/show', [
             'application' => [
@@ -96,6 +98,12 @@ class JobApplicationController extends Controller
                 'jobs' => count($resume->document()['experience']),
                 'based_on' => $resume->basedOn?->name,
                 'updated_at' => $resume->updated_at?->toIso8601String(),
+            ],
+            'questionsSummary' => [
+                'total' => $questions->count(),
+                'answered' => $questions->filter(fn (ApplicationQuestion $question): bool => trim($question->answer?->body() ?? '') !== '')->count(),
+                'approved' => $questions->filter(fn (ApplicationQuestion $question): bool => $question->answer?->isApproved() ?? false)->count(),
+                'has_cover_letter' => $questions->contains(fn (ApplicationQuestion $question): bool => $question->isCoverLetter()),
             ],
             'variants' => ResumeVariant::query()->active()->orderByDesc('is_default')->orderBy('name')->get(['ulid', 'name'])
                 ->map(fn (ResumeVariant $variant): array => ['value' => $variant->ulid, 'label' => $variant->name])->values()->all(),

@@ -2,6 +2,7 @@
 
 namespace App\Domain\Audit;
 
+use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerLibraryEntry;
@@ -28,6 +29,8 @@ class ActivityFeed
         'answer' => 'an answer',
         'application' => 'an application',
         'application_resume' => 'a tailored resume',
+        'question' => 'a question',
+        'answer_draft' => 'an application answer',
         'claim' => 'a bullet point',
         'employment' => 'an experience',
         'project' => 'a project',
@@ -116,7 +119,7 @@ class ActivityFeed
         foreach ($idsByType as $type => $ids) {
             $class = Relation::getMorphedModel($type);
 
-            if ($class === null || ! in_array($class, [Claim::class, AnswerLibraryEntry::class, JobApplication::class, Employment::class, Project::class, Credential::class, ResumeVariant::class, User::class], true)) {
+            if ($class === null || ! in_array($class, [Claim::class, AnswerLibraryEntry::class, JobApplication::class, ApplicationQuestion::class, Employment::class, Project::class, Credential::class, ResumeVariant::class, User::class], true)) {
                 continue;
             }
 
@@ -143,6 +146,7 @@ class ActivityFeed
             $model instanceof AnswerLibraryEntry => $model->question,
             $model instanceof Employment => "{$model->title} · {$model->employer_name}",
             $model instanceof JobApplication => "{$model->role_title} · {$model->company_name}",
+            $model instanceof ApplicationQuestion => $model->prompt_text,
             $model instanceof Project, $model instanceof ResumeVariant, $model instanceof Credential, $model instanceof User => (string) $model->getAttribute('name'),
             default => '',
         };

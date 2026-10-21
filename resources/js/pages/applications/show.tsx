@@ -7,8 +7,8 @@ import {
     MessageSquareText,
     Pencil,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
+import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import {
@@ -44,6 +44,7 @@ export default function ApplicationShow({
     employmentTypes,
     tailoredResume,
     variants,
+    questionsSummary,
 }: {
     application: JobApplicationDetail;
     jobDescription: JobDescription | null;
@@ -51,6 +52,7 @@ export default function ApplicationShow({
     employmentTypes: SelectOption[];
     tailoredResume: TailoredResumeSummary | null;
     variants: SelectOption[];
+    questionsSummary: QuestionsSummary;
 }) {
     const employmentType = employmentTypes.find(
         (option) => option.value === application.employment_type,
@@ -164,6 +166,10 @@ export default function ApplicationShow({
                             resume={tailoredResume}
                             variants={variants}
                         />
+                        <QuestionsCard
+                            application={application.ulid}
+                            summary={questionsSummary}
+                        />
                         <JobDescriptionCard jobDescription={jobDescription} />
                     </div>
 
@@ -200,12 +206,6 @@ export default function ApplicationShow({
                                 </CardContent>
                             </Card>
                         )}
-
-                        <NextStepCard
-                            icon={MessageSquareText}
-                            title="Questions & cover letter"
-                            text="Next: add the form's questions and answer them, or insert answers from your library."
-                        />
                     </div>
                 </div>
             </div>
@@ -382,25 +382,73 @@ function TailoredResumeCard({
     );
 }
 
-function NextStepCard({
-    icon: Icon,
-    title,
-    text,
+type QuestionsSummary = {
+    total: number;
+    answered: number;
+    approved: number;
+    has_cover_letter: boolean;
+};
+
+function QuestionsCard({
+    application,
+    summary,
 }: {
-    icon: LucideIcon;
-    title: string;
-    text: string;
+    application: string;
+    summary: QuestionsSummary;
 }) {
+    const percent =
+        summary.total === 0
+            ? 0
+            : Math.round((summary.approved / summary.total) * 100);
+
     return (
-        <div className="flex gap-3 rounded-kraken-md border border-dashed border-border-input p-4">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-kraken-md bg-surface-accent-subtle text-text-accent">
-                <Icon className="size-4" aria-hidden />
-            </span>
-            <div>
-                <p className="font-medium text-text-primary">{title}</p>
-                <p className="type-caption text-text-muted">{text}</p>
-            </div>
-        </div>
+        <Card>
+            <CardHeader>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                        <MessageSquareText className="size-4" aria-hidden />{' '}
+                        Questions & cover letter
+                    </CardTitle>
+                    <Button
+                        size="sm"
+                        variant={summary.total === 0 ? 'default' : 'outline'}
+                        asChild
+                    >
+                        <Link
+                            href={ApplicationQuestionController.index(
+                                application,
+                            )}
+                        >
+                            {summary.total === 0
+                                ? 'Add questions'
+                                : 'Answer questions'}
+                        </Link>
+                    </Button>
+                </div>
+                <CardDescription>
+                    {summary.total === 0
+                        ? 'Paste the questions from the application form; answer them by hand or from your answer library.'
+                        : `${summary.total} ${summary.total === 1 ? 'question' : 'questions'} · ${summary.answered} answered · ${summary.approved} approved${summary.has_cover_letter ? ' · includes a cover letter' : ''}`}
+                </CardDescription>
+            </CardHeader>
+            {summary.total > 0 && (
+                <CardContent>
+                    <div
+                        role="progressbar"
+                        aria-label="Approved answers"
+                        aria-valuenow={percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        className="h-1.5 overflow-hidden rounded-pill bg-surface-input-subtle"
+                    >
+                        <div
+                            className="h-full rounded-pill bg-surface-accent transition-all duration-slow"
+                            style={{ width: `${percent}%` }}
+                        />
+                    </div>
+                </CardContent>
+            )}
+        </Card>
     );
 }
 

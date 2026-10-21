@@ -109,6 +109,16 @@ class JobApplication extends Model
     }
 
     /**
+     * In form order.
+     *
+     * @return HasMany<ApplicationQuestion, $this>
+     */
+    public function questions(): HasMany
+    {
+        return $this->hasMany(ApplicationQuestion::class)->orderBy('position');
+    }
+
+    /**
      * @return HasOne<ApplicationResume, $this>
      */
     public function resume(): HasOne
