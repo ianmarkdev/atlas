@@ -5,26 +5,32 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,box-shadow] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap type-button transition-colors duration-fast ease-out disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-ring-inverse aria-invalid:border-border-error",
   {
     variants: {
       variant: {
+        // Kraken "Button / Primary": lime pill.
         default:
-          "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+          "rounded-pill bg-surface-accent text-text-on-accent hover:bg-surface-accent-hover active:bg-surface-accent-pressed",
         destructive:
-          "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
+          "rounded-pill bg-border-error text-white hover:bg-border-error/85 active:bg-border-error/75",
+        // Kraken "Button / Outline": square, lime line. Pressed fills with
+        // color/border/accent-subtle, as in Figma.
         outline:
-          "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
+          "border border-border-accent text-text-accent hover:bg-surface-accent-subtle active:bg-border-accent-subtle",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "rounded-pill border border-border-input text-text-primary hover:border-text-subtle hover:bg-surface-input-subtle",
+        ghost:
+          "rounded-kraken-md text-text-secondary hover:bg-surface-input-subtle hover:text-text-primary",
+        link: "text-text-accent decoration-border-accent underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md px-3 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+        default: "h-10 px-7 has-[>svg]:px-5",
+        sm: "h-8 px-4 has-[>svg]:px-3",
+        lg: "h-12 px-8 has-[>svg]:px-6",
         icon: "size-9",
+        // Kraken "Button / Block": the full-width form submit.
+        block: "h-16 w-full rounded-kraken-sm px-6 type-submit",
       },
     },
     defaultVariants: {

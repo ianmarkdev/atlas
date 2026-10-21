@@ -76,6 +76,15 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
 - **Risks**: weights over-fit to tiny dataset — keep defaults simple.
 
+### M7a — Manual applications (pulled forward, D10; 8–11 days)
+- **Objective**: track and prepare real applications by hand, before any AI.
+- **Slices**:
+  A. **done** — Applications core: `job_applications` (stage + review status, soft delete) + immutable `job_postings` (JD pasted as plain text); add/edit/list (board by stage + table, search, filters); detail page; stage changes with dates (applied, interviewing…); dashboard pipeline with real counts; audit
+  B. Tailored resume: `application_resumes` + append-only `application_resume_versions` (copy of a variant revision with `facts_snapshot`); same editor as variants; approve freezes a version; plain-text copy
+  C. Questions & answers: `application_questions` (word/char limits, order, cover letter as a question) + `answer_drafts` with versions; write by hand or insert from the answer library; copy; save an answer back to the library
+  D. VA workflow: assignment, deadlines + overdue view, submit for review → approve / request changes (with note), activity timeline per application
+- **Later AI milestones** reuse these tables: M7 adds JD analysis and evidence matching, M8 generation into the same resume versions and answer drafts, M11 shrinks to what is left of the VA workflow.
+
 ### M7 — Applications, JD analysis & tailored resume (7–9 days)
 - **Objective**: paste JD → brief, and a tailored resume per application.
 - **Scope**: applications CRUD, JD collections (create/assign/filter, `use_for_eval` flag), immutable job_postings, analysis job (requirements, questions, employer language, injection warnings), per-requirement evidence matching, gaps → clarification requests, brief page (requirements ↔ evidence matrix, editable question list); **tailored resume** (pick a variant when creating the application → copied into `application_resumes` v1 with `facts_snapshot`; same editor as variants; version dropdown; "changes vs. variant" diff; approve (frozen); "save back to variant"; plain-text export).

@@ -13,8 +13,13 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                bunny('Inter', {
+                    weights: [400, 500, 600, 700, 900],
+                }),
+                // Kraken's display face. Only Regular is published, so the
+                // `type-*` styles that ask for 700 render as Regular.
+                bunny('Bebas Neue', {
+                    weights: [400],
                 }),
             ],
         }),

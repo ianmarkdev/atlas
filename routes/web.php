@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
 use App\Http\Controllers\Knowledge\ClaimController;
@@ -46,6 +47,18 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
             Route::post('resumes/{resume}/claims/{claim}/apply', [ResumeController::class, 'applyBullet'])->name('resumes.apply-bullet');
         });
     });
+
+    // Applications tracker (M7a, D10): candidate and VAs prepare applications by hand.
+    Route::get('applications', [JobApplicationController::class, 'index'])->name('applications.index');
+    Route::get('applications/create', [JobApplicationController::class, 'create'])->name('applications.create');
+    Route::post('applications', [JobApplicationController::class, 'store'])->name('applications.store');
+    Route::get('applications/{application}', [JobApplicationController::class, 'show'])->name('applications.show');
+    Route::get('applications/{application}/edit', [JobApplicationController::class, 'edit'])->name('applications.edit');
+    Route::put('applications/{application}', [JobApplicationController::class, 'update'])->name('applications.update');
+    Route::patch('applications/{application}/stage', [JobApplicationController::class, 'stage'])->name('applications.stage');
+    Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
+    Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
+        ->withTrashed()->name('applications.restore');
 
     // Library: every job, project and bullet point (the shared facts behind all resumes).
     Route::prefix('library')->name('knowledge.')->group(function () {
@@ -103,5 +116,10 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::post('team/{user:ulid}/password-link', [TeamController::class, 'passwordLink'])->name('team.password-link');
     });
 });
+
+if (app()->isLocal()) {
+    Route::inertia('styleguide', 'styleguide/index')->name('styleguide');
+    Route::inertia('styleguide/components', 'styleguide/components')->name('styleguide.components');
+}
 
 require __DIR__.'/settings.php';

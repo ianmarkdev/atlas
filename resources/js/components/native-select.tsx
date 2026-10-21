@@ -18,7 +18,7 @@ export function NativeSelect({
     return (
         <select
             className={cn(
-                'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30',
+                'flex h-12 w-full cursor-pointer rounded-kraken-sm border border-border-field bg-surface-field px-3.5 type-input text-text-primary transition-colors duration-fast ease-out outline-none hover:border-border-input focus:border-border-focus disabled:pointer-events-none disabled:opacity-40 aria-invalid:border-border-error',
                 className,
             )}
             {...props}

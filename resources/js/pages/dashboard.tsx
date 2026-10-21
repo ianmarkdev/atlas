@@ -9,7 +9,6 @@ import {
     MessageSquareText,
     Plus,
     Send,
-    Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import ResumeController from '@/actions/App/Http/Controllers/Profile/ResumeController';
@@ -24,7 +23,12 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { greeting, timeAgo } from '@/lib/time';
+import { openStages } from '@/lib/applications';
 import { dashboard } from '@/routes';
+import {
+    create as createApplication,
+    index as applicationsIndex,
+} from '@/routes/applications';
 import { index as libraryIndex } from '@/routes/knowledge';
 import {
     create as createAnswer,
@@ -77,7 +81,13 @@ type Activity = {
     at: string;
 };
 
-const pipelineStages = ['Saved', 'Applied', 'Interview', 'Offer'];
+const stageLabels: Record<string, string> = {
+    saved: 'Saved',
+    preparing: 'Preparing',
+    applied: 'Applied',
+    interviewing: 'Interviewing',
+    offer: 'Offer',
+};
 
 export default function Dashboard({
     firstName,
@@ -88,6 +98,7 @@ export default function Dashboard({
     checklist,
     resumes,
     activity,
+    pipeline,
 }: {
     firstName: string;
     candidateName: string;
@@ -97,6 +108,7 @@ export default function Dashboard({
     checklist: ChecklistItem[] | null;
     resumes: ResumeSummary[];
     activity: Activity[];
+    pipeline: Record<string, number>;
 }) {
     const setupOpen =
         checklist !== null && checklist.some((item) => !item.done);
@@ -108,7 +120,7 @@ export default function Dashboard({
             <div className="flex flex-col gap-6 p-4 lg:p-6">
                 <header className="flex flex-wrap items-end justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-semibold tracking-tight">
+                        <h1 className="type-display-l text-text-primary">
                             {greeting()}, {firstName}
                         </h1>
                         <p className="text-sm text-muted-foreground">
@@ -184,7 +196,7 @@ export default function Dashboard({
 
                 <div className="grid gap-6 lg:grid-cols-3">
                     <div className="flex flex-col gap-6 lg:col-span-2">
-                        <ApplicationsCard />
+                        <ApplicationsCard pipeline={pipeline} />
                         <ResumesCard
                             resumes={resumes}
                             isCandidate={isCandidate}
@@ -218,28 +230,25 @@ function StatCard({
     highlight?: boolean;
 }) {
     return (
-        <Link
-            href={href}
-            className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-            <Card className="h-full gap-2 py-4 transition-colors group-hover:border-foreground/20">
+        <Link href={href} className="group/card rounded-field focus-ring">
+            <Card className="h-full gap-2 py-4 transition-colors duration-fast ease-out group-hover/card:border-border-accent-subtle">
                 <CardHeader className="flex flex-row items-center justify-between px-4">
-                    <CardDescription className="font-medium">
+                    <CardDescription className="type-nav-link uppercase">
                         {label}
                     </CardDescription>
-                    <span className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                    <span className="flex size-8 items-center justify-center rounded-kraken-md bg-surface-accent-subtle text-text-accent">
                         <Icon className="size-4" aria-hidden />
                     </span>
                 </CardHeader>
                 <CardContent className="px-4">
-                    <p className="text-3xl font-semibold tabular-nums">
+                    <p className="type-heading-2 text-text-accent tabular-nums">
                         {value}
                     </p>
                     <p
                         className={cn(
                             'text-xs',
                             highlight
-                                ? 'font-medium text-amber-700 dark:text-amber-400'
+                                ? 'text-text-accent'
                                 : 'text-muted-foreground',
                         )}
                     >
@@ -251,7 +260,13 @@ function StatCard({
     );
 }
 
-function ApplicationsCard() {
+function ApplicationsCard({ pipeline }: { pipeline: Record<string, number> }) {
+    const open = openStages.reduce(
+        (total, stage) => total + (pipeline[stage] ?? 0),
+        0,
+    );
+    const closed = (pipeline.rejected ?? 0) + (pipeline.withdrawn ?? 0);
+
     return (
         <Card>
             <CardHeader>
@@ -259,31 +274,60 @@ function ApplicationsCard() {
                     <CardTitle className="flex items-center gap-2">
                         <Send className="size-4" aria-hidden /> Applications
                     </CardTitle>
-                    <Badge variant="secondary">
-                        <Sparkles className="size-3" aria-hidden /> Coming next
-                    </Badge>
+                    <div className="flex items-center gap-3">
+                        <Link
+                            href={applicationsIndex()}
+                            className="group/text-link inline-flex items-center gap-1.5 type-button text-text-accent focus-ring"
+                        >
+                            Board{' '}
+                            <ArrowRight className="size-3.5 transition-transform duration-fast ease-out group-hover/text-link:translate-x-1" />
+                        </Link>
+                        <Button size="sm" asChild>
+                            <Link href={createApplication()}>
+                                <Plus /> Add
+                            </Link>
+                        </Button>
+                    </div>
                 </div>
                 <CardDescription>
-                    Paste a job description to get a tailored resume, a cover
-                    letter and form answers built from your library — then track
-                    each application here.
+                    {open === 0 && closed === 0
+                        ? 'Add the jobs you are applying for: paste the job description, set a deadline, move it along as it progresses.'
+                        : `${open} open${closed > 0 ? ` · ${closed} closed` : ''}`}
                 </CardDescription>
             </CardHeader>
             <CardContent>
-                <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {pipelineStages.map((stage) => (
-                        <li
-                            key={stage}
-                            className="rounded-lg border border-dashed p-3"
-                        >
-                            <p className="text-xs font-medium text-muted-foreground">
-                                {stage}
-                            </p>
-                            <p className="text-2xl font-semibold text-muted-foreground/60 tabular-nums">
-                                0
-                            </p>
-                        </li>
-                    ))}
+                <ol className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {openStages.map((stage) => {
+                        const count = pipeline[stage] ?? 0;
+
+                        return (
+                            <li key={stage}>
+                                <Link
+                                    href={applicationsIndex()}
+                                    className={cn(
+                                        'block rounded-kraken-sm border p-3 focus-ring transition-colors duration-fast ease-out hover:border-border-accent-subtle',
+                                        count > 0
+                                            ? 'border-border-subtle bg-surface-card'
+                                            : 'border-dashed border-border-input',
+                                    )}
+                                >
+                                    <p className="type-label text-text-label uppercase">
+                                        {stageLabels[stage]}
+                                    </p>
+                                    <p
+                                        className={cn(
+                                            'type-heading-3 tabular-nums',
+                                            count > 0
+                                                ? 'text-text-primary'
+                                                : 'text-text-subtle',
+                                        )}
+                                    >
+                                        {count}
+                                    </p>
+                                </Link>
+                            </li>
+                        );
+                    })}
                 </ol>
             </CardContent>
         </Card>
@@ -304,9 +348,10 @@ function ResumesCard({
                     <CardTitle>Resumes</CardTitle>
                     <Link
                         href={resumesIndex()}
-                        className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:underline"
+                        className="group/text-link inline-flex items-center gap-1.5 type-button text-text-accent focus-ring"
                     >
-                        All resumes <ArrowRight className="size-3.5" />
+                        All resumes{' '}
+                        <ArrowRight className="size-3.5 transition-transform duration-fast ease-out group-hover/text-link:translate-x-1" />
                     </Link>
                 </div>
                 <CardDescription>
@@ -330,7 +375,7 @@ function ResumesCard({
                                     href={ResumeController.show(resume.ulid)}
                                     className="flex items-center gap-3 rounded-md px-2 py-3 hover:bg-muted/50"
                                 >
-                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                                    <span className="flex size-9 shrink-0 items-center justify-center rounded-kraken-md bg-surface-accent-subtle text-text-accent">
                                         <FileText
                                             className="size-4"
                                             aria-hidden
@@ -381,7 +426,7 @@ function AttentionCard({ items }: { items: AttentionItem[] }) {
                 {items.length === 0 ? (
                     <p className="flex items-center gap-2 text-sm text-muted-foreground">
                         <CheckCircle2
-                            className="size-4 text-emerald-600 dark:text-emerald-400"
+                            className="size-4 text-text-accent"
                             aria-hidden
                         />
                         All caught up.
@@ -425,10 +470,10 @@ function ChecklistCard({ items }: { items: ChecklistItem[] }) {
                     aria-valuenow={percent}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                    className="mt-2 h-1.5 overflow-hidden rounded-pill bg-surface-input-subtle"
                 >
                     <div
-                        className="h-full rounded-full bg-primary transition-all"
+                        className="h-full rounded-pill bg-surface-accent transition-all duration-slow ease-tile"
                         style={{ width: `${percent}%` }}
                     />
                 </div>
@@ -443,7 +488,7 @@ function ChecklistCard({ items }: { items: ChecklistItem[] }) {
                             >
                                 {item.done ? (
                                     <CheckCircle2
-                                        className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                                        className="mt-0.5 size-4 shrink-0 text-text-accent"
                                         aria-label="Done"
                                     />
                                 ) : (
@@ -493,7 +538,7 @@ function ActivityCard({ activity }: { activity: Activity[] }) {
                             <li key={event.id} className="relative text-sm">
                                 <span
                                     aria-hidden
-                                    className="absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-background bg-muted-foreground/50"
+                                    className="absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-background bg-surface-accent"
                                 />
                                 <p>
                                     <span className="font-medium">
@@ -524,7 +569,7 @@ function ActivityCard({ activity }: { activity: Activity[] }) {
 
 function EmptyState({ text }: { text: string }) {
     return (
-        <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+        <p className="rounded-kraken-sm border border-dashed border-border-input p-4 type-body text-text-muted">
             {text}
         </p>
     );

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\JobApplication;
 use App\Domain\Audit\ActivityFeed;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerStatus;
@@ -17,6 +19,7 @@ use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -67,6 +70,7 @@ class DashboardController extends Controller
                 'updated_at' => $resume->updated_at?->toIso8601String(),
             ])->values()->all(),
             'activity' => ActivityFeed::recent($user),
+            'pipeline' => $this->pipeline(),
         ]);
     }
 
@@ -96,7 +100,34 @@ class DashboardController extends Controller
             ];
         }
 
+        $today = CarbonImmutable::today();
+        $notYetSent = JobApplication::query()->whereIn('stage', [ApplicationStage::Saved, ApplicationStage::Preparing]);
+
+        array_unshift(
+            $items,
+            ['key' => 'overdue', 'label' => __('Applications past their deadline'), 'count' => (clone $notYetSent)->where('deadline_on', '<', $today)->count(), 'href' => route('applications.index')],
+            ['key' => 'closing', 'label' => __('Applications closing within 3 days'), 'count' => (clone $notYetSent)->whereBetween('deadline_on', [$today, $today->addDays(3)])->count(), 'href' => route('applications.index')],
+        );
+
         return array_values(array_filter($items, fn (array $item): bool => $item['count'] > 0));
+    }
+
+    /**
+     * Applications per stage, for the pipeline card.
+     *
+     * @return array<string, int>
+     */
+    private function pipeline(): array
+    {
+        $counts = JobApplication::query()->selectRaw('stage, count(*) as total')->groupBy('stage')->pluck('total', 'stage');
+
+        $pipeline = [];
+
+        foreach (ApplicationStage::cases() as $stage) {
+            $pipeline[$stage->value] = (int) ($counts[$stage->value] ?? 0);
+        }
+
+        return $pipeline;
     }
 
     /**

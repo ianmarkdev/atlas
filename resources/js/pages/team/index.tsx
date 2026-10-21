@@ -218,7 +218,7 @@ function PasswordLinkNotice({ link }: { link: PasswordLink }) {
     return (
         <div
             role="status"
-            className="space-y-2 rounded-lg border border-green-600/30 bg-green-50 p-4 text-sm dark:bg-green-950/30"
+            className="space-y-2 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-4 type-body"
         >
             <p>
                 Send this link to <strong>{link.email}</strong> so they can set

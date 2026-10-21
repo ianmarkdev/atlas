@@ -94,7 +94,9 @@ export function SkillsSection({
         <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <h2 className="text-base font-medium">Skills</h2>
+                    <h2 className="type-card-title text-text-primary">
+                        Skills
+                    </h2>
                     <p className="text-sm text-muted-foreground">
                         Group them the way this resume should read, e.g.
                         “Backend” and “Frontend”.
@@ -343,7 +345,7 @@ export function CredentialSection({
     return (
         <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-medium">{title}</h2>
+                <h2 className="type-card-title text-text-primary">{title}</h2>
                 <AddCredentialDialog
                     type={type}
                     onCreated={(credential) => {
@@ -571,7 +573,7 @@ export function PickListSection({
     return (
         <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-medium">{title}</h2>
+                <h2 className="type-card-title text-text-primary">{title}</h2>
                 <Button type="button" size="sm" variant="ghost" asChild>
                     <Link href={editContact()}>Manage in contact details</Link>
                 </Button>

@@ -1,0 +1,157 @@
+/*
+ * Kraken Tokens
+ *
+ * Ported from the Kraken site (resources/css/kraken-tokens.css), which
+ * mirrors the "Kraken Tokens" variable collection in Figma. Names map 1:1:
+ * `color/bg/page` -> `--color-bg-page` -> `bg-bg-page`.
+ *
+ * Kraken is designed dark only, so the values in `@theme` are the Figma
+ * values and apply in dark mode. The light values further down are our own:
+ * same roles, same lime accent, with text and borders inverted and the
+ * accent text darkened so it passes contrast on a light page.
+ */
+
+@theme static {
+    /* Fonts — families are loaded by the `fonts` option in vite.config.ts. */
+    --font-display:
+        var(--font-bebas-neue, 'Bebas Neue'), Impact, 'Arial Narrow', sans-serif;
+    --font-body:
+        var(--font-inter, 'Inter'), ui-sans-serif, system-ui, sans-serif;
+
+    /* color/bg */
+    --color-bg-nav: #000000;
+    --color-bg-page: #030e0a;
+    --color-bg-tint: rgb(16 55 42 / 0.68);
+
+    /* color/surface */
+    --color-surface-modal: #05120a;
+    --color-surface-panel: #0f1b18;
+    --color-surface-tile: rgb(3 14 10 / 0.5);
+    --color-surface-card: rgb(255 255 255 / 0.04);
+    --color-surface-field: rgb(255 255 255 / 0.06);
+    --color-surface-toggle: rgb(255 255 255 / 0.07);
+    --color-surface-input-subtle: rgb(255 255 255 / 0.08);
+    --color-surface-accent: #cce829;
+    --color-surface-accent-hover: #dbf15a;
+    --color-surface-accent-pressed: #b3cc1f;
+    --color-surface-accent-subtle: rgb(204 232 41 / 0.15);
+    --color-surface-error-subtle: rgb(255 92 77 / 0.15);
+
+    /* color/overlay */
+    --color-overlay-scrim: rgb(0 0 0 / 0.72);
+
+    /* color/text */
+    --color-text-primary: #ffffff;
+    --color-text-secondary: rgb(255 255 255 / 0.7);
+    --color-text-tertiary: rgb(255 255 255 / 0.6);
+    --color-text-muted: rgb(255 255 255 / 0.45);
+    --color-text-label: rgb(255 255 255 / 0.4);
+    --color-text-subtle: rgb(255 255 255 / 0.3);
+    --color-text-placeholder: rgb(255 255 255 / 0.2);
+    --color-text-accent: #cce829;
+    --color-text-on-accent: #030e0a;
+    --color-text-error: #ff5c4d;
+
+    /* color/border */
+    --color-border-subtle: rgb(255 255 255 / 0.1);
+    --color-border-field: rgb(255 255 255 / 0.1);
+    --color-border-input: rgb(255 255 255 / 0.15);
+    --color-border-toggle: rgb(255 255 255 / 0.15);
+    --color-border-accent: #cce829;
+    --color-border-accent-subtle: rgb(204 232 41 / 0.3);
+    --color-border-focus: #cce829;
+    --color-border-focus-inverse: #ffffff;
+    --color-border-error: #ff5c4d;
+
+    /*
+     * radius — `radius/sm` and `radius/md` are prefixed because the starter
+     * kit's shadcn components already own `rounded-sm` / `rounded-md`.
+     * `radius/none` is Tailwind's `rounded-none`.
+     */
+    --radius-kraken-sm: 2px;
+    --radius-kraken-md: 4px;
+    --radius-field: 22px;
+    --radius-panel: 50px;
+    --radius-modal: 60px;
+    --radius-pill: 999px;
+
+    /* Service tile grow/shrink, from the Service Tile component note. */
+    --ease-tile: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/*
+ * Light mode. Not designed in Figma: these keep each token's role from the
+ * dark set. Lime surfaces stay as they are; lime as text or a line on a light
+ * page is too faint, so those use a dark olive instead.
+ */
+html:not(.dark) {
+    --color-bg-nav: #ffffff;
+    --color-bg-page: #f5f7f2;
+    --color-bg-tint: rgb(204 232 41 / 0.12);
+
+    --color-surface-modal: #ffffff;
+    --color-surface-panel: #ffffff;
+    --color-surface-tile: rgb(3 14 10 / 0.02);
+    --color-surface-card: rgb(3 14 10 / 0.03);
+    --color-surface-field: rgb(3 14 10 / 0.04);
+    --color-surface-toggle: rgb(3 14 10 / 0.05);
+    --color-surface-input-subtle: rgb(3 14 10 / 0.06);
+    --color-surface-accent-subtle: rgb(204 232 41 / 0.3);
+    --color-surface-error-subtle: rgb(196 41 28 / 0.1);
+
+    --color-overlay-scrim: rgb(3 14 10 / 0.5);
+
+    --color-text-primary: #030e0a;
+    --color-text-secondary: rgb(3 14 10 / 0.75);
+    --color-text-tertiary: rgb(3 14 10 / 0.66);
+    --color-text-muted: rgb(3 14 10 / 0.6);
+    --color-text-label: rgb(3 14 10 / 0.55);
+    --color-text-subtle: rgb(3 14 10 / 0.4);
+    --color-text-placeholder: rgb(3 14 10 / 0.35);
+    --color-text-accent: #566400;
+    --color-text-error: #c4291c;
+
+    --color-border-subtle: rgb(3 14 10 / 0.1);
+    --color-border-field: rgb(3 14 10 / 0.14);
+    --color-border-input: rgb(3 14 10 / 0.24);
+    --color-border-toggle: rgb(3 14 10 / 0.15);
+    --color-border-accent: #6b7c00;
+    --color-border-accent-subtle: rgb(107 124 0 / 0.35);
+    --color-border-focus: #566400;
+    --color-border-focus-inverse: #030e0a;
+    --color-border-error: #c4291c;
+}
+
+/*
+ * Tokens with no Tailwind theme namespace. `space/*` is not redefined: every
+ * step is on Tailwind's 4px scale, so `space/80` is `p-20`, `space/14` is
+ * `gap-3.5`, and so on (px / 4).
+ *
+ * The display sizes are the Kraken site's, capped lower: an app screen has
+ * no hero, so Display L is the largest a page title gets.
+ */
+:root {
+    --border-width: 1px;
+    --border-focus-ring: 2px;
+
+    --motion-duration-fast: 200ms;
+    --motion-duration-base: 300ms;
+    --motion-duration-slow: 600ms;
+
+    --font-size-display-xl: clamp(3rem, 1.75rem + 4.2vw, 96px);
+    --font-size-display-l: clamp(2.5rem, 1.5rem + 2.8vw, 64px);
+    --font-size-form-title: clamp(2.5rem, 1.5rem + 2.8vw, 64px);
+    --font-size-heading-2: clamp(2rem, 1.25rem + 2.2vw, 50px);
+    --font-size-heading-3: clamp(1.375rem, 1.1rem + 0.75vw, 28px);
+    --font-size-card-title: 22px;
+    --font-size-submit: 20px;
+    --font-size-upload: 16px;
+    --font-size-body-l: 15px;
+    --font-size-button: 14px;
+    --font-size-input: 14px;
+    --font-size-body: 13px;
+    --font-size-small: 12px;
+    --font-size-caption: 11px;
+    --font-size-label: 10px;
+    --font-size-micro: 9px;
+}

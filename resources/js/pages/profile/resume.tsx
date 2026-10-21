@@ -479,7 +479,7 @@ function ResumeEditor({
 
                     <section className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                            <h2 className="text-base font-medium">
+                            <h2 className="type-card-title text-text-primary">
                                 Experience
                             </h2>
                             <AddJobDialog onAdded={addEmployment} />
@@ -556,7 +556,7 @@ function ResumeEditor({
                     <section className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                                <h2 className="text-base font-medium">
+                                <h2 className="type-card-title text-text-primary">
                                     Other projects
                                 </h2>
                                 <p className="text-sm text-muted-foreground">
@@ -1136,7 +1136,7 @@ function ReadOnlyHeader({
 }) {
     return (
         <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold">{resume.name}</h1>
+            <h1 className="type-heading-3 text-text-primary">{resume.name}</h1>
             {resume.is_default && <Badge variant="secondary">Default</Badge>}
             {resume.is_archived && <Badge variant="outline">Archived</Badge>}
             <span className="text-sm text-muted-foreground">

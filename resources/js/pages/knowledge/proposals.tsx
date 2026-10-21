@@ -116,14 +116,14 @@ function ProposalCard({ proposal }: { proposal: KnowledgeProposal }) {
                                 {change.label}
                             </dt>
                             <dd className="flex flex-wrap items-center gap-2">
-                                <span className="rounded bg-destructive/10 px-1.5 py-0.5 line-through decoration-destructive/60">
+                                <span className="rounded-kraken-sm bg-surface-error-subtle px-1.5 py-0.5 line-through decoration-border-error/60">
                                     {change.from ?? '(empty)'}
                                 </span>
                                 <ArrowRight
                                     className="size-3.5 text-muted-foreground"
                                     aria-label="becomes"
                                 />
-                                <span className="rounded bg-green-600/10 px-1.5 py-0.5">
+                                <span className="rounded-kraken-sm bg-surface-accent-subtle px-1.5 py-0.5">
                                     {change.to ?? '(empty)'}
                                 </span>
                             </dd>

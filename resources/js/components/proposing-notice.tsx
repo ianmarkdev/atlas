@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
  */
 export function ProposingNotice({ error }: { error?: string }) {
     return (
-        <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="space-y-3 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-4 type-body">
             <p>
                 This is verified. Your change is sent to the candidate as a
                 suggestion and applies only once they approve it.

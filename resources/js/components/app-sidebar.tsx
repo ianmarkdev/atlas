@@ -5,6 +5,7 @@ import {
     IdCard,
     LayoutGrid,
     MessageSquareText,
+    Send,
     Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -20,6 +21,7 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as applications } from '@/routes/applications';
 import { index as knowledge } from '@/routes/knowledge';
 import { index as answers } from '@/routes/knowledge/answers';
 import { index as proposals } from '@/routes/knowledge/proposals';
@@ -29,6 +31,7 @@ import type { NavItem } from '@/types';
 
 const overviewItems: NavItem[] = [
     { title: 'Dashboard', href: dashboard(), icon: LayoutGrid },
+    { title: 'Applications', href: applications(), icon: Send },
 ];
 
 const careerItems: NavItem[] = [

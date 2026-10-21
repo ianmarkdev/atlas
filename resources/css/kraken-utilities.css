@@ -1,0 +1,215 @@
+/*
+ * Kraken text styles and helpers
+ *
+ * Ported from the Kraken site (resources/css/kraken-utilities.css).
+ *
+ * `type-*` mirrors the "Kraken/*" text styles in Figma, one utility per
+ * style: `Kraken/Heading 2` -> `type-heading-2`. Each sets family, weight,
+ * size, line height and tracking, so a text node needs one `type-*` class
+ * plus a `text-text-*` colour.
+ *
+ * Tracking is the Figma px value divided by the font size, so it follows the
+ * size if a style is scaled. Styles Figma lists at "100" (auto) line height
+ * are `1` for Bebas Neue and `normal` for Inter, which is how they measure
+ * in the file.
+ */
+
+/* Display — Bebas Neue */
+
+@utility type-display-xl {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-display-xl);
+    line-height: calc(81 / 96);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+@utility type-display-l {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-display-l);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+@utility type-heading-2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-heading-2);
+    line-height: 1;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+@utility type-heading-3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-heading-3);
+    line-height: 1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* Not a Figma text style: Kraken has the `--font-size-card-title` token
+ * only. Card titles in the app use it with the Heading 3 face. */
+@utility type-card-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-card-title);
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+@utility type-form-title {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: var(--font-size-form-title);
+    line-height: 1;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+@utility type-submit {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-submit);
+    line-height: 1;
+    letter-spacing: 0.052em;
+    text-transform: uppercase;
+}
+
+@utility type-upload {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-upload);
+    line-height: 1;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+@utility type-button {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-button);
+    line-height: 1;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+@utility type-pill {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: var(--font-size-body);
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* Body — Inter */
+
+@utility type-body-l {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-body-l);
+    line-height: calc(25.5 / 15);
+    letter-spacing: 0;
+}
+
+@utility type-body {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-body);
+    line-height: calc(21 / 13);
+    letter-spacing: 0;
+}
+
+@utility type-input {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-input);
+    line-height: normal;
+    letter-spacing: 0;
+}
+
+@utility type-footer-link {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-small);
+    line-height: normal;
+    letter-spacing: 0;
+}
+
+@utility type-caption {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-caption);
+    line-height: normal;
+    letter-spacing: 0;
+}
+
+@utility type-toggle {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-caption);
+    line-height: normal;
+    letter-spacing: 0;
+}
+
+@utility type-nav-link {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-caption);
+    line-height: normal;
+    letter-spacing: 0.12em;
+}
+
+@utility type-label {
+    font-family: var(--font-body);
+    font-weight: 400;
+    font-size: var(--font-size-label);
+    line-height: normal;
+    letter-spacing: 0;
+}
+
+@utility type-footer-heading {
+    font-family: var(--font-body);
+    font-weight: 900;
+    font-size: var(--font-size-label);
+    line-height: normal;
+    letter-spacing: 0.2em;
+}
+
+/* Motion — `motion/duration-*` */
+
+@utility duration-fast {
+    transition-duration: var(--motion-duration-fast);
+}
+
+@utility duration-base {
+    transition-duration: var(--motion-duration-base);
+}
+
+@utility duration-slow {
+    transition-duration: var(--motion-duration-slow);
+}
+
+/* Focus rings show for keyboard users only. */
+
+@utility focus-ring {
+    &:focus-visible {
+        outline: var(--border-focus-ring) solid var(--color-border-focus);
+        outline-offset: 2px;
+    }
+}
+
+/* For controls sitting on the lime accent surface. */
+@utility focus-ring-inverse {
+    &:focus-visible {
+        outline: var(--border-focus-ring) solid
+            var(--color-border-focus-inverse);
+        outline-offset: 2px;
+    }
+}

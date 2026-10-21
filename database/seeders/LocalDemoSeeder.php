@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerCategory;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\CandidateLanguage;
@@ -234,6 +236,43 @@ class LocalDemoSeeder extends Seeder
             [AnswerCategory::Availability, 'What is your notice period?', 'One month.', [], true],
             [AnswerCategory::Salary, 'What are your salary expectations?', 'Around £85,000, depending on the overall package.', [], false],
         ]);
+
+        $this->seedApplications($profile, $candidate, $va);
+    }
+
+    /**
+     * A small pipeline: one per open stage plus a rejection, with deadlines around today.
+     */
+    private function seedApplications(CandidateProfile $profile, User $candidate, User $va): void
+    {
+        $jobDescription = fn (string $company, string $stack): string => "{$company} is hiring a senior engineer to join our platform team.\n\n"
+            ."What you will do:\n- Design and build {$stack} services used by thousands of customers\n- Improve reliability, observability and performance\n- Mentor other engineers and review code\n\n"
+            ."What we are looking for:\n- 6+ years of professional software development\n- Strong {$stack} experience\n- Experience with PostgreSQL and queues\n- Clear written communication\n\n"
+            ."Nice to have:\n- Payments or fintech background\n- AWS\n\nBenefits: hybrid working, 30 days holiday, learning budget.";
+
+        $applications = [
+            ['Fabrikam Pay', 'Senior Backend Engineer (PHP)', 'London (hybrid)', ApplicationStage::Saved, now()->addDays(2), 'PHP and Laravel', $candidate],
+            ['Contoso Commerce', 'Staff Engineer, Payments', 'Remote (UK)', ApplicationStage::Preparing, now()->addDays(6), 'PHP', $va],
+            ['Tailspin Labs', 'Senior Full-stack Engineer', 'Manchester (hybrid)', ApplicationStage::Applied, null, 'React and TypeScript', $candidate],
+            ['Adatum Health', 'Senior Software Engineer', 'Remote (EU)', ApplicationStage::Interviewing, null, 'Ruby on Rails', $va],
+            ['Litware', 'Backend Engineer', 'London', ApplicationStage::Rejected, null, 'Go', $candidate],
+        ];
+
+        foreach ($applications as [$company, $role, $location, $stage, $deadline, $stack, $owner]) {
+            JobApplication::factory()
+                ->forProfile($profile)
+                ->inStage($stage)
+                ->withJobDescription($jobDescription($company, $stack))
+                ->create([
+                    'company_name' => $company,
+                    'role_title' => $role,
+                    'location' => $location,
+                    'employment_type' => EmploymentType::FullTime,
+                    'deadline_on' => $deadline,
+                    'source_url' => 'https://jobs.example.com/'.str($company)->slug(),
+                    'owner_user_id' => $owner->id,
+                ]);
+        }
     }
 
     /**

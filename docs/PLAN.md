@@ -99,6 +99,7 @@ Confirmed decisions (2026-10-20):
 - D7. Evaluation set: you will group real JD records as you apply; these become the real-world eval set alongside synthetic CI fixtures.
 - D8. **Plain-text input only**: every input (career knowledge, JDs, questions, answers, preferences) is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction from files, no AI claim extraction from documents.
 - D9. **Resume variants, tailored per job — facts once, wording varies**: one candidate has one verified master record (contact, employments, projects, claims, education, certifications, skills, languages, links) and several reusable **resume variants**. Each job application gets a **tailored resume** copied from a variant, with its own versioned title, summary, selection/order and wording, and the cover letter is written from that tailored resume. Employers, official job titles, dates, degrees and issuers are never copied or edited per variant or per job; bullets cite claims (ADR-9). **Authoring is resume-first**: the Profile page lists the resumes (e.g. "PHP focused", "React focused"); jobs, projects and bullet points are added inside a resume and saved once to the shared library, so other resumes can include them. A resume may show its own **display title** for a job (the official title stays in the library) and its own **wording of a bullet** ("Apply everywhere" rewrites the shared claim).
+- D10. **Manual applications before AI**: applications are tracked and prepared by hand before the AI milestones (2026-10-20, no API key yet). Each application has two independent tracks: a **stage** (`saved → preparing → applied → interviewing → offer`, or `rejected`/`withdrawn`) for the job search, shown as the dashboard pipeline, and a **review status** (`not_started → in_progress → in_review → changes_requested → approved`) for the preparation work a VA does for the candidate. The tailored resume is an editable copy of a resume variant; questions are answered by hand or from the answer library. AI analysis and generation (M7/M8) later fill the same tables.
 
 Remaining assumptions:
 - A1. Content is English.
@@ -350,7 +351,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 ### Applications
 - **jd_collections**: id, workspace_id, name, description, use_for_eval bool, created_by. `UNIQUE(workspace_id, name)`.
 - **jd_collection_items**: jd_collection_id, job_application_id, added_by, added_at. PK(collection, application). Many-to-many so one JD can sit in several groups.
-- **job_applications**: id, ulid, workspace_id, candidate_profile_id, company_name, role_title, source_url, location, employment_type, salary_text, status (`draft|analysing|ready_for_generation|in_progress|in_review|changes_requested|approved|submitted|interviewing|offer|rejected|withdrawn|archived`), owner_user_id, assigned_user_id, deadline_at, submitted_at, notes, lock_version, deleted_at.
+- **job_applications**: id, ulid, workspace_id, candidate_profile_id, company_name, role_title, source_url, location, employment_type, salary_text, stage (`saved|preparing|applied|interviewing|offer|rejected|withdrawn`, the job-search pipeline), review_status (`not_started|in_progress|in_review|changes_requested|approved`, the VA preparation workflow; D10), analysis_status (M7: `none|analysing|ready|failed`), owner_user_id, assigned_user_id, deadline_on (date), submitted_at, notes, lock_version, deleted_at.
 - **job_postings**: id, workspace_id, job_application_id (unique), raw_text (verbatim, immutable), raw_sha256, captured_at, captured_by.
 - **job_analyses**: id, workspace_id, job_application_id, generation_run_id, prompt_version, brief jsonb (validated: summary, employer language, seniority, must-haves, nice-to-haves, red flags, injection_warnings), status, created_at. Multiple per application (re-analysis); `job_applications.current_analysis_id`.
 - **requirements**: id, workspace_id, job_analysis_id, kind (`must|preferred|responsibility|employer_value`), text, importance smallint, verbatim_quote.
@@ -633,6 +634,15 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 - **Tests**: leakage tests at SQL level, ranking unit tests, re-embed skipped when unchanged, model switch backfill.
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
 - **Risks**: weights over-fit to tiny dataset — keep defaults simple.
+
+### M7a — Manual applications (pulled forward, D10; 8–11 days)
+- **Objective**: track and prepare real applications by hand, before any AI.
+- **Slices**:
+  A. **done** — Applications core: `job_applications` (stage + review status, soft delete) + immutable `job_postings` (JD pasted as plain text); add/edit/list (board by stage + table, search, filters); detail page; stage changes with dates (applied, interviewing…); dashboard pipeline with real counts; audit
+  B. Tailored resume: `application_resumes` + append-only `application_resume_versions` (copy of a variant revision with `facts_snapshot`); same editor as variants; approve freezes a version; plain-text copy
+  C. Questions & answers: `application_questions` (word/char limits, order, cover letter as a question) + `answer_drafts` with versions; write by hand or insert from the answer library; copy; save an answer back to the library
+  D. VA workflow: assignment, deadlines + overdue view, submit for review → approve / request changes (with note), activity timeline per application
+- **Later AI milestones** reuse these tables: M7 adds JD analysis and evidence matching, M8 generation into the same resume versions and answer drafts, M11 shrinks to what is left of the VA workflow.
 
 ### M7 — Applications, JD analysis & tailored resume (7–9 days)
 - **Objective**: paste JD → brief, and a tailored resume per application.

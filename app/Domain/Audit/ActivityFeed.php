@@ -2,6 +2,8 @@
 
 namespace App\Domain\Audit;
 
+use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Credential;
@@ -24,6 +26,7 @@ class ActivityFeed
      */
     private const NOUNS = [
         'answer' => 'an answer',
+        'application' => 'an application',
         'claim' => 'a bullet point',
         'employment' => 'an experience',
         'project' => 'a project',
@@ -80,6 +83,9 @@ class ActivityFeed
             $event->action === 'workspace.installed' => __('set up the workspace'),
             $event->action === 'proposal.created' => __('suggested a change'),
             $event->action === 'resume.made_default' => __('made a resume the default'),
+            $event->action === 'application.stage_changed' => __('moved an application to :stage', [
+                'stage' => ApplicationStage::tryFrom((string) ($event->metadata['to'] ?? ''))?->label() ?? __('another stage'),
+            ]),
             $prefix === 'proposal' => __(':verb a suggested change', ['verb' => self::VERBS[$verb] ?? Str::headline($verb)]),
             $event->action === 'skills.added' => trans_choice('{1} added a skill|[2,*] added :count skills', (int) ($event->metadata['count'] ?? 0), ['count' => (int) ($event->metadata['count'] ?? 0)]),
             default => trim((self::VERBS[$verb] ?? Str::lower(Str::headline($verb))).' '.(self::NOUNS[$prefix] ?? Str::lower(Str::headline($prefix)))),
@@ -107,11 +113,13 @@ class ActivityFeed
         foreach ($idsByType as $type => $ids) {
             $class = Relation::getMorphedModel($type);
 
-            if ($class === null || ! in_array($class, [Claim::class, AnswerLibraryEntry::class, Employment::class, Project::class, Credential::class, ResumeVariant::class, User::class], true)) {
+            if ($class === null || ! in_array($class, [Claim::class, AnswerLibraryEntry::class, JobApplication::class, Employment::class, Project::class, Credential::class, ResumeVariant::class, User::class], true)) {
                 continue;
             }
 
-            $query = $class::query()->whereIn('id', array_unique($ids));
+            // Deleted applications still get a label: the activity happened.
+            $query = ($class === JobApplication::class ? JobApplication::withTrashed() : $class::query())
+                ->whereIn('id', array_unique($ids));
 
             if ($class === Claim::class || $class === AnswerLibraryEntry::class) {
                 $query->with('currentRevision');
@@ -131,6 +139,7 @@ class ActivityFeed
             $model instanceof Claim => $model->statement(),
             $model instanceof AnswerLibraryEntry => $model->question,
             $model instanceof Employment => "{$model->title} · {$model->employer_name}",
+            $model instanceof JobApplication => "{$model->role_title} · {$model->company_name}",
             $model instanceof Project, $model instanceof ResumeVariant, $model instanceof Credential, $model instanceof User => (string) $model->getAttribute('name'),
             default => '',
         };

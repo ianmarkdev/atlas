@@ -55,7 +55,7 @@ export default function Profile({
             <div className="flex flex-col gap-8 p-4 lg:max-w-5xl">
                 <section className="flex flex-wrap items-start justify-between gap-4 rounded-lg border p-4">
                     <div>
-                        <h1 className="text-xl font-semibold tracking-tight">
+                        <h1 className="type-display-l text-text-primary">
                             {contact.display_name}
                         </h1>
                         <p className="text-sm text-muted-foreground">
