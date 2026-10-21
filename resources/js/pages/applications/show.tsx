@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import {
     Check,
     Copy,
@@ -29,7 +29,19 @@ import {
 import { formatDay } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
 import { index } from '@/routes/applications';
-import type { JobApplicationDetail, SelectOption } from '@/types';
+import ApplicationReviewController from '@/actions/App/Http/Controllers/Applications/ApplicationReviewController';
+import { ReviewBadge, Timeline } from '@/components/applications/review';
+import InputError from '@/components/input-error';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import type { ActivityItem, JobApplicationDetail, SelectOption } from '@/types';
 
 type JobDescription = {
     text: string;
@@ -45,6 +57,8 @@ export default function ApplicationShow({
     tailoredResume,
     variants,
     questionsSummary,
+    review,
+    timeline,
 }: {
     application: JobApplicationDetail;
     jobDescription: JobDescription | null;
@@ -53,6 +67,8 @@ export default function ApplicationShow({
     tailoredResume: TailoredResumeSummary | null;
     variants: SelectOption[];
     questionsSummary: QuestionsSummary;
+    review: ReviewProps;
+    timeline: ActivityItem[];
 }) {
     const employmentType = employmentTypes.find(
         (option) => option.value === application.employment_type,
@@ -171,9 +187,22 @@ export default function ApplicationShow({
                             summary={questionsSummary}
                         />
                         <JobDescriptionCard jobDescription={jobDescription} />
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Activity</CardTitle>
+                                <CardDescription>
+                                    Everything done on this application, its
+                                    resume and its answers.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Timeline items={timeline} />
+                            </CardContent>
+                        </Card>
                     </div>
 
                     <div className="flex flex-col gap-6">
+                        <ReviewCard application={application} review={review} />
                         <Card>
                             <CardHeader>
                                 <CardTitle>Details</CardTitle>
@@ -379,6 +408,303 @@ function TailoredResumeCard({
                 ) : null}
             </CardContent>
         </Card>
+    );
+}
+
+type ReviewProps = {
+    me: string;
+    missing: string[];
+    team: SelectOption[];
+    can: {
+        assign: boolean;
+        take: boolean;
+        handBack: boolean;
+        start: boolean;
+        submit: boolean;
+        review: boolean;
+    };
+};
+
+/**
+ * Who prepares the application and where the review stands, with the next steps the signed-in
+ * user can take.
+ */
+function ReviewCard({
+    application,
+    review,
+}: {
+    application: JobApplicationDetail;
+    review: ReviewProps;
+}) {
+    const status = application.review_status;
+    const assignee = application.assignee ?? null;
+    const canStart =
+        review.can.start &&
+        (status === 'not_started' || status === 'changes_requested');
+    const canSubmit =
+        review.can.submit &&
+        ['not_started', 'in_progress', 'changes_requested'].includes(status);
+    const inReview = status === 'in_review';
+
+    const assign = (assigneeUlid: string | null) =>
+        router.patch(
+            ApplicationReviewController.assign.url(application.ulid),
+            { assignee: assigneeUlid },
+            { preserveScroll: true },
+        );
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                    <CardTitle>Preparation</CardTitle>
+                    <ReviewBadge status={status} />
+                </div>
+                {application.review_status_changed_at && (
+                    <CardDescription>
+                        Since {timeAgo(application.review_status_changed_at)}
+                    </CardDescription>
+                )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {application.review_note && status !== 'approved' && (
+                    <div
+                        className={
+                            status === 'changes_requested'
+                                ? 'rounded-kraken-sm border border-border-error bg-surface-error-subtle p-3 text-sm'
+                                : 'rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3 text-sm'
+                        }
+                    >
+                        <p className="type-label text-text-label uppercase">
+                            {status === 'changes_requested'
+                                ? 'Changes requested'
+                                : 'Note from the VA'}
+                        </p>
+                        <p className="whitespace-pre-line text-text-primary">
+                            {application.review_note}
+                        </p>
+                    </div>
+                )}
+
+                <div className="grid gap-2">
+                    <p className="type-label text-text-label uppercase">
+                        Assigned to
+                    </p>
+                    {review.can.assign ? (
+                        <NativeSelect
+                            aria-label="Assigned to"
+                            className="h-10"
+                            value={assignee?.ulid ?? ''}
+                            options={review.team}
+                            placeholder="Nobody"
+                            onChange={(event) =>
+                                assign(event.target.value || null)
+                            }
+                        />
+                    ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-sm text-text-primary">
+                                {assignee
+                                    ? assignee.is_you
+                                        ? 'You'
+                                        : assignee.name
+                                    : 'Nobody yet'}
+                            </span>
+                            {review.can.take && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => assign(review.me)}
+                                >
+                                    I’ll take it
+                                </Button>
+                            )}
+                            {review.can.handBack && (
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => assign(null)}
+                                >
+                                    Hand back
+                                </Button>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                    {canStart && (
+                        <Form
+                            {...ApplicationReviewController.start.form(
+                                application.ulid,
+                            )}
+                            options={{ preserveScroll: true }}
+                        >
+                            {({ processing }) => (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={processing}
+                                >
+                                    Start preparing
+                                </Button>
+                            )}
+                        </Form>
+                    )}
+                    {canSubmit && (
+                        <NoteDialog
+                            trigger="Send for review"
+                            title="Send to the candidate for review"
+                            description="Say what is ready and anything they should check."
+                            action={ApplicationReviewController.submit.form(
+                                application.ulid,
+                            )}
+                            submitLabel="Send for review"
+                            required={false}
+                        />
+                    )}
+                    {review.can.review && inReview && (
+                        <NoteDialog
+                            trigger="Request changes"
+                            title="Request changes"
+                            description="The note goes back to whoever prepared the application."
+                            action={ApplicationReviewController.requestChanges.form(
+                                application.ulid,
+                            )}
+                            submitLabel="Send back"
+                            required
+                            variant="outline"
+                        />
+                    )}
+                    {review.can.review && status !== 'approved' && (
+                        <Form
+                            {...ApplicationReviewController.approve.form(
+                                application.ulid,
+                            )}
+                            options={{ preserveScroll: true }}
+                        >
+                            {({ processing, errors }) => (
+                                <div className="space-y-1">
+                                    <Button
+                                        size="sm"
+                                        disabled={
+                                            processing ||
+                                            review.missing.length > 0
+                                        }
+                                    >
+                                        Approve application
+                                    </Button>
+                                    <InputError message={errors.review} />
+                                </div>
+                            )}
+                        </Form>
+                    )}
+                    {review.can.review && status === 'approved' && (
+                        <Form
+                            {...ApplicationReviewController.reopen.form(
+                                application.ulid,
+                            )}
+                            options={{ preserveScroll: true }}
+                        >
+                            {({ processing }) => (
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={processing}
+                                >
+                                    Reopen
+                                </Button>
+                            )}
+                        </Form>
+                    )}
+                </div>
+
+                {review.can.review &&
+                    status !== 'approved' &&
+                    review.missing.length > 0 && (
+                        <div className="type-caption text-text-muted">
+                            <p>
+                                Approve these before approving the application:
+                            </p>
+                            <ul className="mt-1 list-disc pl-5">
+                                {review.missing.map((item) => (
+                                    <li key={item}>{item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                {status === 'approved' && (
+                    <p className="type-caption text-text-muted">
+                        Ready to send. Once it is sent, move it to Applied.
+                    </p>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+function NoteDialog({
+    trigger,
+    title,
+    description,
+    action,
+    submitLabel,
+    required,
+    variant = 'default',
+}: {
+    trigger: string;
+    title: string;
+    description: string;
+    action: ReturnType<typeof ApplicationReviewController.submit.form>;
+    submitLabel: string;
+    required: boolean;
+    variant?: 'default' | 'outline';
+}) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant={variant}>
+                    {trigger}
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{title}</DialogTitle>
+                    <DialogDescription>{description}</DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...action}
+                    options={{ preserveScroll: true }}
+                    onSuccess={() => setOpen(false)}
+                    className="space-y-3"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <Textarea
+                                name="note"
+                                rows={4}
+                                maxLength={2000}
+                                required={required}
+                                aria-label={
+                                    required ? 'Note' : 'Note (optional)'
+                                }
+                                placeholder={
+                                    required
+                                        ? 'What should change?'
+                                        : 'Optional note'
+                                }
+                            />
+                            <InputError
+                                message={errors.note ?? errors.review}
+                            />
+                            <Button disabled={processing}>{submitLabel}</Button>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
     );
 }
 

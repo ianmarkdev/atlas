@@ -7,6 +7,7 @@ import {
     StageBadge,
     StageSelect,
 } from '@/components/applications/stage';
+import { Initials, ReviewBadge } from '@/components/applications/review';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,23 @@ import { index } from '@/routes/applications';
 import type { JobApplication, SelectOption } from '@/types';
 
 type View = 'board' | 'table';
+
+type QuickFilter =
+    | 'all'
+    | 'mine'
+    | 'unassigned'
+    | 'in_review'
+    | 'changes_requested'
+    | 'overdue';
+
+const quickFilters: { value: QuickFilter; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'mine', label: 'Assigned to me' },
+    { value: 'unassigned', label: 'Unassigned' },
+    { value: 'in_review', label: 'In review' },
+    { value: 'changes_requested', label: 'Changes requested' },
+    { value: 'overdue', label: 'Overdue' },
+];
 
 const viewStorageKey = 'applications.view';
 
@@ -38,7 +56,7 @@ export default function Applications({
     canViewDeleted,
 }: {
     applications: JobApplication[];
-    filters: { q: string; deleted: boolean };
+    filters: { q: string; deleted: boolean; filter: QuickFilter };
     stages: SelectOption[];
     canViewDeleted: boolean;
 }) {
@@ -57,12 +75,19 @@ export default function Applications({
         }
     };
 
-    const visit = (query: { q?: string; deleted?: boolean }) =>
+    const visit = (query: {
+        q?: string;
+        deleted?: boolean;
+        filter?: QuickFilter;
+    }) =>
         router.get(
             index.url(),
             {
                 ...(query.q ? { q: query.q } : {}),
                 ...(query.deleted ? { deleted: 1 } : {}),
+                ...(query.filter && query.filter !== 'all'
+                    ? { filter: query.filter }
+                    : {}),
             },
             { preserveState: true, preserveScroll: true, replace: true },
         );
@@ -96,7 +121,11 @@ export default function Applications({
                         className="flex min-w-56 flex-1 gap-2"
                         onSubmit={(event) => {
                             event.preventDefault();
-                            visit({ q: search, deleted: filters.deleted });
+                            visit({
+                                q: search,
+                                deleted: filters.deleted,
+                                filter: filters.filter,
+                            });
                         }}
                     >
                         <div className="relative flex-1">
@@ -150,10 +179,42 @@ export default function Applications({
                     )}
                 </div>
 
+                {!filters.deleted && (
+                    <div
+                        role="group"
+                        aria-label="Quick filters"
+                        className="-mt-2 flex flex-wrap gap-1.5"
+                    >
+                        {quickFilters.map((option) => (
+                            <Button
+                                key={option.value}
+                                type="button"
+                                size="sm"
+                                variant={
+                                    filters.filter === option.value
+                                        ? 'secondary'
+                                        : 'ghost'
+                                }
+                                aria-pressed={filters.filter === option.value}
+                                onClick={() =>
+                                    visit({
+                                        q: filters.q,
+                                        filter: option.value,
+                                    })
+                                }
+                            >
+                                {option.label}
+                            </Button>
+                        ))}
+                    </div>
+                )}
+
                 {filters.deleted ? (
                     <DeletedList applications={applications} />
                 ) : applications.length === 0 ? (
-                    <EmptyState searching={filters.q !== ''} />
+                    <EmptyState
+                        searching={filters.q !== '' || filters.filter !== 'all'}
+                    />
                 ) : view === 'board' ? (
                     <Board applications={applications} stages={stages} />
                 ) : (
@@ -283,6 +344,16 @@ function ApplicationCard({
                 )}
             </Link>
             <div className="flex flex-wrap items-center gap-1.5">
+                {application.assignee && (
+                    <Initials
+                        name={application.assignee.name}
+                        title={`Assigned to ${application.assignee.is_you ? 'you' : application.assignee.name}`}
+                    />
+                )}
+                <ReviewBadge
+                    status={application.review_status}
+                    hideNotStarted
+                />
                 <DeadlineBadge application={application} />
                 {application.stage_changed_at && (
                     <span className="type-caption text-text-subtle">
@@ -316,6 +387,8 @@ function Table({
                         {[
                             'Company & role',
                             'Stage',
+                            'Assigned to',
+                            'Review',
                             'Deadline',
                             'Applied',
                             '',
@@ -361,6 +434,18 @@ function Table({
                                         stages={stages}
                                     />
                                 )}
+                            </td>
+                            <td className="px-3 py-2 text-text-secondary">
+                                {application.assignee
+                                    ? application.assignee.is_you
+                                        ? 'You'
+                                        : application.assignee.name
+                                    : '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                                <ReviewBadge
+                                    status={application.review_status}
+                                />
                             </td>
                             <td className="px-3 py-2">
                                 <DeadlineBadge application={application} />

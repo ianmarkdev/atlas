@@ -38,13 +38,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonImmutable|null $applied_at
  * @property CarbonImmutable|null $deadline_on
  * @property string|null $notes
+ * @property string|null $review_note
+ * @property CarbonImmutable|null $review_status_changed_at
  * @property int|null $owner_user_id
+ * @property int|null $assigned_user_id
  * @property int $lock_version
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property CarbonImmutable|null $deleted_at
  * @property-read JobPosting|null $posting
  * @property-read User|null $owner
+ * @property-read User|null $assignee
  * @property-read ApplicationResume|null $resume
  */
 #[UseFactory(JobApplicationFactory::class)]
@@ -143,6 +147,16 @@ class JobApplication extends Model
     }
 
     /**
+     * Who prepares this application (a VA, or the candidate).
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user_id');
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -156,6 +170,7 @@ class JobApplication extends Model
             'stage_changed_at' => 'datetime',
             'applied_at' => 'datetime',
             'deadline_on' => 'date',
+            'review_status_changed_at' => 'datetime',
         ];
     }
 }

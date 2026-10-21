@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\ApplicationResumeService;
+use App\Domain\Applications\ApplicationReviewService;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerCategory;
@@ -286,6 +287,7 @@ class LocalDemoSeeder extends Seeder
             $this->tailor('Tailspin Labs', 'React focused', $candidate, approve: true);
             $this->tailor('Contoso Commerce', 'PHP focused', $va, approve: false);
             $this->seedQuestions('Contoso Commerce', $candidate, $va);
+            $this->seedReviews($candidate, $va);
         });
     }
 
@@ -309,6 +311,28 @@ class LocalDemoSeeder extends Seeder
         $service->approveAnswer($notice->refresh(), $candidate);
         $service->saveAnswer($motivation, 'Contoso builds payments for small merchants, which is exactly the work I have done at Northwind for four years.', null, 0, $va);
         $service->coverLetter($application, $va);
+    }
+
+    /**
+     * The VA prepares Contoso (in progress) and has sent Fabrikam for review; Tailspin, already
+     * sent, was approved by the candidate.
+     */
+    private function seedReviews(User $candidate, User $va): void
+    {
+        $reviews = app(ApplicationReviewService::class);
+        $application = fn (string $company): JobApplication => JobApplication::query()->where('company_name', $company)->firstOrFail();
+
+        $contoso = $application('Contoso Commerce');
+        $reviews->assign($contoso, $va, $candidate);
+        $reviews->start($contoso, $va);
+
+        $fabrikam = $application('Fabrikam Pay');
+        $reviews->assign($fabrikam, $va, $va);
+        $reviews->submit($fabrikam, 'Nothing to tailor yet: the default resume fits. Can you confirm the salary expectation before I apply?', $va);
+
+        $tailspin = $application('Tailspin Labs');
+        $reviews->assign($tailspin, $candidate, $candidate);
+        $reviews->approve($tailspin, $candidate);
     }
 
     private function tailor(string $company, string $variantName, User $actor, bool $approve): void

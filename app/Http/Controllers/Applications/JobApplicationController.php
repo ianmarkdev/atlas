@@ -3,14 +3,19 @@
 namespace App\Http\Controllers\Applications;
 
 use App\Domain\Applications\ApplicationQuestion;
+use App\Domain\Applications\ApplicationReviewService;
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobApplicationService;
+use App\Domain\Applications\ReviewStatus;
+use App\Domain\Audit\ActivityFeed;
 use App\Domain\Knowledge\EmploymentType;
 use App\Domain\Resumes\ResumeVariant;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Applications\SaveJobApplicationRequest;
 use App\Http\Resources\JobApplicationResource;
+use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +29,12 @@ use Inertia\Response;
  */
 class JobApplicationController extends Controller
 {
+    /**
+     * Quick filters of the list: everything, assigned to me, unassigned (open), waiting for the
+     * candidate's review, sent back with changes, past the deadline.
+     */
+    private const FILTERS = ['all', 'mine', 'unassigned', 'in_review', 'changes_requested', 'overdue'];
+
     public function __construct(private JobApplicationService $applications) {}
 
     /**
@@ -34,9 +45,19 @@ class JobApplicationController extends Controller
     {
         $search = trim($request->string('q')->toString());
         $showDeleted = $request->boolean('deleted') && $request->user()->isCandidate();
+        $filter = in_array($request->query('filter'), self::FILTERS, true) ? (string) $request->query('filter') : 'all';
+        $userId = $request->user()->id;
 
         $applications = JobApplication::query()
+            ->with('assignee:id,ulid,name')
             ->when($showDeleted, fn (Builder $query) => $query->onlyTrashed())
+            ->when($filter === 'mine', fn (Builder $query) => $query->where('assigned_user_id', $userId))
+            ->when($filter === 'unassigned', fn (Builder $query) => $query->whereNull('assigned_user_id')->whereNotIn('stage', [ApplicationStage::Rejected, ApplicationStage::Withdrawn]))
+            ->when($filter === 'in_review', fn (Builder $query) => $query->where('review_status', ReviewStatus::InReview))
+            ->when($filter === 'changes_requested', fn (Builder $query) => $query->where('review_status', ReviewStatus::ChangesRequested))
+            ->when($filter === 'overdue', fn (Builder $query) => $query
+                ->whereIn('stage', [ApplicationStage::Saved, ApplicationStage::Preparing])
+                ->whereDate('deadline_on', '<', CarbonImmutable::today()))
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $like = '%'.addcslashes($search, '%_\\').'%';
                 $query->where(fn (Builder $inner) => $inner
@@ -49,7 +70,7 @@ class JobApplicationController extends Controller
 
         return Inertia::render('applications/index', [
             'applications' => JobApplicationResource::collection($applications)->resolve(),
-            'filters' => ['q' => $search, 'deleted' => $showDeleted],
+            'filters' => ['q' => $search, 'deleted' => $showDeleted, 'filter' => $filter],
             'stages' => self::stageOptions(),
             'canViewDeleted' => $request->user()->isCandidate(),
         ]);
@@ -78,11 +99,12 @@ class JobApplicationController extends Controller
         return to_route('applications.show', $application);
     }
 
-    public function show(JobApplication $application): Response
+    public function show(Request $request, JobApplication $application, ApplicationReviewService $reviews): Response
     {
-        $application->load(['posting', 'owner:id,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion']);
+        $application->load(['posting', 'owner:id,name', 'assignee:id,ulid,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion']);
         $resume = $application->resume;
         $questions = $application->questions;
+        $user = $request->user();
 
         return Inertia::render('applications/show', [
             'application' => [
@@ -107,6 +129,30 @@ class JobApplicationController extends Controller
             ],
             'variants' => ResumeVariant::query()->active()->orderByDesc('is_default')->orderBy('name')->get(['ulid', 'name'])
                 ->map(fn (ResumeVariant $variant): array => ['value' => $variant->ulid, 'label' => $variant->name])->values()->all(),
+            'review' => [
+                'me' => $user->ulid,
+                'missing' => $reviews->notYetApproved($application),
+                'team' => $user->isCandidate() ? $this->assignableMembers($application) : [],
+                'can' => [
+                    'assign' => $user->can('assign', [$application, null]) && $user->isCandidate(),
+                    'take' => $user->can('assign', [$application, $user]) && ! $user->isCandidate(),
+                    'handBack' => ! $user->isCandidate() && $user->can('assign', [$application, null]),
+                    'start' => $user->can('update', $application),
+                    'submit' => $user->can('submitForReview', $application),
+                    'review' => $user->can('review', $application),
+                ],
+            ],
+            'timeline' => ActivityFeed::recent($user, 30, fn (Builder $query) => $query->where(function (Builder $events) use ($application, $resume, $questions): void {
+                $events->where(fn (Builder $q) => $q->where('subject_type', 'job_application')->where('subject_id', $application->id));
+
+                if ($resume !== null) {
+                    $events->orWhere(fn (Builder $q) => $q->where('subject_type', 'application_resume')->where('subject_id', $resume->id));
+                }
+
+                if ($questions->isNotEmpty()) {
+                    $events->orWhere(fn (Builder $q) => $q->where('subject_type', 'application_question')->whereIn('subject_id', $questions->modelKeys()));
+                }
+            })),
             'stages' => self::stageOptions(),
             'employmentTypes' => self::employmentTypeOptions(),
         ]);
@@ -190,6 +236,27 @@ class JobApplicationController extends Controller
             fn (ApplicationStage $stage): array => ['value' => $stage->value, 'label' => $stage->label()],
             ApplicationStage::cases(),
         );
+    }
+
+    /**
+     * Active VAs and the candidate, for the assignee picker.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    private function assignableMembers(JobApplication $application): array
+    {
+        $members = User::query()
+            ->whereHas('membership', fn ($query) => $query->where('workspace_id', $application->workspace_id))
+            ->where('is_active', true)
+            ->with('membership')
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (User $member): bool => ApplicationReviewService::canBeAssigned($member));
+
+        return array_values(array_map(fn (User $member): array => [
+            'value' => $member->ulid,
+            'label' => $member->isCandidate() ? "{$member->name} (candidate)" : $member->name,
+        ], $members->all()));
     }
 
     /**

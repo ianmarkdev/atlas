@@ -24,6 +24,9 @@ export type JobApplication = {
     source_url: string | null;
     stage: ApplicationStage;
     review_status: ReviewStatus;
+    review_note: string | null;
+    review_status_changed_at: string | null;
+    assignee?: { ulid: string; name: string; is_you: boolean } | null;
     /** `YYYY-MM-DD` */
     deadline_on: string | null;
     is_overdue: boolean;
@@ -33,6 +36,16 @@ export type JobApplication = {
     deleted_at: string | null;
     lock_version: number;
     can: { update: boolean; delete: boolean; restore: boolean };
+};
+
+export type ActivityItem = {
+    id: number;
+    actor: string;
+    is_you: boolean;
+    sentence: string;
+    subject: string | null;
+    note: string | null;
+    at: string;
 };
 
 export type JobApplicationDetail = JobApplication & {

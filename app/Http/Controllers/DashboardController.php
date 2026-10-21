@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Applications\ReviewStatus;
 use App\Domain\Audit\ActivityFeed;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerStatus;
@@ -89,12 +90,17 @@ class DashboardController extends Controller
                 + Credential::query()->where('status', KnowledgeStatus::Proposed)->count();
 
             $items = [
+                ['key' => 'reviews', 'label' => __('Applications waiting for your review'), 'count' => JobApplication::query()->where('review_status', ReviewStatus::InReview)->count(), 'href' => route('applications.index', ['filter' => 'in_review'])],
                 ['key' => 'suggestions', 'label' => __('Suggested changes to review'), 'count' => KnowledgeProposal::query()->where('status', ProposalStatus::Pending)->count(), 'href' => route('knowledge.proposals.index')],
                 ['key' => 'unverified', 'label' => __('Library items to verify'), 'count' => $unverified, 'href' => route('knowledge.index', ['show' => 'unverified'])],
                 ['key' => 'drafts', 'label' => __('Draft answers to approve'), 'count' => $stats['answersDraft'], 'href' => route('knowledge.answers.index')],
             ];
         } else {
+            $mine = JobApplication::query()->where('assigned_user_id', $user->id);
+
             $items = [
+                ['key' => 'changes', 'label' => __('Sent back to you with changes'), 'count' => (clone $mine)->where('review_status', ReviewStatus::ChangesRequested)->count(), 'href' => route('applications.index', ['filter' => 'changes_requested'])],
+                ['key' => 'assigned', 'label' => __('Applications assigned to you'), 'count' => (clone $mine)->whereIn('review_status', [ReviewStatus::NotStarted, ReviewStatus::InProgress])->whereNotIn('stage', [ApplicationStage::Rejected, ApplicationStage::Withdrawn])->count(), 'href' => route('applications.index', ['filter' => 'mine'])],
                 ['key' => 'suggestions', 'label' => __('Your suggestions awaiting the candidate'), 'count' => KnowledgeProposal::query()->where('status', ProposalStatus::Pending)->where('proposed_by_user_id', $user->id)->count(), 'href' => route('knowledge.proposals.index')],
                 ['key' => 'drafts', 'label' => __('Draft answers awaiting approval'), 'count' => $stats['answersDraft'], 'href' => route('knowledge.answers.index')],
             ];
@@ -105,7 +111,7 @@ class DashboardController extends Controller
 
         array_unshift(
             $items,
-            ['key' => 'overdue', 'label' => __('Applications past their deadline'), 'count' => (clone $notYetSent)->where('deadline_on', '<', $today)->count(), 'href' => route('applications.index')],
+            ['key' => 'overdue', 'label' => __('Applications past their deadline'), 'count' => (clone $notYetSent)->where('deadline_on', '<', $today)->count(), 'href' => route('applications.index', ['filter' => 'overdue'])],
             ['key' => 'closing', 'label' => __('Applications closing within 3 days'), 'count' => (clone $notYetSent)->whereBetween('deadline_on', [$today, $today->addDays(3)])->count(), 'href' => route('applications.index')],
         );
 

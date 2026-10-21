@@ -33,6 +33,13 @@ class JobApplicationResource extends JsonResource
             'source_url' => $this->source_url,
             'stage' => $this->stage->value,
             'review_status' => $this->review_status->value,
+            'review_note' => $this->review_note,
+            'review_status_changed_at' => $this->review_status_changed_at?->toIso8601String(),
+            'assignee' => $this->whenLoaded('assignee', fn () => $this->assignee === null ? null : [
+                'ulid' => $this->assignee->ulid,
+                'name' => $this->assignee->name,
+                'is_you' => $this->assignee->is($user),
+            ]),
             'deadline_on' => $this->deadline_on?->format('Y-m-d'),
             'is_overdue' => $this->isOverdue(),
             'applied_at' => $this->applied_at?->toIso8601String(),

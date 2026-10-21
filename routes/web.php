@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
+use App\Http\Controllers\Applications\ApplicationReviewController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
@@ -61,6 +62,16 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
     Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
         ->withTrashed()->name('applications.restore');
+
+    // The VA workflow of one application (M7a slice D).
+    Route::prefix('applications/{application}/review')->name('applications.review.')->group(function () {
+        Route::patch('assign', [ApplicationReviewController::class, 'assign'])->name('assign');
+        Route::patch('start', [ApplicationReviewController::class, 'start'])->name('start');
+        Route::patch('submit', [ApplicationReviewController::class, 'submit'])->name('submit');
+        Route::patch('request-changes', [ApplicationReviewController::class, 'requestChanges'])->name('request-changes');
+        Route::patch('approve', [ApplicationReviewController::class, 'approve'])->name('approve');
+        Route::patch('reopen', [ApplicationReviewController::class, 'reopen'])->name('reopen');
+    });
 
     // The questions of one application form and their answers (M7a slice C).
     Route::prefix('applications/{application}/questions')->name('applications.questions.')->scopeBindings()->group(function () {
