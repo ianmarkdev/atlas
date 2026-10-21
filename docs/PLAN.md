@@ -101,6 +101,7 @@ Confirmed decisions (2026-10-20):
 - D9. **Resume variants, tailored per job — facts once, wording varies**: one candidate has one verified master record (contact, employments, projects, claims, education, certifications, skills, languages, links) and several reusable **resume variants**. Each job application gets a **tailored resume** copied from a variant, with its own versioned title, summary, selection/order and wording, and the cover letter is written from that tailored resume. Employers, official job titles, dates, degrees and issuers are never copied or edited per variant or per job; bullets cite claims (ADR-9). **Authoring is resume-first**: the Profile page lists the resumes (e.g. "PHP focused", "React focused"); jobs, projects and bullet points are added inside a resume and saved once to the shared library, so other resumes can include them. A resume may show its own **display title** for a job (the official title stays in the library) and its own **wording of a bullet** ("Apply everywhere" rewrites the shared claim).
 - D10. **Manual applications before AI**: applications are tracked and prepared by hand before the AI milestones (2026-10-20, no API key yet). Each application has two independent tracks: a **stage** (`saved → preparing → applied → interviewing → offer`, or `rejected`/`withdrawn`) for the job search, shown as the dashboard pipeline, and a **review status** (`not_started → in_progress → in_review → changes_requested → approved`) for the preparation work a VA does for the candidate. The tailored resume is an editable copy of a resume variant; questions are answered by hand or from the answer library. AI analysis and generation (M7/M8) later fill the same tables.
 - D11. **Embeddings run locally, free**: a local open-source model served by Ollama (`bge-m3`, 1024 dimensions, ~8k-token context) creates the vectors; Postgres + pgvector stores and searches them (no separate vector database). Career data never leaves the machine for embedding. A hosted provider (Voyage, OpenAI) stays possible behind `EmbeddingProvider` for production hosting without Ollama (2026-10-21).
+- D12. **Local-first text generation**: every AI task (job-description analysis, answer writing, claim checking) runs on a local Ollama model by default, so the app works without an Anthropic API key and private data stays on the machine. Claude is optional, per task, and only used when `AI_ALLOW_EXTERNAL=true` is set (explicit consent to send career data). A blind comparison workflow on synthetic samples decides which tasks are worth moving to Claude (2026-10-21; ADR-11).
 
 Remaining assumptions:
 - A1. Content is English.
@@ -617,7 +618,8 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Risks**: over-modelling — keep claim `kind` list small.
 
 ### M4 — AI gateway & usage tracking (4–5 days)
-- **Objective**: one safe path to Claude.
+- **Objective**: one safe path to text-generation models (local Ollama by default, Claude optional — D12, ADR-11).
+- **Status (2026-10-21)**: built and tested without Ollama or Claude: `LlmClient` + `OllamaLlmClient` / `ClaudeLlmClient` / `FakeLlmClient`, `LlmRouter` (per-task provider and model, external-data guard), `PromptRegistry` (`prompts/{jd_analysis,answer_writing,claim_check}/v1`), `JsonSchemaValidator` + one repair retry, `ClaimGroundingValidator`, `AiGateway` (budget reservation per workspace, idempotency keys, `generation_runs`, encrypted `generation_payloads` pruned daily), bounded retries with backoff/jitter/`Retry-After`, per-task timeouts; comparison workflow (`app:compare-llm`, Settings → Model comparison, blind 1–5 scores); setup in `docs/ai-setup.md`. Open: the Settings → AI budget/usage page and its 80% banner; queue-dispatched demo run; per-workspace Redis rate limiter (not needed for a single local user yet).
 - **Scope**: `LlmClient` interface, `AnthropicLlmClient`, `FakeLlmClient` (fixture responses), `PromptRegistry`, JSON schema validation + repair retry, `generation_runs`/`generation_payloads`, cost calculator (config price table), retries with backoff + jitter on 429/5xx/overloaded, timeouts, Redis rate limiter per workspace, monthly budget guard, idempotency keys.
 - **Files**: `app/Domain/Ai/*`, `prompts/`, `config/ai.php`.
 - **Also**: `BudgetGuard` with monthly ceiling (default US$30), 80% warning banner, 100% hard stop, candidate-only Settings → AI budget + usage page (spend this month, per purpose, per application).
@@ -695,7 +697,7 @@ Total ≈ 12–16 working weeks solo (rough; refine after M0).
 - **Revisit when**: > ~1M vectors/workspace or retrieval p95 > 300 ms after tuning.
 
 ### ADR-3 Claude API + independent embedding provider
-- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama).
+- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama) and for generation by ADR-11 (Ollama default, Claude optional).
 - **Consequences**: two vendors' DPAs; embeddings re-generable on switch via `embedding_models`. Secrets server-side only (env/secret manager), never in browser.
 
 ### ADR-4 Retrieval & orchestration in plain Laravel services
@@ -737,6 +739,13 @@ Total ≈ 12–16 working weeks solo (rough; refine after M0).
 - **Alternatives**: Voyage AI or OpenAI embeddings (cost, data leaves the machine); in-process PHP inference (TransformersPHP: new dependency + FFI); free hosted tiers (rate limits, data-use terms).
 - **Consequences**: free and private; embedding speed bound by the local CPU (fine at this scale); production hosting needs an Ollama sidecar or a switch to a hosted provider, which is a config change plus a re-embedding backfill (`embedding_models`).
 - **Revisit when**: deploying somewhere that cannot run Ollama, or retrieval eval misses Recall@8 ≥ 0.85 with `bge-m3`.
+
+### ADR-11 Local-first LLM gateway (Ollama default, Claude optional)
+- **Context**: the plan assumed Claude for all generation (ADR-3). The candidate has no API key yet and prefers to keep career data local; the laptop has an RTX 3050 (4 GB VRAM). Writing quality and instruction-following of small local models are lower than Claude's, so the choice should be measured, not assumed.
+- **Decision**: one `LlmClient` interface with `OllamaLlmClient` (default), `ClaudeLlmClient` (Laravel HTTP client, no SDK) and `FakeLlmClient`; `LlmRouter` picks provider and model per task from `config/ai.php` and refuses external providers unless `AI_ALLOW_EXTERNAL=true`; `AiGateway` validates every structured output on the server (`JsonSchemaValidator`, one repair retry), enforces the budget for paid calls, and records `generation_runs` with encrypted, 14-day `generation_payloads`. Claim labels are decided by `ClaimGroundingValidator`, never by the model. `app:compare-llm` + Settings → Model comparison score providers blind on synthetic samples.
+- **Alternatives**: Claude only (needs a key, data leaves the machine); local only (no path to better writing); the Anthropic PHP SDK and a JSON-schema package (new dependencies; the HTTP API and our schema subset are small).
+- **Consequences**: the app is fully usable offline; per-task routing lets cheap structured tasks stay local while writing can move to Claude after measurement; the in-house schema validator covers only the keywords our prompts use.
+- **Revisit when**: comparison scores show local output is not good enough for a task, or prompts need JSON-Schema features beyond the supported subset.
 
 ---
 

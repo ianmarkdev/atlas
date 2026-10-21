@@ -26,6 +26,9 @@ The user and their virtual assistants (VAs) prepare many job applications. Gener
 - D7. Evaluation set: you will group real JD records as you apply; these become the real-world eval set alongside synthetic CI fixtures.
 - D8. **Plain-text input only**: everything is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction, no AI claim extraction (ADR-8; M5 removed).
 - D9. **Resume variants, tailored per job**: one verified master record → several resume variants → a versioned tailored resume per application, which the cover letter is written from. Facts are never edited per variant or job; only selection, order and wording vary (ADR-9).
+- D10. **Manual applications before AI**: applications are tracked and prepared by hand first (stage + review status, tailored resume, questions, VA review), and the AI milestones fill the same tables later.
+- D11. **Local embeddings**: Ollama + `bge-m3`, stored and searched in Postgres/pgvector (ADR-10).
+- D12. **Local-first text generation**: Ollama by default; Claude optional per task, only with `AI_ALLOW_EXTERNAL=true` (ADR-11, [ai-setup.md](ai-setup.md)).
 
 ## Documents
 
@@ -39,6 +42,7 @@ The user and their virtual assistants (VAs) prepare many job applications. Gener
 | [05-roadmap.md](05-roadmap.md) | Milestones M0–M12 |
 | [06-adrs.md](06-adrs.md) | Architecture Decision Records |
 | [07-backlog.md](07-backlog.md) | Spikes, MVP epics, optional enhancements, deployment |
+| [ai-setup.md](ai-setup.md) | Running AI locally with Ollama, and optional Claude API configuration |
 
 > If PLAN.md and a split file disagree, PLAN.md wins. Edit PLAN.md first, then the split copy.
 

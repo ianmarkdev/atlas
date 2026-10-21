@@ -13,7 +13,7 @@
 - **Revisit when**: > ~1M vectors/workspace or retrieval p95 > 300 ms after tuning.
 
 ### ADR-3 Claude API + independent embedding provider
-- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama).
+- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama) and for generation by ADR-11 (Ollama default, Claude optional).
 - **Consequences**: two vendors' DPAs; embeddings re-generable on switch via `embedding_models`. Secrets server-side only (env/secret manager), never in browser.
 
 ### ADR-4 Retrieval & orchestration in plain Laravel services
@@ -55,3 +55,10 @@
 - **Alternatives**: Voyage AI or OpenAI embeddings (cost, data leaves the machine); in-process PHP inference (TransformersPHP: new dependency + FFI); free hosted tiers (rate limits, data-use terms).
 - **Consequences**: free and private; embedding speed bound by the local CPU (fine at this scale); production hosting needs an Ollama sidecar or a switch to a hosted provider, which is a config change plus a re-embedding backfill (`embedding_models`).
 - **Revisit when**: deploying somewhere that cannot run Ollama, or retrieval eval misses Recall@8 ≥ 0.85 with `bge-m3`.
+
+### ADR-11 Local-first LLM gateway (Ollama default, Claude optional)
+- **Context**: the plan assumed Claude for all generation (ADR-3). The candidate has no API key yet and prefers to keep career data local; the laptop has an RTX 3050 (4 GB VRAM). Writing quality and instruction-following of small local models are lower than Claude's, so the choice should be measured, not assumed.
+- **Decision**: one `LlmClient` interface with `OllamaLlmClient` (default), `ClaudeLlmClient` (Laravel HTTP client, no SDK) and `FakeLlmClient`; `LlmRouter` picks provider and model per task from `config/ai.php` and refuses external providers unless `AI_ALLOW_EXTERNAL=true`; `AiGateway` validates every structured output on the server (`JsonSchemaValidator`, one repair retry), enforces the budget for paid calls, and records `generation_runs` with encrypted, 14-day `generation_payloads`. Claim labels are decided by `ClaimGroundingValidator`, never by the model. `app:compare-llm` + Settings → Model comparison score providers blind on synthetic samples.
+- **Alternatives**: Claude only (needs a key, data leaves the machine); local only (no path to better writing); the Anthropic PHP SDK and a JSON-schema package (new dependencies; the HTTP API and our schema subset are small).
+- **Consequences**: the app is fully usable offline; per-task routing lets cheap structured tasks stay local while writing can move to Claude after measurement; the in-house schema validator covers only the keywords our prompts use.
+- **Revisit when**: comparison scores show local output is not good enough for a task, or prompts need JSON-Schema features beyond the supported subset.

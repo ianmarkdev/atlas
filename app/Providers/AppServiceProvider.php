@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Domain\Ai\LlmRouter;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\JobApplication;
@@ -38,6 +39,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(TenantContext::class);
+
+        // M4: one router per process, so tests can swap every task to a FakeLlmClient.
+        $this->app->singleton(LlmRouter::class);
 
         // D11: local Ollama by default; "fake" for tests and offline work.
         $this->app->singleton(EmbeddingProvider::class, fn (): EmbeddingProvider => match (config('embeddings.provider')) {

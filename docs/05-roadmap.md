@@ -57,7 +57,8 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Risks**: over-modelling — keep claim `kind` list small.
 
 ### M4 — AI gateway & usage tracking (4–5 days)
-- **Objective**: one safe path to Claude.
+- **Objective**: one safe path to text-generation models (local Ollama by default, Claude optional — D12, ADR-11).
+- **Status (2026-10-21)**: built and tested without Ollama or Claude: `LlmClient` + `OllamaLlmClient` / `ClaudeLlmClient` / `FakeLlmClient`, `LlmRouter` (per-task provider and model, external-data guard), `PromptRegistry` (`prompts/{jd_analysis,answer_writing,claim_check}/v1`), `JsonSchemaValidator` + one repair retry, `ClaimGroundingValidator`, `AiGateway` (budget reservation per workspace, idempotency keys, `generation_runs`, encrypted `generation_payloads` pruned daily), bounded retries with backoff/jitter/`Retry-After`, per-task timeouts; comparison workflow (`app:compare-llm`, Settings → Model comparison, blind 1–5 scores); setup in `docs/ai-setup.md`. Open: the Settings → AI budget/usage page and its 80% banner; queue-dispatched demo run; per-workspace Redis rate limiter (not needed for a single local user yet).
 - **Scope**: `LlmClient` interface, `AnthropicLlmClient`, `FakeLlmClient` (fixture responses), `PromptRegistry`, JSON schema validation + repair retry, `generation_runs`/`generation_payloads`, cost calculator (config price table), retries with backoff + jitter on 429/5xx/overloaded, timeouts, Redis rate limiter per workspace, monthly budget guard, idempotency keys.
 - **Files**: `app/Domain/Ai/*`, `prompts/`, `config/ai.php`.
 - **Also**: `BudgetGuard` with monthly ceiling (default US$30), 80% warning banner, 100% hard stop, candidate-only Settings → AI budget + usage page (spend this month, per purpose, per application).
