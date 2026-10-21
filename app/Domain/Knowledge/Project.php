@@ -2,11 +2,13 @@
 
 namespace App\Domain\Knowledge;
 
+use App\Domain\Retrieval\RetrievalSourceObserver;
 use App\Domain\Tenancy\BelongsToWorkspace;
 use App\Policies\KnowledgeRecordPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -34,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read Employment|null $employment
  */
 #[Fillable(['employment_id', 'name', 'client_name', 'role', 'start_date', 'end_date', 'summary', 'url'])]
+#[ObservedBy(RetrievalSourceObserver::class)]
 #[UseFactory(ProjectFactory::class)]
 #[UsePolicy(KnowledgeRecordPolicy::class)]
 class Project extends Model

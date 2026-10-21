@@ -2,10 +2,12 @@
 
 namespace App\Domain\Knowledge;
 
+use App\Domain\Retrieval\RetrievalSourceObserver;
 use App\Domain\Tenancy\BelongsToWorkspace;
 use App\Policies\AnswerLibraryEntryPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\AnswerLibraryEntryFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -34,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $updated_at
  * @property-read AnswerLibraryRevision|null $currentRevision
  */
+#[ObservedBy(RetrievalSourceObserver::class)]
 #[UseFactory(AnswerLibraryEntryFactory::class)]
 #[UsePolicy(AnswerLibraryEntryPolicy::class)]
 class AnswerLibraryEntry extends Model

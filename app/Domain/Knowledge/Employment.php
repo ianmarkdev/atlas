@@ -2,11 +2,13 @@
 
 namespace App\Domain\Knowledge;
 
+use App\Domain\Retrieval\RetrievalSourceObserver;
 use App\Domain\Tenancy\BelongsToWorkspace;
 use App\Policies\KnowledgeRecordPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\EmploymentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -33,6 +35,7 @@ use Illuminate\Support\Str;
  * @property CarbonImmutable|null $updated_at
  */
 #[Fillable(['employer_name', 'title', 'employment_type', 'location', 'start_date', 'end_date', 'summary'])]
+#[ObservedBy(RetrievalSourceObserver::class)]
 #[UseFactory(EmploymentFactory::class)]
 #[UsePolicy(KnowledgeRecordPolicy::class)]
 class Employment extends Model

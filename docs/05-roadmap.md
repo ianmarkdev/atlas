@@ -10,7 +10,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: N/A (measurements recorded).
 - **DoD**: each spike has a written decision; ADRs updated.
 - **Risks**: SDK immaturity → fall back to HTTP client behind `LlmClient`.
-- **Status (2026-10-20)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S1, S2, S6 open.
+- **Status (2026-10-21)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S2 decided: local Ollama + `bge-m3` (D11, ADR-10); its measurements (speed, halfvec precision on real vectors) run in M6 once Ollama is installed. S1, S6 open.
 
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
@@ -70,11 +70,12 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 
 ### M6 — Retrieval index, embeddings & retrieval eval (5–7 days)
 - **Objective**: measurable hybrid retrieval.
-- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
+- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Ollama (`bge-m3`) impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
 - **Files**: `app/Domain/Retrieval/*`, `app/Domain/Embeddings/*`, `tests/Eval/*`.
 - **Tests**: leakage tests at SQL level, ranking unit tests, re-embed skipped when unchanged, model switch backfill.
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
 - **Risks**: weights over-fit to tiny dataset — keep defaults simple.
+- **Status (2026-10-21)**: built and tested without Ollama (fake word-hash provider): `retrieval_units` (with parent lineage) kept in sync by a model observer → `SyncRetrievalSource` job (after commit, tenant context restored); `embedding_models` + `embeddings` (`halfvec`, `STORAGE PLAIN`); `EmbeddingProvider` with `OllamaEmbeddingProvider` (bge-m3) and `FakeEmbeddingProvider`; `EmbedRetrievalUnits` (skips unchanged content hashes); `HybridSearch` (one SQL round trip: semantic top-40 above a minimum similarity ∪ OR-keyword top-40 → RRF top-30; keyword-only fallback when nothing is embedded or the provider is down; workspace/profile assertion on every hit); `EvidenceRanker` (weights in `config/retrieval.php`, cosine de-duplication, a summary gives way to its own bullet points); `app:rebuild-retrieval-index {--embed} {--promote}`, `app:check-embeddings` (S2 check); candidate-only search playground (`/library/search`). Eval: `tests/Eval/fixtures/retrieval.php` (Alex + Sam, 16 JD-style queries) and `app:eval-retrieval` (Recall@k, MRR, leakage; runs in a rolled-back transaction). Baseline without embeddings (keyword + fake vectors): Recall@8 0.906, MRR 0.755, 0 leaks; misses are paraphrases with no shared words. Open: run on real `bge-m3` vectors once Ollama is installed and tune `min_similarity` / weights.
 
 ### M7a — Manual applications (pulled forward, D10; 8–11 days)
 - **Objective**: track and prepare real applications by hand, before any AI.

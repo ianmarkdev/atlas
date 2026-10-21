@@ -12,6 +12,7 @@ use App\Http\Controllers\Knowledge\EmploymentController;
 use App\Http\Controllers\Knowledge\KnowledgeController;
 use App\Http\Controllers\Knowledge\ProjectController;
 use App\Http\Controllers\Knowledge\ProposalController;
+use App\Http\Controllers\Knowledge\SearchPlaygroundController;
 use App\Http\Controllers\Knowledge\SkillController;
 use App\Http\Controllers\Profile\ContactController;
 use App\Http\Controllers\Profile\LanguageController;
@@ -103,6 +104,12 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     // Library: every job, project and bullet point (the shared facts behind all resumes).
     Route::prefix('library')->name('knowledge.')->group(function () {
         Route::get('/', [KnowledgeController::class, 'index'])->name('index');
+
+        // Retrieval debug page (M6), candidate only.
+        Route::middleware('can:edit-candidate-profile')->group(function () {
+            Route::get('search', [SearchPlaygroundController::class, 'index'])->name('search');
+            Route::post('search/rebuild', [SearchPlaygroundController::class, 'rebuild'])->name('search.rebuild');
+        });
 
         Route::resource('employments', EmploymentController::class)->only(['create', 'store', 'edit', 'update']);
         Route::patch('employments/{employment}/verify', [EmploymentController::class, 'verify'])->name('employments.verify');

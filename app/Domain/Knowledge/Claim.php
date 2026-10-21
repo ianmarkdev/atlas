@@ -2,11 +2,13 @@
 
 namespace App\Domain\Knowledge;
 
+use App\Domain\Retrieval\RetrievalSourceObserver;
 use App\Domain\Shared\PlainText;
 use App\Domain\Tenancy\BelongsToWorkspace;
 use App\Policies\ClaimPolicy;
 use Carbon\CarbonImmutable;
 use Database\Factories\ClaimFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Attributes\UsePolicy;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -41,6 +43,7 @@ use Illuminate\Support\Str;
  * @property-read ClaimRevision|null $currentRevision
  * @property-read Employment|Project|null $subject
  */
+#[ObservedBy(RetrievalSourceObserver::class)]
 #[UseFactory(ClaimFactory::class)]
 #[UsePolicy(ClaimPolicy::class)]
 class Claim extends Model

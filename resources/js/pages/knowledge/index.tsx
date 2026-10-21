@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { filterLibrary, isFiltering } from '@/lib/library-filter';
 import type { LibraryFilterMode } from '@/lib/library-filter';
-import { index } from '@/routes/knowledge';
+import { index, search } from '@/routes/knowledge';
 import type {
     Claim,
     Credential,
@@ -111,10 +111,19 @@ export default function KnowledgeIndex({
                 <Head title="Library" />
 
                 <div className="flex flex-col gap-8 p-4 lg:max-w-4xl">
-                    <Heading
-                        title="Library"
-                        description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
-                    />
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                        <Heading
+                            title="Library"
+                            description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
+                        />
+                        {canEditSkills && (
+                            <Button size="sm" variant="outline" asChild>
+                                <Link href={search()}>
+                                    <Search /> Search playground
+                                </Link>
+                            </Button>
+                        )}
+                    </div>
 
                     {!isEmpty && (
                         <div

@@ -13,7 +13,7 @@
 - **Revisit when**: > ~1M vectors/workspace or retrieval p95 > 300 ms after tuning.
 
 ### ADR-3 Claude API + independent embedding provider
-- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Voyage AI for embeddings (Anthropic-recommended; **[VERIFY]**), behind `EmbeddingProvider`.
+- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama).
 - **Consequences**: two vendors' DPAs; embeddings re-generable on switch via `embedding_models`. Secrets server-side only (env/secret manager), never in browser.
 
 ### ADR-4 Retrieval & orchestration in plain Laravel services
@@ -48,3 +48,10 @@
 - **Alternatives**: normalised per-variant copy tables (facts duplicated, many tables, harder versioning); fully free-text resumes (no link to evidence, no validation).
 - **Consequences**: one editor, one validator and one schema for variants, tailored versions and AI output; facts can't be changed per job; the AI can only select and word. Refs inside JSON have no foreign key, so validation runs on every save and the editor shows "Removed from your record" for archived refs. Variants and tailored versions are never indexed as evidence.
 - **Amendment (resume-first UI)**: authoring happens inside resumes; new jobs/projects/bullets are written to the shared library (through the same services, so verification and duplicate checks apply) and then included in the resume. Two presentation-only overrides are allowed per resume, candidate-only: a job's **display title** (official title kept in the library and in tailored-version snapshots) and a bullet's **wording** (the claim stays the evidence; "Apply everywhere" turns the rewording into a new claim revision). Every resume bullet is backed by a claim.
+
+### ADR-10 Local embeddings with Ollama + bge-m3
+- **Context**: retrieval (M6) needs an embedding model; Anthropic offers none. Hosted APIs need another vendor, key and DPA, and free tiers may train on the data. The corpus is one candidate's library (hundreds to a few thousand short texts plus job descriptions).
+- **Decision**: run `bge-m3` locally through Ollama (`OllamaEmbeddingProvider`, Laravel HTTP client, no new Composer dependency). 1024 dimensions to match S3; vectors stored as `halfvec` with `STORAGE PLAIN`. Model and endpoint in `config/embeddings.php`; the model is recorded in `embedding_models`.
+- **Alternatives**: Voyage AI or OpenAI embeddings (cost, data leaves the machine); in-process PHP inference (TransformersPHP: new dependency + FFI); free hosted tiers (rate limits, data-use terms).
+- **Consequences**: free and private; embedding speed bound by the local CPU (fine at this scale); production hosting needs an Ollama sidecar or a switch to a hosted provider, which is a config change plus a re-embedding backfill (`embedding_models`).
+- **Revisit when**: deploying somewhere that cannot run Ollama, or retrieval eval misses Recall@8 ≥ 0.85 with `bge-m3`.

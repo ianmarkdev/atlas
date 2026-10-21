@@ -100,6 +100,7 @@ Confirmed decisions (2026-10-20):
 - D8. **Plain-text input only**: every input (career knowledge, JDs, questions, answers, preferences) is typed or pasted as plain text in the UI. No PDF/DOCX/file uploads, no text extraction from files, no AI claim extraction from documents.
 - D9. **Resume variants, tailored per job — facts once, wording varies**: one candidate has one verified master record (contact, employments, projects, claims, education, certifications, skills, languages, links) and several reusable **resume variants**. Each job application gets a **tailored resume** copied from a variant, with its own versioned title, summary, selection/order and wording, and the cover letter is written from that tailored resume. Employers, official job titles, dates, degrees and issuers are never copied or edited per variant or per job; bullets cite claims (ADR-9). **Authoring is resume-first**: the Profile page lists the resumes (e.g. "PHP focused", "React focused"); jobs, projects and bullet points are added inside a resume and saved once to the shared library, so other resumes can include them. A resume may show its own **display title** for a job (the official title stays in the library) and its own **wording of a bullet** ("Apply everywhere" rewrites the shared claim).
 - D10. **Manual applications before AI**: applications are tracked and prepared by hand before the AI milestones (2026-10-20, no API key yet). Each application has two independent tracks: a **stage** (`saved → preparing → applied → interviewing → offer`, or `rejected`/`withdrawn`) for the job search, shown as the dashboard pipeline, and a **review status** (`not_started → in_progress → in_review → changes_requested → approved`) for the preparation work a VA does for the candidate. The tailored resume is an editable copy of a resume variant; questions are answered by hand or from the answer library. AI analysis and generation (M7/M8) later fill the same tables.
+- D11. **Embeddings run locally, free**: a local open-source model served by Ollama (`bge-m3`, 1024 dimensions, ~8k-token context) creates the vectors; Postgres + pgvector stores and searches them (no separate vector database). Career data never leaves the machine for embedding. A hosted provider (Voyage, OpenAI) stays possible behind `EmbeddingProvider` for production hosting without Ollama (2026-10-21).
 
 Remaining assumptions:
 - A1. Content is English.
@@ -141,7 +142,7 @@ flowchart LR
   R[(Redis<br/>queues, cache, locks, rate limits)]
   S3[(Private storage disk<br/>data-export ZIPs only)]
   CL[Anthropic Claude API]
-  VE[Embedding API<br/>e.g. Voyage AI]
+  VE[Embeddings<br/>local Ollama, bge-m3]
 
   UI <--> HTTP --> SVC
   SVC --> RET --> PG
@@ -174,7 +175,7 @@ app/
                                 HybridSearch, EvidenceRanker, ContextBuilder, RetrievalQuery DTO
     Ai/                         LlmClient (interface), AnthropicLlmClient, PromptRegistry, PromptTemplate,
                                 GenerationRun, StructuredOutput validators, CostCalculator
-    Embeddings/                 EmbeddingProvider (interface), VoyageEmbeddingProvider, FakeEmbeddingProvider
+    Embeddings/                 EmbeddingProvider (interface), OllamaEmbeddingProvider, FakeEmbeddingProvider
     Applications/               JobApplication, JobPosting, JobAnalysis, Requirement, ApplicationQuestion,
                                 AnswerDraft, AnswerVersion, AnswerClaim, EvidenceReference;
                                 JobAnalysisService, AnswerGenerationService, ClaimValidator, ExportService
@@ -344,7 +345,7 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **writing_preferences**: id, workspace_id, scope (`user|profile|workspace`), user_id / candidate_profile_id (per scope), rule text (e.g. "British spelling", "No 'passionate'"), kind (`tone|banned_phrase|format|spelling|structure`), status, examples jsonb, created_via. CHECK that exactly the right owner column is set for the scope.
 
 ### Retrieval (derived, rebuildable)
-- **retrieval_units**: id, workspace_id, candidate_profile_id (nullable for workspace-shared), visibility, unit_type (`claim|library_answer|project_summary|employment_summary`), source_type, source_id, source_revision_id, status (copied from source: `verified|proposed|approved`), search_text, tsv `tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED`, tag_ids int[], employer_normalized, date_to, specificity_score real, content_hash, is_active bool, updated_at. `UNIQUE(source_type, source_id)`.
+- **retrieval_units**: id, workspace_id, candidate_profile_id (nullable for workspace-shared), visibility, unit_type (`claim|library_answer|project_summary|employment_summary`), source_type, source_id, source_revision_id, parent_type/parent_id (the job or project a bullet point or project belongs to; used to prefer specific units over their parent summary), status (copied from source: `verified|proposed|approved`), search_text, tsv `tsvector GENERATED ALWAYS AS (to_tsvector('english', search_text)) STORED`, tag_ids int[], employer_normalized, date_to, specificity_score real, content_hash, is_active bool, updated_at. `UNIQUE(source_type, source_id)`.
 - **embedding_models**: id, provider, model, dimensions, distance (`cosine`), input_type_doc, input_type_query, is_active_for_write, is_active_for_read, created_at.
 - **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `halfvec` (no fixed dimension at column level; `ALTER COLUMN embedding SET STORAGE PLAIN` so values stay inline instead of TOASTed — S3), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
 
@@ -444,7 +445,7 @@ No file uploads, no PDF/DOCX parsing, no chunking and no AI claim extraction. Kn
 
 Embedding versioning: `content_hash = sha256(model_id + search_text)`; `EmbedRetrievalUnitsJob` skips when hash unchanged. Regenerate when: source revision changes, `search_text` template version changes (bump `RETRIEVAL_TEXT_VERSION`), or model changes (backfill).
 
-**Embedding provider recommendation**: Anthropic does not offer an embeddings API; their docs point to **Voyage AI** **[VERIFY current model names, e.g. voyage-3.5 / voyage-3.5-lite, dimension options, input_type support, pricing]**. Alternative: OpenAI `text-embedding-3-small`. `EmbeddingProvider` interface: `embedDocuments(array $texts): EmbeddingBatch`, `embedQuery(string): Vector`, `model(): EmbeddingModelSpec`. `FakeEmbeddingProvider` (deterministic hash vectors) for tests.
+**Embedding provider (D11, ADR-10)**: a local **Ollama** server with **`bge-m3`** (1024 dimensions, dense vectors, cosine) via its HTTP API (`POST /api/embed`); no API key, no per-token cost, data stays local. `bge-m3` needs no query/document prefixes. Hosted alternatives behind the same interface: Voyage AI (Anthropic-recommended), OpenAI `text-embedding-3-small`. `EmbeddingProvider` interface: `embedDocuments(array $texts): EmbeddingBatch`, `embedQuery(string): Vector`, `model(): EmbeddingModelSpec`. `FakeEmbeddingProvider` (deterministic hash vectors) for tests.
 
 ## 4.3 Hybrid retrieval and ranking
 **Query construction** per requirement/question: text = requirement + question + key employer terms; filters from `RetrievalQuery` DTO: `workspace_id` (mandatory), `candidate_profile_id` (mandatory unless shared-only), `allowed_visibility`, `unit_types`, `statuses` (default `verified, proposed, approved`), optional tag/employer/date filters.
@@ -569,7 +570,7 @@ Ordering principle: security & data integrity foundations first, then knowledge,
 - **Tests**: N/A (measurements recorded).
 - **DoD**: each spike has a written decision; ADRs updated.
 - **Risks**: SDK immaturity → fall back to HTTP client behind `LlmClient`.
-- **Status (2026-10-20)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S1, S2, S6 open.
+- **Status (2026-10-21)**: S3 done — `docs/spikes/S3.md` (exact scan for MVP, `halfvec` + `STORAGE PLAIN`, HNSW + `iterative_scan = relaxed_order` later). S2 decided: local Ollama + `bge-m3` (D11, ADR-10); its measurements (speed, halfvec precision on real vectors) run in M6 once Ollama is installed. S1, S6 open.
 
 ### M1 — Project foundation & auth (3–4 days)
 - **Objective**: deployable skeleton with CI.
@@ -629,11 +630,12 @@ Document import and claim extraction were dropped on 2026-10-20: no PDF/DOCX upl
 
 ### M6 — Retrieval index, embeddings & retrieval eval (5–7 days)
 - **Objective**: measurable hybrid retrieval.
-- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Voyage impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
+- **Scope**: `retrieval_units` sync (model observers → queued sync), `EmbeddingProvider` + Ollama (`bge-m3`) impl + fake, embedding jobs with content-hash idempotency, `halfvec` embeddings with `STORAGE PLAIN` and exact-scan hybrid SQL (no HNSW yet, per S3), `EvidenceRanker`, MMR dedupe, `ContextBuilder` with tenant assertion; eval fixtures (Alex/Sam) + `eval:retrieval` command; debug "search playground" page (candidate only).
 - **Files**: `app/Domain/Retrieval/*`, `app/Domain/Embeddings/*`, `tests/Eval/*`.
 - **Tests**: leakage tests at SQL level, ranking unit tests, re-embed skipped when unchanged, model switch backfill.
 - **DoD**: Recall@8 ≥ 0.85 on fixtures; zero leakage.
 - **Risks**: weights over-fit to tiny dataset — keep defaults simple.
+- **Status (2026-10-21)**: built and tested without Ollama (fake word-hash provider): `retrieval_units` (with parent lineage) kept in sync by a model observer → `SyncRetrievalSource` job (after commit, tenant context restored); `embedding_models` + `embeddings` (`halfvec`, `STORAGE PLAIN`); `EmbeddingProvider` with `OllamaEmbeddingProvider` (bge-m3) and `FakeEmbeddingProvider`; `EmbedRetrievalUnits` (skips unchanged content hashes); `HybridSearch` (one SQL round trip: semantic top-40 above a minimum similarity ∪ OR-keyword top-40 → RRF top-30; keyword-only fallback when nothing is embedded or the provider is down; workspace/profile assertion on every hit); `EvidenceRanker` (weights in `config/retrieval.php`, cosine de-duplication, a summary gives way to its own bullet points); `app:rebuild-retrieval-index {--embed} {--promote}`, `app:check-embeddings` (S2 check); candidate-only search playground (`/library/search`). Eval: `tests/Eval/fixtures/retrieval.php` (Alex + Sam, 16 JD-style queries) and `app:eval-retrieval` (Recall@k, MRR, leakage; runs in a rolled-back transaction). Baseline without embeddings (keyword + fake vectors): Recall@8 0.906, MRR 0.755, 0 leaks; misses are paraphrases with no shared words. Open: run on real `bge-m3` vectors once Ollama is installed and tune `min_similarity` / weights.
 
 ### M7a — Manual applications (pulled forward, D10; 8–11 days)
 - **Objective**: track and prepare real applications by hand, before any AI.
@@ -693,7 +695,7 @@ Total ≈ 12–16 working weeks solo (rough; refine after M0).
 - **Revisit when**: > ~1M vectors/workspace or retrieval p95 > 300 ms after tuning.
 
 ### ADR-3 Claude API + independent embedding provider
-- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Voyage AI for embeddings (Anthropic-recommended; **[VERIFY]**), behind `EmbeddingProvider`.
+- **Decision**: Claude for all generation, JD analysis and classification (Sonnet-class for writing, Haiku-class for JD requirement extraction/classification — IDs in config). Embeddings behind `EmbeddingProvider`; superseded for the embedding vendor by ADR-10 (local Ollama).
 - **Consequences**: two vendors' DPAs; embeddings re-generable on switch via `embedding_models`. Secrets server-side only (env/secret manager), never in browser.
 
 ### ADR-4 Retrieval & orchestration in plain Laravel services
@@ -728,6 +730,13 @@ Total ≈ 12–16 working weeks solo (rough; refine after M0).
 - **Alternatives**: normalised per-variant copy tables (facts duplicated, many tables, harder versioning); fully free-text resumes (no link to evidence, no validation).
 - **Consequences**: one editor, one validator and one schema for variants, tailored versions and AI output; facts can't be changed per job; the AI can only select and word. Refs inside JSON have no foreign key, so validation runs on every save and the editor shows "Removed from your record" for archived refs. Variants and tailored versions are never indexed as evidence.
 - **Amendment (resume-first UI)**: authoring happens inside resumes; new jobs/projects/bullets are written to the shared library (through the same services, so verification and duplicate checks apply) and then included in the resume. Two presentation-only overrides are allowed per resume, candidate-only: a job's **display title** (official title kept in the library and in tailored-version snapshots) and a bullet's **wording** (the claim stays the evidence; "Apply everywhere" turns the rewording into a new claim revision). Every resume bullet is backed by a claim.
+
+### ADR-10 Local embeddings with Ollama + bge-m3
+- **Context**: retrieval (M6) needs an embedding model; Anthropic offers none. Hosted APIs need another vendor, key and DPA, and free tiers may train on the data. The corpus is one candidate's library (hundreds to a few thousand short texts plus job descriptions).
+- **Decision**: run `bge-m3` locally through Ollama (`OllamaEmbeddingProvider`, Laravel HTTP client, no new Composer dependency). 1024 dimensions to match S3; vectors stored as `halfvec` with `STORAGE PLAIN`. Model and endpoint in `config/embeddings.php`; the model is recorded in `embedding_models`.
+- **Alternatives**: Voyage AI or OpenAI embeddings (cost, data leaves the machine); in-process PHP inference (TransformersPHP: new dependency + FFI); free hosted tiers (rate limits, data-use terms).
+- **Consequences**: free and private; embedding speed bound by the local CPU (fine at this scale); production hosting needs an Ollama sidecar or a switch to a hosted provider, which is a config change plus a re-embedding backfill (`embedding_models`).
+- **Revisit when**: deploying somewhere that cannot run Ollama, or retrieval eval misses Recall@8 ≥ 0.85 with `bge-m3`.
 
 ---
 

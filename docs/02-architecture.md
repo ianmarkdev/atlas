@@ -29,7 +29,7 @@ flowchart LR
   R[(Redis<br/>queues, cache, locks, rate limits)]
   S3[(Private storage disk<br/>data-export ZIPs only)]
   CL[Anthropic Claude API]
-  VE[Embedding API<br/>e.g. Voyage AI]
+  VE[Embeddings<br/>local Ollama, bge-m3]
 
   UI <--> HTTP --> SVC
   SVC --> RET --> PG
@@ -62,7 +62,7 @@ app/
                                 HybridSearch, EvidenceRanker, ContextBuilder, RetrievalQuery DTO
     Ai/                         LlmClient (interface), AnthropicLlmClient, PromptRegistry, PromptTemplate,
                                 GenerationRun, StructuredOutput validators, CostCalculator
-    Embeddings/                 EmbeddingProvider (interface), VoyageEmbeddingProvider, FakeEmbeddingProvider
+    Embeddings/                 EmbeddingProvider (interface), OllamaEmbeddingProvider, FakeEmbeddingProvider
     Applications/               JobApplication, JobPosting, JobAnalysis, Requirement, ApplicationQuestion,
                                 AnswerDraft, AnswerVersion, AnswerClaim, EvidenceReference;
                                 JobAnalysisService, AnswerGenerationService, ClaimValidator, ExportService

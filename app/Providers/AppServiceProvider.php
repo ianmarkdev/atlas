@@ -14,6 +14,9 @@ use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\Skill;
 use App\Domain\Resumes\ResumeVariant;
+use App\Domain\Retrieval\Embeddings\EmbeddingProvider;
+use App\Domain\Retrieval\Embeddings\FakeEmbeddingProvider;
+use App\Domain\Retrieval\Embeddings\OllamaEmbeddingProvider;
 use App\Domain\Tenancy\TenantContext;
 use App\Domain\Tenancy\Workspace;
 use App\Models\User;
@@ -35,6 +38,17 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(TenantContext::class);
+
+        // D11: local Ollama by default; "fake" for tests and offline work.
+        $this->app->singleton(EmbeddingProvider::class, fn (): EmbeddingProvider => match (config('embeddings.provider')) {
+            'fake' => new FakeEmbeddingProvider((int) config('embeddings.fake.dimensions')),
+            default => new OllamaEmbeddingProvider(
+                (string) config('embeddings.ollama.url'),
+                (string) config('embeddings.ollama.model'),
+                (int) config('embeddings.ollama.dimensions'),
+                (int) config('embeddings.ollama.timeout'),
+            ),
+        });
     }
 
     /**
