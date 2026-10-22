@@ -10,8 +10,10 @@ use App\Domain\Ai\LlmConfigurationError;
 use App\Domain\Ai\LlmUnavailable;
 use App\Domain\Applications\AiAnswerService;
 use App\Domain\Applications\AnswerDraft;
+use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\EvidencePackBuilder;
+use App\Domain\Applications\ParagraphRedraft;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\WritingPreference;
 use App\Jobs\Middleware\WithWorkspaceContext;
@@ -24,6 +26,9 @@ use Illuminate\Foundation\Queue\Queueable;
  * prompt (with the writing preferences that apply to the requester, M10) through AiGateway,
  * have the server check every claim label against that evidence, and store the result as a new
  * version of the answer. Failures are stored on the draft.
+ *
+ * A paragraph redraft runs the answer_paragraph prompt over the version it was requested from
+ * and puts the new paragraph back in place (AiAnswerService::storeParagraph).
  */
 class GenerateAnswerDraft implements ShouldQueue
 {
@@ -59,23 +64,40 @@ class GenerateAnswerDraft implements ShouldQueue
         $draft->forceFill(['generation_status' => 'running'])->save();
         $application = $question->application;
         $requester = $draft->generation_requested_by === null ? null : User::query()->find($draft->generation_requested_by);
-        $built = $evidence->build($application, $question);
-        $pack = $built['pack'];
         $instruction = $draft->generation_instruction;
+        $paragraph = $draft->generation_paragraph;
+        $base = $paragraph === null ? null : AnswerDraftVersion::query()->find($draft->generation_base_version_id);
+
+        if ($paragraph !== null && $base === null) {
+            $answers->fail($draft, __('The version to redraft a paragraph of no longer exists. Try again.'));
+
+            return;
+        }
+
+        // A paragraph of an AI draft is rewritten from that draft's evidence, so the claims kept
+        // from the other paragraphs still point at the same items.
+        $built = $base !== null && $base->author_type === 'ai' && ($base->evidence_pack ?? []) !== []
+            ? ['pack' => $base->evidence_pack, 'storyline' => '(none)', 'resume_version_id' => $base->resume_version_id]
+            : $evidence->build($application, $question);
+        $pack = $built['pack'];
+        $variables = [
+            'candidate_name' => CandidateProfile::current()->display_name,
+            'company_name' => $application->companyLabel(),
+            'role_title' => $application->role_title,
+            'job_description' => $application->jobDescription() ?? '(no job description pasted)',
+            'evidence' => EvidencePackBuilder::render($pack),
+            'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->oldest()->get()),
+            'instruction' => $instruction ?? '(none)',
+            'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
+            'limit' => self::limitOf($question),
+        ];
+        $variables += $base === null
+            ? ['storyline' => $built['storyline']]
+            : ParagraphRedraft::context($base->body, $paragraph);
+        $requestKey = "answer:{$question->id}:".$draft->generation_requested_at?->getTimestamp().($paragraph === null ? '' : ":p{$paragraph}");
 
         try {
-            $result = $gateway->run('answer_writing', 'answer_writing', [
-                'candidate_name' => CandidateProfile::current()->display_name,
-                'company_name' => $application->companyLabel(),
-                'role_title' => $application->role_title,
-                'job_description' => $application->jobDescription() ?? '(no job description pasted)',
-                'evidence' => EvidencePackBuilder::render($pack),
-                'storyline' => $built['storyline'],
-                'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->oldest()->get()),
-                'instruction' => $instruction ?? '(none)',
-                'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
-                'limit' => self::limitOf($question),
-            ], $requester, purpose: 'answer_generation', idempotencyKey: "answer:{$question->id}:".$draft->generation_requested_at?->getTimestamp());
+            $result = $gateway->run('answer_writing', $base === null ? 'answer_writing' : 'answer_paragraph', $variables, $requester, purpose: 'answer_generation', idempotencyKey: $requestKey);
         } catch (InvalidModelOutput $exception) {
             $answers->fail($draft, __("The AI's answer was not usable (invalid structure), even after a repair attempt. Try again, or use a larger model."));
 
@@ -87,39 +109,60 @@ class GenerateAnswerDraft implements ShouldQueue
         }
 
         $data = $result->data ?? [];
-        $claims = [];
+        $claims = (array) ($data['claims'] ?? []);
 
         foreach ((array) ($data['segments'] ?? []) as $segment) {
-            foreach ((array) ($segment['claims'] ?? []) as $claim) {
-                // Small models repeat claims across segments; check each statement once.
-                $key = mb_strtolower(trim((string) ($claim['text'] ?? '')));
-
-                if ($key === '' || isset($claims[$key])) {
-                    continue;
-                }
-
-                $claims[$key] = [
-                    'text' => (string) ($claim['text'] ?? ''),
-                    'classification' => (string) ($claim['classification'] ?? ''),
-                    'evidence_ids' => array_values(array_map(strval(...), (array) ($claim['evidence_ids'] ?? []))),
-                ];
-            }
+            array_push($claims, ...array_values((array) ($segment['claims'] ?? [])));
         }
 
-        $answers->storeDraft(
-            $draft,
-            self::withoutEvidenceIds((string) ($data['answer'] ?? '')),
-            $result->run,
-            $pack,
-            $grounding->check(array_values($claims), array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack)),
-            array_values(array_map(fn (mixed $item): array => [
-                'question' => (string) ($item['question'] ?? ''),
-                'why' => (string) ($item['why'] ?? ''),
-            ], array_filter((array) ($data['clarification_questions'] ?? []), is_array(...)))),
-            $requester,
-            $instruction,
-            $built['resume_version_id'],
-        );
+        $checked = $grounding->check(self::uniqueClaims($claims), array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack));
+        $clarifications = array_values(array_map(fn (mixed $item): array => [
+            'question' => (string) ($item['question'] ?? ''),
+            'why' => (string) ($item['why'] ?? ''),
+        ], array_filter((array) ($data['clarification_questions'] ?? []), is_array(...))));
+
+        if ($base !== null) {
+            $text = ParagraphRedraft::clean(self::withoutEvidenceIds((string) ($data['paragraph'] ?? '')));
+
+            if ($text === '' || ParagraphRedraft::isUnchanged(ParagraphRedraft::context($base->body, $paragraph)['current'], $text)) {
+                $answers->fail($draft, __('The AI gave the paragraph back unchanged. Try again with an instruction, or with a larger model.'));
+
+                return;
+            }
+
+            $answers->storeParagraph($draft, $base->id, $paragraph, $text, $result->run, $pack, $checked, $clarifications, $requester, $instruction);
+
+            return;
+        }
+
+        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checked, $clarifications, $requester, $instruction, $built['resume_version_id']);
+    }
+
+    /**
+     * The model's claims, each statement once (small models repeat claims across segments).
+     *
+     * @param  array<int, mixed>  $claims
+     * @return list<array{text: string, classification: string, evidence_ids: list<string>}>
+     */
+    private static function uniqueClaims(array $claims): array
+    {
+        $unique = [];
+
+        foreach ($claims as $claim) {
+            $key = mb_strtolower(trim((string) ($claim['text'] ?? '')));
+
+            if ($key === '' || isset($unique[$key])) {
+                continue;
+            }
+
+            $unique[$key] = [
+                'text' => (string) ($claim['text'] ?? ''),
+                'classification' => (string) ($claim['classification'] ?? ''),
+                'evidence_ids' => array_values(array_map(strval(...), (array) ($claim['evidence_ids'] ?? []))),
+            ];
+        }
+
+        return array_values($unique);
     }
 
     /**

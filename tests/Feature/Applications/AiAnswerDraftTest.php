@@ -5,6 +5,7 @@ use App\Domain\Ai\LlmRequest;
 use App\Domain\Ai\LlmRouter;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\ApplicationQuestion;
+use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
@@ -205,4 +206,99 @@ test('an answer with AI placeholders left in cannot be approved', function () {
         ->assertSessionHasErrors('body');
 
     expect(draftOf($candidate, $question)->isApproved())->toBeFalse();
+});
+
+/**
+ * A two-paragraph AI draft whose unconfirmed first-paragraph claim the candidate kept as worded.
+ *
+ * @return array{application: JobApplication, question: ApplicationQuestion, fake: FakeLlmClient}
+ */
+function twoParagraphDraft(User $candidate): array
+{
+    $application = draftedApplicationOf($candidate);
+    claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([
+        answerOutput("I tuned PostgreSQL for a billing platform, cutting latency by 60%.\n\nI would bring the same care to Fabrikam.", [
+            ['text' => 'cutting latency by 60%', 'classification' => 'verified', 'evidence_ids' => ['E1']],
+            ['text' => 'I would bring the same care', 'classification' => 'hypothetical', 'evidence_ids' => []],
+        ], [['question' => 'By how much did latency drop?', 'why' => 'A number makes it concrete.']]),
+    ]));
+    test()->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+    test()->actingAs($candidate)
+        ->post(route('applications.questions.reviews.accept', [$application, $question]), ['index' => 0])
+        ->assertSessionHasNoErrors();
+
+    return ['application' => $application, 'question' => $question, 'fake' => $fake];
+}
+
+describe('redrafting one paragraph', function () {
+    test('only that paragraph changes, and what was checked in the others stays checked', function () {
+        $candidate = candidateWithTwoFactor();
+        ['application' => $application, 'question' => $question, 'fake' => $fake] = twoParagraphDraft($candidate);
+        $fake->push([
+            // Small models echo the tags they were shown; they are removed.
+            'paragraph' => "<paragraph_to_rewrite>At Fabrikam I would start with the slowest queries (E1).\n\nThen the rest.</paragraph_to_rewrite>",
+            'claims' => [['text' => 'I would start with the slowest queries', 'classification' => 'hypothetical', 'evidence_ids' => []]],
+            'clarification_questions' => [],
+        ]);
+
+        $this->actingAs($candidate)
+            ->post(route('applications.questions.draft', [$application, $question]), ['paragraph' => 1, 'instruction' => 'More concrete'])
+            ->assertInertiaFlash('toast.message', 'Redrafting paragraph 2. It appears here when ready.');
+
+        $draft = draftOf($candidate, $question);
+        $version = $draft->currentVersion;
+        $prompt = $fake->requests[1]->messages[0]['content'];
+        expect($prompt)->toContain("<answer_before>\nI tuned PostgreSQL for a billing platform, cutting latency by 60%.\n</answer_before>")
+            ->and($prompt)->toContain("<paragraph_to_rewrite>\nI would bring the same care to Fabrikam.\n</paragraph_to_rewrite>")
+            ->and($prompt)->toContain('(this is the last paragraph)')
+            ->and($prompt)->toContain('<item id="E1" status="verified">Tuned PostgreSQL indexes and queries for the billing platform</item>')
+            ->and($draft->body())->toBe("I tuned PostgreSQL for a billing platform, cutting latency by 60%.\n\nAt Fabrikam I would start with the slowest queries. Then the rest.")
+            ->and($version->paragraph)->toBe(1)
+            ->and(array_column($version->grounding, 'text'))->toBe(['cutting latency by 60%', 'I would start with the slowest queries'])
+            ->and($version->clarification_questions[0]['question'])->toBe('By how much did latency drop?')
+            ->and($draft->needsClaimReview())->toBeFalse();
+
+        $this->actingAs($candidate)
+            ->get(route('applications.questions.index', $application))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('questions.0.history.0.change_reason', 'Redrafted paragraph 2 with AI: “More concrete”')
+                ->where('questions.0.answer.ai.claims.0.review.decision', 'accepted'));
+    });
+
+    test('a redrafted paragraph is discarded when the answer is saved while it is written', function () {
+        $candidate = candidateWithTwoFactor();
+        ['application' => $application, 'question' => $question, 'fake' => $fake] = twoParagraphDraft($candidate);
+        $fake->push(function () use ($candidate, $question): array {
+            // Someone saves an edit while the model is still writing.
+            inWorkspaceOf($candidate, fn () => app(ApplicationQuestionService::class)
+                ->saveAnswer($question, 'My own rewrite.', null, draftOf($candidate, $question)->lock_version, $candidate));
+
+            return ['paragraph' => 'Too late.', 'claims' => [], 'clarification_questions' => []];
+        });
+
+        $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]), ['paragraph' => 0]);
+
+        $draft = draftOf($candidate, $question);
+        expect($draft->body())->toBe('My own rewrite.')
+            ->and($draft->generation_status)->toBe('failed')
+            ->and($draft->generation_error)->toBe('The answer was saved or approved while the paragraph was being redrafted, so nothing was replaced. Try again.');
+    });
+
+    test('a paragraph that is not in the saved answer is refused, and one handed back unchanged is not stored', function () {
+        $candidate = candidateWithTwoFactor();
+        ['application' => $application, 'question' => $question, 'fake' => $fake] = twoParagraphDraft($candidate);
+
+        $this->actingAs($candidate)
+            ->post(route('applications.questions.draft', [$application, $question]), ['paragraph' => 2])
+            ->assertSessionHasErrors(['paragraph' => 'That paragraph is not in the saved answer. Save your changes, then try again.']);
+
+        $fake->push(['paragraph' => 'I would bring the same  care to Fabrikam.', 'claims' => [], 'clarification_questions' => []]);
+        $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]), ['paragraph' => 1]);
+
+        $draft = draftOf($candidate, $question);
+        expect($draft->currentVersion->version_no)->toBe(1)
+            ->and($draft->generation_error)->toBe('The AI gave the paragraph back unchanged. Try again with an instruction, or with a larger model.');
+    });
 });

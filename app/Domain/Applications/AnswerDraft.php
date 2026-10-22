@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable|null $generation_requested_at
  * @property int|null $generation_requested_by
  * @property string|null $generation_instruction what the requester asked the next AI draft to do differently
+ * @property int|null $generation_paragraph the paragraph (0-based) to redraft; null for the whole answer
+ * @property int|null $generation_base_version_id the version a paragraph redraft is cut from
  * @property int|null $claims_reviewed_version_id the AI version whose claims someone has checked
  * @property int|null $approved_by
  * @property CarbonImmutable|null $approved_at

@@ -70,6 +70,8 @@ type Answer = {
         status: 'queued' | 'running' | 'failed';
         error: string | null;
         requested_at: string | null;
+        /** 1-based paragraph being redrafted; null for the whole answer. */
+        paragraph: number | null;
     } | null;
     ai: AiCheck | null;
     /** The latest edit of an AI draft the AI learned from (M10). */
@@ -152,6 +154,10 @@ const isGenerating = (question: Question): boolean =>
     question.answer?.generation?.status === 'queued' ||
     question.answer?.generation?.status === 'running';
 
+/** An edit of an AI draft is being turned into suggestions (M10). */
+const isLearning = (question: Question): boolean =>
+    question.answer?.feedback?.status === 'pending_analysis';
+
 export default function ApplicationQuestions({
     application,
     questions,
@@ -170,16 +176,22 @@ export default function ApplicationQuestions({
         (q) => q.answer?.status === 'approved',
     ).length;
     const generating = questions.some(isGenerating);
-    const poll = usePoll(3000, { only: ['questions'] }, { autoStart: false });
+    const learning = questions.some(isLearning);
+    // The sidebar's suggestion count changes when learning finishes.
+    const poll = usePoll(
+        3000,
+        { only: ['questions', 'pendingProposals'] },
+        { autoStart: false },
+    );
 
     useEffect(() => {
-        if (generating) {
+        if (generating || learning) {
             poll.start();
         } else {
             poll.stop();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [generating]);
+    }, [generating, learning]);
 
     return (
         <>
@@ -526,7 +538,10 @@ function QuestionCard({
 
     const needsReview = question.answer?.ai?.needs_review ?? false;
 
-    const draftWithAi = (instruction: string | null) => {
+    const draftWithAi = (
+        instruction: string | null,
+        paragraph: number | null = null,
+    ) => {
         if (
             dirty &&
             !window.confirm(
@@ -538,7 +553,7 @@ function QuestionCard({
 
         router.post(
             ApplicationQuestionController.draft.url(routeArgs),
-            { instruction },
+            { instruction, paragraph },
             { preserveScroll: true, errorBag },
         );
     };
@@ -723,7 +738,9 @@ function QuestionCard({
                         <Loader2 className="size-4 animate-spin" aria-hidden />
                         {generation?.status === 'queued'
                             ? 'Waiting to start… (background jobs need a queue worker: php artisan queue:work)'
-                            : 'Writing a draft from your evidence… with a local model this can take a minute or two.'}
+                            : generation?.paragraph
+                              ? `Redrafting paragraph ${generation.paragraph}… the rest of the answer stays as it is.`
+                              : 'Writing a draft from your evidence… with a local model this can take a minute or two.'}
                     </p>
                 )}
                 {generation?.status === 'failed' && (
@@ -775,6 +792,7 @@ function QuestionCard({
                         ) : (
                             <RedraftDialog
                                 disabled={generating}
+                                paragraphs={paragraphsOf(saved)}
                                 onSubmit={draftWithAi}
                             />
                         )}
@@ -978,15 +996,36 @@ const quickInstructions = [
     'Use more of the employer’s own words',
 ];
 
+/**
+ * The answer's paragraphs as the server splits them (on blank lines), for "redraft one paragraph".
+ */
+function paragraphsOf(body: string): string[] {
+    return body
+        .trim()
+        .split(/\r?\n\s*\r?\n/)
+        .map((part) => part.trim())
+        .filter((part) => part !== '');
+}
+
 function RedraftDialog({
     disabled,
+    paragraphs,
     onSubmit,
 }: {
     disabled: boolean;
-    onSubmit: (instruction: string | null) => void;
+    paragraphs: string[];
+    onSubmit: (instruction: string | null, paragraph: number | null) => void;
 }) {
     const [open, setOpen] = useState(false);
     const [instruction, setInstruction] = useState('');
+    const [part, setPart] = useState('whole');
+    const partOptions = [
+        { value: 'whole', label: 'The whole answer' },
+        ...paragraphs.map((paragraph, index) => ({
+            value: String(index),
+            label: `Paragraph ${index + 1}: ${paragraph.length > 60 ? `${paragraph.slice(0, 60)}…` : paragraph}`,
+        })),
+    ];
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -1005,8 +1044,9 @@ function RedraftDialog({
                     <DialogTitle>Redraft with AI</DialogTitle>
                     <DialogDescription>
                         The new draft is added as a version; the current text
-                        stays in the history. Say what should change, or leave
-                        it empty for a fresh attempt.
+                        stays in the history. Redraft the whole answer or one
+                        paragraph, and say what should change — or leave it
+                        empty for a fresh attempt.
                     </DialogDescription>
                 </DialogHeader>
                 <form
@@ -1018,9 +1058,31 @@ function RedraftDialog({
                             instruction.trim() === ''
                                 ? null
                                 : instruction.trim(),
+                            part === 'whole' ? null : Number(part),
                         );
                     }}
                 >
+                    {paragraphs.length > 1 && (
+                        <>
+                            <Label htmlFor="redraft_part">
+                                What to redraft
+                            </Label>
+                            <NativeSelect
+                                id="redraft_part"
+                                options={partOptions}
+                                value={part}
+                                onChange={(event) =>
+                                    setPart(event.target.value)
+                                }
+                            />
+                            {part !== 'whole' && (
+                                <p className="type-caption text-text-secondary">
+                                    Only this paragraph changes. What you
+                                    already checked in the others stays checked.
+                                </p>
+                            )}
+                        </>
+                    )}
                     <Label htmlFor="redraft_instruction">
                         Instruction (optional)
                     </Label>

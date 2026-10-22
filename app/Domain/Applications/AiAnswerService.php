@@ -16,16 +16,17 @@ use Illuminate\Validation\ValidationException;
  */
 class AiAnswerService
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private AuditLogger $audit, private ParagraphRedraft $paragraphs) {}
 
     /**
      * @param  string|null  $instruction  how this draft should differ ("shorter", "more formal")
+     * @param  int|null  $paragraph  redraft only this paragraph (0-based) of the current text
      *
-     * @throws ValidationException when the answer is approved or a draft is already being written
+     * @throws ValidationException when the answer is approved, a draft is already being written, or the paragraph does not exist
      */
-    public function request(ApplicationQuestion $question, User $actor, ?string $instruction = null): AnswerDraft
+    public function request(ApplicationQuestion $question, User $actor, ?string $instruction = null, ?int $paragraph = null): AnswerDraft
     {
-        return DB::transaction(function () use ($question, $actor, $instruction): AnswerDraft {
+        return DB::transaction(function () use ($question, $actor, $instruction, $paragraph): AnswerDraft {
             $draft = AnswerDraft::query()->where('application_question_id', $question->id)->lockForUpdate()->first();
 
             if ($draft === null) {
@@ -41,15 +42,21 @@ class AiAnswerService
                 throw ValidationException::withMessages(['body' => __('A draft is already being written.')]);
             }
 
+            if ($paragraph !== null && ! array_key_exists($paragraph, ParagraphRedraft::paragraphs($draft->exists ? $draft->body() : ''))) {
+                throw ValidationException::withMessages(['paragraph' => __('That paragraph is not in the saved answer. Save your changes, then try again.')]);
+            }
+
             $draft->forceFill([
                 'generation_status' => 'queued',
                 'generation_error' => null,
                 'generation_requested_at' => now(),
                 'generation_requested_by' => $actor->id,
                 'generation_instruction' => $instruction,
+                'generation_paragraph' => $paragraph,
+                'generation_base_version_id' => $paragraph === null ? null : $draft->current_version_id,
             ])->save();
 
-            $this->audit->record('answer_draft.generation_requested', $question, ['instruction' => $instruction], $actor);
+            $this->audit->record('answer_draft.generation_requested', $question, ['instruction' => $instruction, 'paragraph' => $paragraph], $actor);
 
             GenerateAnswerDraft::dispatch($question->workspace_id, $question->id);
 
@@ -76,13 +83,9 @@ class AiAnswerService
                 return;
             }
 
-            $version = AnswerDraftVersion::create([
-                'answer_draft_id' => $draft->id,
-                'version_no' => (int) AnswerDraftVersion::query()->where('answer_draft_id', $draft->id)->max('version_no') + 1,
+            $this->appendAiVersion($draft, [
                 'body' => $body,
-                'author_type' => 'ai',
                 'author_user_id' => $requester?->id,
-                'created_via' => 'ai',
                 'generation_run_id' => $run->id,
                 'instruction' => $instruction,
                 'resume_version_id' => $resumeVersionId,
@@ -90,16 +93,76 @@ class AiAnswerService
                 'grounding' => $grounding,
                 'clarification_questions' => $clarifications,
             ]);
-
-            // Bumping the lock makes an editor that was open before the draft arrived reload first.
-            $draft->forceFill([
-                'current_version_id' => $version->id,
-                'lock_version' => $draft->lock_version + 1,
-                'generation_status' => null,
-                'generation_error' => null,
-                'generation_instruction' => null,
-            ])->save();
         });
+    }
+
+    /**
+     * Put a redrafted paragraph back into the version it was cut from, as the answer's new
+     * current version. What was checked in the other paragraphs stays checked (ParagraphRedraft).
+     * Discarded when the answer was approved or saved while the paragraph was being written.
+     *
+     * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
+     * @param  list<array<string, mixed>>  $grounding  the new paragraph's claims, already checked
+     * @param  list<array{question: string, why: string}>  $clarifications
+     */
+    public function storeParagraph(AnswerDraft $draft, int $baseVersionId, int $paragraph, string $text, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null): void
+    {
+        DB::transaction(function () use ($draft, $baseVersionId, $paragraph, $text, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction): void {
+            $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
+            $base = AnswerDraftVersion::query()->with('reviews')->find($baseVersionId);
+
+            if ($draft->isApproved() || $base === null || $draft->current_version_id !== $base->id || ! array_key_exists($paragraph, ParagraphRedraft::paragraphs($base->body))) {
+                $draft->forceFill(['generation_status' => 'failed', 'generation_error' => __('The answer was saved or approved while the paragraph was being redrafted, so nothing was replaced. Try again.')])->save();
+
+                return;
+            }
+
+            $body = ParagraphRedraft::splice($base->body, $paragraph, $text);
+            $merged = $this->paragraphs->merge($draft, $base, $body, $paragraph, $grounding, $clarifications);
+
+            $version = $this->appendAiVersion($draft, [
+                'body' => $body,
+                'author_user_id' => $requester?->id,
+                'generation_run_id' => $run->id,
+                'instruction' => $instruction,
+                'paragraph' => $paragraph,
+                'resume_version_id' => $base->resume_version_id,
+                'evidence_pack' => $evidencePack,
+                'grounding' => $merged['grounding'],
+                'clarification_questions' => $merged['questions'],
+            ]);
+
+            foreach ($merged['reviews'] as $review) {
+                (new AnswerClaimReview)->forceFill([...$review, 'answer_draft_version_id' => $version->id])->save();
+            }
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function appendAiVersion(AnswerDraft $draft, array $attributes): AnswerDraftVersion
+    {
+        $version = AnswerDraftVersion::create([
+            'answer_draft_id' => $draft->id,
+            'version_no' => (int) AnswerDraftVersion::query()->where('answer_draft_id', $draft->id)->max('version_no') + 1,
+            'author_type' => 'ai',
+            'created_via' => 'ai',
+            ...$attributes,
+        ]);
+
+        // Bumping the lock makes an editor that was open before the draft arrived reload first.
+        $draft->forceFill([
+            'current_version_id' => $version->id,
+            'lock_version' => $draft->lock_version + 1,
+            'generation_status' => null,
+            'generation_error' => null,
+            'generation_instruction' => null,
+            'generation_paragraph' => null,
+            'generation_base_version_id' => null,
+        ])->save();
+
+        return $version;
     }
 
     /**

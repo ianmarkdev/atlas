@@ -92,6 +92,8 @@ class ApplicationQuestionController extends Controller
                             'status' => $answer->generation_status,
                             'error' => $answer->generation_error,
                             'requested_at' => $answer->generation_requested_at?->toIso8601String(),
+                            // 1-based, for "Redrafting paragraph 2…"; null for the whole answer.
+                            'paragraph' => $answer->generation_paragraph === null ? null : $answer->generation_paragraph + 1,
                         ],
                         'ai' => $answer->currentVersion?->author_type !== 'ai' ? null : [
                             'evidence' => collect($answer->currentVersion->evidence_pack ?? [])
@@ -116,7 +118,12 @@ class ApplicationQuestionController extends Controller
                         'text' => $version->body,
                         'change_reason' => match ($version->created_via) {
                             'library' => __('Inserted from the answer library'),
-                            'ai' => $version->instruction === null ? __('Drafted with AI') : __('Drafted with AI: “:instruction”', ['instruction' => $version->instruction]),
+                            'ai' => match (true) {
+                                $version->paragraph !== null && $version->instruction !== null => __('Redrafted paragraph :n with AI: “:instruction”', ['n' => $version->paragraph + 1, 'instruction' => $version->instruction]),
+                                $version->paragraph !== null => __('Redrafted paragraph :n with AI', ['n' => $version->paragraph + 1]),
+                                $version->instruction !== null => __('Drafted with AI: “:instruction”', ['instruction' => $version->instruction]),
+                                default => __('Drafted with AI'),
+                            },
                             default => null,
                         },
                         'author' => $version->author?->name,
@@ -253,12 +260,18 @@ class ApplicationQuestionController extends Controller
     {
         Gate::authorize('update', $question);
 
-        $validated = $request->validate(['instruction' => ['nullable', 'string', 'max:500']]);
+        $validated = $request->validate([
+            'instruction' => ['nullable', 'string', 'max:500'],
+            'paragraph' => ['nullable', 'integer', 'min:0', 'max:50'],
+        ]);
         $instruction = PlainText::normalize((string) ($validated['instruction'] ?? ''));
+        $paragraph = isset($validated['paragraph']) ? (int) $validated['paragraph'] : null;
 
-        $this->aiAnswers->request($question, $request->user(), $instruction === '' ? null : $instruction);
+        $this->aiAnswers->request($question, $request->user(), $instruction === '' ? null : $instruction, $paragraph);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Writing a draft. It appears here when ready.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => $paragraph === null
+            ? __('Writing a draft. It appears here when ready.')
+            : __('Redrafting paragraph :n. It appears here when ready.', ['n' => $paragraph + 1])]);
 
         return back();
     }

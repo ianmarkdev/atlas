@@ -1,0 +1,42 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["paragraph", "claims", "clarification_questions"],
+    "properties": {
+        "paragraph": { "type": "string", "minLength": 1, "maxLength": 5000 },
+        "claims": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["text", "classification", "evidence_ids"],
+                "properties": {
+                    "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                    "classification": {
+                        "type": "string",
+                        "enum": ["verified", "inferred", "proposed", "hypothetical"]
+                    },
+                    "evidence_ids": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "items": { "type": "string", "maxLength": 10 }
+                    }
+                }
+            }
+        },
+        "clarification_questions": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["question", "why"],
+                "properties": {
+                    "question": { "type": "string", "maxLength": 500 },
+                    "why": { "type": "string", "maxLength": 500 }
+                }
+            }
+        }
+    }
+}
