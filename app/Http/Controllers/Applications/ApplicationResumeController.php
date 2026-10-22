@@ -205,7 +205,7 @@ class ApplicationResumeController extends Controller
             $claim,
             PlainText::normalize($validated['text']),
             $claim->kind,
-            __('Applied from the resume for :role at :company', ['role' => $application->role_title, 'company' => $application->company_name]),
+            __('Applied from the resume for :role at :company', ['role' => $application->role_title, 'company' => $application->companyLabel()]),
             $claim->lock_version,
             $request->user(),
             allowNearDuplicate: true,

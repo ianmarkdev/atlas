@@ -29,7 +29,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { formatDay } from '@/lib/applications';
+import { companyLabel, formatDay } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
 import { index } from '@/routes/applications';
 import { index as collectionsIndex } from '@/routes/collections';
@@ -105,14 +105,14 @@ export default function ApplicationShow({
     return (
         <>
             <Head
-                title={`${application.role_title} · ${application.company_name}`}
+                title={`${application.role_title} · ${companyLabel(application.company_name)}`}
             />
 
             <div className="flex flex-col gap-6 p-4 lg:p-6">
                 <header className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 space-y-2">
                         <p className="type-label text-text-label uppercase">
-                            {application.company_name}
+                            {companyLabel(application.company_name)}
                         </p>
                         <h1 className="type-heading-2 text-text-primary">
                             {application.role_title}
@@ -168,7 +168,7 @@ export default function ApplicationShow({
                                 )}
                                 onBefore={() =>
                                     window.confirm(
-                                        `Delete the ${application.company_name} application? You can restore it from “Recently deleted”.`,
+                                        `Delete the ${companyLabel(application.company_name)} application? You can restore it from “Recently deleted”.`,
                                     )
                                 }
                             >

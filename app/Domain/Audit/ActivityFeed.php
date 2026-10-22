@@ -175,7 +175,7 @@ class ActivityFeed
             $model instanceof Claim => $model->statement(),
             $model instanceof AnswerLibraryEntry => $model->question,
             $model instanceof Employment => "{$model->title} · {$model->employer_name}",
-            $model instanceof JobApplication => "{$model->role_title} · {$model->company_name}",
+            $model instanceof JobApplication => "{$model->role_title} · {$model->companyLabel()}",
             $model instanceof ApplicationQuestion => $model->prompt_text,
             $model instanceof Project, $model instanceof ResumeVariant, $model instanceof Credential, $model instanceof User => (string) $model->getAttribute('name'),
             default => '',

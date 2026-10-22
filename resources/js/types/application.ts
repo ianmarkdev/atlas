@@ -16,7 +16,7 @@ export type ReviewStatus =
 
 export type JobApplication = {
     ulid: string;
-    company_name: string;
+    company_name: string | null;
     role_title: string;
     location: string | null;
     employment_type: string | null;

@@ -37,7 +37,7 @@ class CapturedApplicationController extends Controller
     }
 
     /**
-     * @return array{ulid: string, url: string, company_name: string, role_title: string, stage: string, deleted: bool}
+     * @return array{ulid: string, url: string, company_name: ?string, role_title: string, stage: string, deleted: bool}
      */
     private static function summary(JobApplication $application): array
     {

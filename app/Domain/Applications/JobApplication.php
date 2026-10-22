@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $ulid
  * @property int $workspace_id
  * @property int $candidate_profile_id
- * @property string $company_name
+ * @property string|null $company_name null when captured from a listing that does not name it
  * @property string $role_title
  * @property string|null $source_url
  * @property string|null $location
@@ -88,6 +88,14 @@ class JobApplication extends Model
             && ! $this->stage->isSubmitted()
             && ! $this->stage->isClosed()
             && $this->deadline_on->isBefore(($now ?? CarbonImmutable::now())->startOfDay());
+    }
+
+    /**
+     * The company for labels and prompts, also when the listing did not name it.
+     */
+    public function companyLabel(): string
+    {
+        return $this->company_name ?? __('Unknown company');
     }
 
     public function jobDescription(): ?string

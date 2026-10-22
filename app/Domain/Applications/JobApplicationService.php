@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
  * Writes applications. Candidate and VAs both add and prepare applications; the job description
  * is kept verbatim, and a corrected paste is stored next to the earlier one.
  *
- * @phpstan-type ApplicationDetails array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
+ * @phpstan-type ApplicationDetails array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
  */
 class JobApplicationService
 {

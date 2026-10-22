@@ -60,7 +60,7 @@ class AnalyseJobApplication implements ShouldQueue
                 'jd_analysis',
                 'jd_analysis',
                 [
-                    'company_name' => $application->company_name,
+                    'company_name' => $application->companyLabel(),
                     'role_title' => $application->role_title,
                     'job_description' => $jobDescription,
                 ],

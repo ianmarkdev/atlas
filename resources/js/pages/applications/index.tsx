@@ -12,7 +12,7 @@ import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { formatDay, groupByStage } from '@/lib/applications';
+import { companyLabel, formatDay, groupByStage } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { index } from '@/routes/applications';
@@ -369,7 +369,7 @@ function ApplicationCard({
                 className="block focus-ring"
             >
                 <p className="truncate font-medium text-text-primary">
-                    {application.company_name}
+                    {companyLabel(application.company_name)}
                 </p>
                 <p className="truncate text-sm text-text-secondary">
                     {application.role_title}
@@ -453,7 +453,7 @@ function Table({
                                     )}
                                     className="font-medium text-text-primary focus-ring hover:underline"
                                 >
-                                    {application.company_name}
+                                    {companyLabel(application.company_name)}
                                 </Link>
                                 <p className="text-text-secondary">
                                     {application.role_title}
@@ -512,7 +512,7 @@ function Table({
                                         target="_blank"
                                         rel="noreferrer noopener"
                                         className="inline-flex text-text-muted focus-ring hover:text-text-primary"
-                                        aria-label={`Open the ${application.company_name} job ad`}
+                                        aria-label={`Open the ${companyLabel(application.company_name)} job ad`}
                                     >
                                         <ExternalLink className="size-4" />
                                     </a>
@@ -546,7 +546,7 @@ function DeletedList({ applications }: { applications: JobApplication[] }) {
                 >
                     <div className="min-w-0">
                         <p className="font-medium">
-                            {application.company_name}
+                            {companyLabel(application.company_name)}
                         </p>
                         <p className="text-sm text-text-secondary">
                             {application.role_title}

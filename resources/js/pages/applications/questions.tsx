@@ -45,6 +45,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { lengthStatus, parseQuestions } from '@/lib/questions';
 import { cn } from '@/lib/utils';
+import { companyLabel } from '@/lib/applications';
 import { index as applicationsIndex } from '@/routes/applications';
 import type { SelectOption, TextRevision } from '@/types';
 
@@ -81,7 +82,7 @@ type LibraryAnswer = {
 type PageProps = {
     application: {
         ulid: string;
-        company_name: string;
+        company_name: string | null;
         role_title: string;
         job_description: string | null;
     };
@@ -112,7 +113,7 @@ export default function ApplicationQuestions({
     return (
         <>
             <Head
-                title={`Questions · ${application.role_title} at ${application.company_name}`}
+                title={`Questions · ${application.role_title} at ${companyLabel(application.company_name)}`}
             />
 
             <div className="flex flex-col gap-6 p-4 lg:max-w-4xl lg:p-6">
@@ -121,7 +122,8 @@ export default function ApplicationQuestions({
                     className="inline-flex items-center gap-1.5 self-start text-sm text-text-secondary focus-ring hover:text-text-primary"
                 >
                     <ArrowLeft className="size-4" aria-hidden />
-                    {application.role_title} · {application.company_name}
+                    {application.role_title} ·{' '}
+                    {companyLabel(application.company_name)}
                 </Link>
 
                 <div className="flex flex-wrap items-start justify-between gap-4">

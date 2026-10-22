@@ -29,6 +29,7 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { indexLibrary, resumeToPlainText } from '@/lib/resume-document';
+import { companyLabel } from '@/lib/applications';
 import { index as applicationsIndex } from '@/routes/applications';
 import type {
     Contact,
@@ -61,7 +62,7 @@ type Version = {
 type PageProps = {
     application: {
         ulid: string;
-        company_name: string;
+        company_name: string | null;
         role_title: string;
         job_description: string | null;
     };
@@ -88,7 +89,7 @@ export default function ApplicationResumePage(props: PageProps) {
     return (
         <>
             <Head
-                title={`Resume · ${application.role_title} at ${application.company_name}`}
+                title={`Resume · ${application.role_title} at ${companyLabel(application.company_name)}`}
             />
             {/* Remount after every save or status change, so the editor starts from the server state. */}
             <TailoredResume
@@ -118,7 +119,8 @@ function TailoredResume({
         >
             <ArrowLeft className="size-4 shrink-0" aria-hidden />
             <span className="truncate">
-                {application.role_title} · {application.company_name}
+                {application.role_title} ·{' '}
+                {companyLabel(application.company_name)}
             </span>
         </Link>
     );

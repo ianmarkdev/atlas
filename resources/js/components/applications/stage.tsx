@@ -3,7 +3,7 @@ import { CalendarClock } from 'lucide-react';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { NativeSelect } from '@/components/native-select';
 import { Badge } from '@/components/ui/badge';
-import { deadlineLabel } from '@/lib/applications';
+import { companyLabel, deadlineLabel } from '@/lib/applications';
 import { cn } from '@/lib/utils';
 import type { ApplicationStage, JobApplication, SelectOption } from '@/types';
 
@@ -48,7 +48,7 @@ export function StageSelect({
 }) {
     return (
         <NativeSelect
-            aria-label={`Stage of the ${application.company_name} application`}
+            aria-label={`Stage of the ${companyLabel(application.company_name)} application`}
             className={cn('h-9 w-auto px-2.5 text-sm', className)}
             value={application.stage}
             options={stages}

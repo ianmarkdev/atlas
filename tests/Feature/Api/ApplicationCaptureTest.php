@@ -85,15 +85,39 @@ describe('saving a captured listing', function () {
         ]);
     });
 
-    test('only the title and company are required', function () {
+    test('only the title is required', function () {
         $candidate = candidateWithTwoFactor();
 
         captureAs($candidate, [
-            'source_url' => null, 'location' => null, 'employment_type' => null, 'salary_text' => null,
+            'company_name' => null, 'source_url' => null, 'location' => null, 'employment_type' => null, 'salary_text' => null,
             'deadline_on' => null, 'job_description' => null, 'capture' => null,
-        ])->assertCreated();
+        ])->assertCreated()->assertJsonPath('data.company_name', null);
 
-        expect(capturedApplications($candidate)->sole()->posting)->toBeNull();
+        $application = capturedApplications($candidate)->sole();
+        expect($application->company_name)->toBeNull()
+            ->and($application->companyLabel())->toBe('Unknown company')
+            ->and($application->posting)->toBeNull();
+    });
+
+    test('a blank or missing company is stored as unknown', function (array $payload) {
+        $candidate = candidateWithTwoFactor();
+
+        captureAs($candidate, $payload)->assertCreated();
+
+        expect(capturedApplications($candidate)->sole()->company_name)->toBeNull();
+    })->with([
+        'blank' => [['company_name' => "  \u{200B} "]],
+        'missing' => [['company_name' => null]],
+    ]);
+
+    test('an application without a company shows up in the tracker and its pages', function () {
+        $candidate = candidateWithTwoFactor();
+        captureAs($candidate, ['company_name' => null])->assertCreated();
+        $application = capturedApplications($candidate)->sole();
+
+        $this->actingAs($candidate)->get(route('applications.index'))->assertOk();
+        $this->actingAs($candidate)->get(route('applications.show', $application))->assertOk();
+        $this->actingAs($candidate)->get(route('dashboard'))->assertOk();
     });
 
     test('a VA can save listings too', function () {
@@ -140,7 +164,7 @@ describe('validation', function () {
         expect(capturedApplications($candidate))->toBeEmpty();
     })->with([
         'missing title' => [['role_title' => ''], 'role_title'],
-        'missing company' => [['company_name' => '   '], 'company_name'],
+        'company too long' => [['company_name' => str_repeat('a', 201)], 'company_name'],
         'non-http url' => [['source_url' => 'javascript:alert(1)'], 'source_url'],
         'unknown employment type' => [['employment_type' => 'gig'], 'employment_type'],
         'bad deadline' => [['deadline_on' => '30/11/2026'], 'deadline_on'],

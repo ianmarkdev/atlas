@@ -28,6 +28,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { timeAgo } from '@/lib/time';
 import { create as createClaim } from '@/routes/knowledge/claims';
+import { companyLabel } from '@/lib/applications';
 import { index as applicationsIndex } from '@/routes/applications';
 
 type Requirement = {
@@ -96,7 +97,7 @@ export default function AnalysisPage({
     subjects: { value: string; label: string }[];
     application: {
         ulid: string;
-        company_name: string;
+        company_name: string | null;
         role_title: string;
         has_job_description: boolean;
     };
@@ -125,7 +126,7 @@ export default function AnalysisPage({
     return (
         <>
             <Head
-                title={`Analysis · ${application.role_title} at ${application.company_name}`}
+                title={`Analysis · ${application.role_title} at ${companyLabel(application.company_name)}`}
             />
 
             <div className="flex flex-col gap-6 p-4 lg:max-w-5xl lg:p-6">
@@ -134,7 +135,8 @@ export default function AnalysisPage({
                     className="inline-flex items-center gap-1.5 self-start text-sm text-text-secondary focus-ring hover:text-text-primary"
                 >
                     <ArrowLeft className="size-4" aria-hidden />
-                    {application.role_title} · {application.company_name}
+                    {application.role_title} ·{' '}
+                    {companyLabel(application.company_name)}
                 </Link>
 
                 <div className="flex flex-wrap items-start justify-between gap-4">

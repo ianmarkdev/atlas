@@ -9,6 +9,13 @@ export const openStages: ApplicationStage[] = [
     'offer',
 ];
 
+/**
+ * The company for display. Jobs saved with the browser extension may not name one.
+ */
+export function companyLabel(companyName: string | null | undefined): string {
+    return companyName?.trim() || 'Unknown company';
+}
+
 export function isClosed(stage: ApplicationStage): boolean {
     return stage === 'rejected' || stage === 'withdrawn';
 }

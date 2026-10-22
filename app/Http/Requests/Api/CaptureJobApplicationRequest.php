@@ -28,6 +28,8 @@ class CaptureJobApplicationRequest extends SaveJobApplicationRequest
     {
         return [
             ...Arr::except(parent::rules(), ['stage', 'lock_version', 'notes']),
+            // Some listings do not name the employer (agencies, anonymised ads).
+            'company_name' => ['nullable', 'string', 'max:200'],
             'allow_duplicate' => ['sometimes', 'boolean'],
             'capture' => ['sometimes', 'nullable', 'array:method,site,external_id,posted_at,workplace_type,salary,captured_at'],
             'capture.method' => ['nullable', Rule::in(self::EXTRACTION_METHODS)],
@@ -45,13 +47,18 @@ class CaptureJobApplicationRequest extends SaveJobApplicationRequest
     }
 
     /**
-     * Notes belong to the user and are never set by a capture.
+     * The company is null when the listing did not name it. Notes belong to the user and are
+     * never set by a capture.
      *
-     * @return array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
+     * @return array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
      */
     public function details(): array
     {
-        return [...parent::details(), 'notes' => null];
+        return [
+            ...parent::details(),
+            'company_name' => $this->filled('company_name') ? $this->string('company_name')->toString() : null,
+            'notes' => null,
+        ];
     }
 
     public function allowsDuplicate(): bool

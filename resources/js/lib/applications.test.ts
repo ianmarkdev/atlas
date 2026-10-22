@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vite-plus/test';
 import type { JobApplication } from '@/types';
-import { daysUntil, deadlineLabel, groupByStage } from './applications';
+import {
+    companyLabel,
+    daysUntil,
+    deadlineLabel,
+    groupByStage,
+} from './applications';
 
 const today = new Date(2026, 9, 20, 15, 30);
+
+describe('companyLabel', () => {
+    it('falls back when a captured job does not name the company', () => {
+        expect(companyLabel('Northwind')).toBe('Northwind');
+        expect(companyLabel(null)).toBe('Unknown company');
+        expect(companyLabel('  ')).toBe('Unknown company');
+    });
+});
 
 describe('daysUntil', () => {
     it('counts calendar days, ignoring the time of day', () => {
