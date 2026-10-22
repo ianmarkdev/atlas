@@ -202,8 +202,23 @@ export default function AnalysisPage({
                         className="rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-6 type-body text-text-primary"
                         aria-live="polite"
                     >
-                        Analysing… with a local model this can take a minute or
-                        two. This page updates by itself.
+                        {analysis.status === 'queued'
+                            ? 'Waiting to start…'
+                            : 'Analysing… with a local model this can take a minute or two.'}{' '}
+                        This page updates by itself.
+                        {analysis.status === 'queued' &&
+                            analysis.created_at !== null &&
+                            Date.now() -
+                                new Date(analysis.created_at).getTime() >
+                                20_000 && (
+                                <span className="mt-2 block type-caption text-text-secondary">
+                                    Still waiting? Background jobs need a queue
+                                    worker. Start one in a terminal with{' '}
+                                    <code>php artisan queue:work</code> (or run{' '}
+                                    <code>composer run dev</code>, which starts
+                                    it for you).
+                                </span>
+                            )}
                     </p>
                 ) : analysis.status !== 'succeeded' ||
                   analysis.brief === null ? (
