@@ -3,6 +3,8 @@
 use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\ApplicationReviewController;
+use App\Http\Controllers\Applications\ClarificationController;
+use App\Http\Controllers\Applications\JdCollectionController;
 use App\Http\Controllers\Applications\JobAnalysisController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
@@ -55,6 +57,11 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
 
     // Applications tracker (M7a, D10): candidate and VAs prepare applications by hand.
     Route::get('applications', [JobApplicationController::class, 'index'])->name('applications.index');
+    Route::get('applications/collections', [JdCollectionController::class, 'index'])->name('collections.index');
+    Route::post('applications/collections', [JdCollectionController::class, 'store'])->name('collections.store');
+    Route::put('applications/collections/{collection}', [JdCollectionController::class, 'update'])->name('collections.update');
+    Route::delete('applications/collections/{collection}', [JdCollectionController::class, 'destroy'])->name('collections.destroy');
+    Route::patch('applications/{application}/collections', [JdCollectionController::class, 'toggle'])->name('applications.collections.toggle');
     Route::get('applications/create', [JobApplicationController::class, 'create'])->name('applications.create');
     Route::post('applications', [JobApplicationController::class, 'store'])->name('applications.store');
     Route::get('applications/{application}', [JobApplicationController::class, 'show'])->name('applications.show');
@@ -71,6 +78,10 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::post('/', [JobAnalysisController::class, 'store'])->name('store');
         Route::post('{analysis}/refresh', [JobAnalysisController::class, 'refresh'])->name('refresh');
         Route::post('{analysis}/questions', [JobAnalysisController::class, 'addQuestions'])->name('questions');
+    });
+    Route::prefix('applications/{application}/clarifications')->name('applications.clarifications.')->scopeBindings()->group(function () {
+        Route::post('{clarification}/answer', [ClarificationController::class, 'answer'])->name('answer');
+        Route::post('{clarification}/dismiss', [ClarificationController::class, 'dismiss'])->name('dismiss');
     });
 
     // The VA workflow of one application (M7a slice D).

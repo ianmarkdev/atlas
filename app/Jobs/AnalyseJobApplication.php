@@ -8,6 +8,7 @@ use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
 use App\Domain\Ai\LlmUnavailable;
 use App\Domain\Applications\BriefChecker;
+use App\Domain\Applications\ClarificationService;
 use App\Domain\Applications\EvidenceMatcher;
 use App\Domain\Applications\JobAnalysis;
 use App\Jobs\Middleware\WithWorkspaceContext;
@@ -42,7 +43,7 @@ class AnalyseJobApplication implements ShouldQueue
         return [new WithWorkspaceContext($this->workspaceId)];
     }
 
-    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher): void
+    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher, ClarificationService $clarifications): void
     {
         $analysis = JobAnalysis::query()->with(['application', 'posting', 'requester'])->find($this->analysisId);
 
@@ -89,6 +90,8 @@ class AnalyseJobApplication implements ShouldQueue
             'completed_at' => now(),
             'error_message' => null,
         ])->save();
+
+        $clarifications->syncFromAnalysis($analysis);
     }
 
     private function fail(JobAnalysis $analysis, string $status, string $message, ?int $runId = null): void

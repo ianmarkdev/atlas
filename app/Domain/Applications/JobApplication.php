@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -130,6 +131,22 @@ class JobApplication extends Model
     public function analyses(): HasMany
     {
         return $this->hasMany(JobAnalysis::class)->orderByDesc('id');
+    }
+
+    /**
+     * @return BelongsToMany<JdCollection, $this>
+     */
+    public function collections(): BelongsToMany
+    {
+        return $this->belongsToMany(JdCollection::class, 'jd_collection_items')->orderBy('name');
+    }
+
+    /**
+     * @return HasMany<ClarificationRequest, $this>
+     */
+    public function clarifications(): HasMany
+    {
+        return $this->hasMany(ClarificationRequest::class)->orderBy('id');
     }
 
     /**

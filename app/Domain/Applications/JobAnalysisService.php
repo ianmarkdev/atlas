@@ -18,6 +18,7 @@ class JobAnalysisService
         private AuditLogger $audit,
         private EvidenceMatcher $matcher,
         private ApplicationQuestionService $questions,
+        private ClarificationService $clarifications,
     ) {}
 
     /**
@@ -68,6 +69,8 @@ class JobAnalysisService
             'matches' => $this->matcher->match($analysis->brief, $analysis->application->candidate_profile_id),
             'matched_at' => now(),
         ])->save();
+
+        $this->clarifications->syncFromAnalysis($analysis);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Applications;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationReviewService;
 use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\JdCollection;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobApplicationService;
 use App\Domain\Applications\ReviewStatus;
@@ -47,10 +48,14 @@ class JobApplicationController extends Controller
         $showDeleted = $request->boolean('deleted') && $request->user()->isCandidate();
         $filter = in_array($request->query('filter'), self::FILTERS, true) ? (string) $request->query('filter') : 'all';
         $userId = $request->user()->id;
+        $collection = $request->filled('collection')
+            ? JdCollection::query()->where('ulid', $request->string('collection')->toString())->first()
+            : null;
 
         $applications = JobApplication::query()
             ->with('assignee:id,ulid,name')
             ->when($showDeleted, fn (Builder $query) => $query->onlyTrashed())
+            ->when($collection !== null, fn (Builder $query) => $query->whereHas('collections', fn (Builder $in) => $in->whereKey($collection?->id)))
             ->when($filter === 'mine', fn (Builder $query) => $query->where('assigned_user_id', $userId))
             ->when($filter === 'unassigned', fn (Builder $query) => $query->whereNull('assigned_user_id')->whereNotIn('stage', [ApplicationStage::Rejected, ApplicationStage::Withdrawn]))
             ->when($filter === 'in_review', fn (Builder $query) => $query->where('review_status', ReviewStatus::InReview))
@@ -71,6 +76,7 @@ class JobApplicationController extends Controller
         return Inertia::render('applications/index', [
             'applications' => JobApplicationResource::collection($applications)->resolve(),
             'filters' => ['q' => $search, 'deleted' => $showDeleted, 'filter' => $filter],
+            'collection' => $collection === null ? null : ['ulid' => $collection->ulid, 'name' => $collection->name],
             'stages' => self::stageOptions(),
             'canViewDeleted' => $request->user()->isCandidate(),
         ]);
@@ -101,7 +107,7 @@ class JobApplicationController extends Controller
 
     public function show(Request $request, JobApplication $application, ApplicationReviewService $reviews): Response
     {
-        $application->load(['posting', 'owner:id,name', 'assignee:id,ulid,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion', 'latestAnalysis']);
+        $application->load(['posting', 'owner:id,name', 'assignee:id,ulid,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion', 'latestAnalysis', 'collections']);
         $resume = $application->resume;
         $questions = $application->questions;
         $user = $request->user();
@@ -122,6 +128,10 @@ class JobApplicationController extends Controller
                 'updated_at' => $resume->updated_at?->toIso8601String(),
             ],
             'analysisSummary' => self::analysisSummary($application),
+            'collections' => [
+                'member' => $application->collections->map(fn (JdCollection $collection): array => ['ulid' => $collection->ulid, 'name' => $collection->name, 'use_for_eval' => $collection->use_for_eval])->values()->all(),
+                'all' => JdCollection::query()->orderBy('name')->get(['id', 'ulid', 'name'])->map(fn (JdCollection $collection): array => ['value' => $collection->ulid, 'label' => $collection->name])->values()->all(),
+            ],
             'questionsSummary' => [
                 'total' => $questions->count(),
                 'answered' => $questions->filter(fn (ApplicationQuestion $question): bool => trim($question->answer?->body() ?? '') !== '')->count(),

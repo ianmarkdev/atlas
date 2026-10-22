@@ -9,9 +9,11 @@ import {
     RefreshCw,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import ClarificationController from '@/actions/App/Http/Controllers/Applications/ClarificationController';
 import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import Heading from '@/components/heading';
+import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +25,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import { timeAgo } from '@/lib/time';
 import { create as createClaim } from '@/routes/knowledge/claims';
 import { index as applicationsIndex } from '@/routes/applications';
@@ -85,8 +88,12 @@ export default function AnalysisPage({
     application,
     analysis,
     history,
+    clarifications,
+    subjects,
     canUpdate,
 }: {
+    clarifications: Clarification[];
+    subjects: { value: string; label: string }[];
     application: {
         ulid: string;
         company_name: string;
@@ -212,6 +219,8 @@ export default function AnalysisPage({
                         analysis={analysis}
                         brief={analysis.brief}
                         canUpdate={canUpdate}
+                        clarifications={clarifications}
+                        subjects={subjects}
                     />
                 )}
             </div>
@@ -224,11 +233,15 @@ function BriefView({
     analysis,
     brief,
     canUpdate,
+    clarifications,
+    subjects,
 }: {
     application: string;
     analysis: Analysis;
     brief: Brief;
     canUpdate: boolean;
+    clarifications: Clarification[];
+    subjects: { value: string; label: string }[];
 }) {
     const warnings = [
         ...brief.server_injection_warnings,
@@ -341,6 +354,15 @@ function BriefView({
                 matchFor={matchFor}
             />
 
+            {clarifications.length > 0 && (
+                <GapsCard
+                    application={application}
+                    clarifications={clarifications}
+                    subjects={subjects}
+                    canUpdate={canUpdate}
+                />
+            )}
+
             {brief.questions.length > 0 && (
                 <QuestionsFound
                     application={application}
@@ -349,6 +371,151 @@ function BriefView({
                     canUpdate={canUpdate}
                 />
             )}
+        </div>
+    );
+}
+
+type Clarification = {
+    ulid: string;
+    requirement: string;
+    question: string;
+    status: 'open' | 'answered';
+    answer: string | null;
+    answered_by: string | null;
+};
+
+/**
+ * Must-haves with no evidence, as questions: answering adds a bullet point to the library
+ * (proposed when a VA answers), then matching runs again.
+ */
+function GapsCard({
+    application,
+    clarifications,
+    subjects,
+    canUpdate,
+}: {
+    application: string;
+    clarifications: Clarification[];
+    subjects: { value: string; label: string }[];
+    canUpdate: boolean;
+}) {
+    const open = clarifications.filter((c) => c.status === 'open');
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Gaps to fill</CardTitle>
+                <CardDescription>
+                    {open.length === 0
+                        ? 'All gaps answered.'
+                        : `${open.length} must-have${open.length === 1 ? '' : 's'} with no evidence in your library. If you have the experience, add it; it becomes a bullet point you can use everywhere.`}
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ul className="space-y-4">
+                    {clarifications.map((clarification) =>
+                        clarification.status === 'answered' ? (
+                            <li
+                                key={clarification.ulid}
+                                className="flex gap-2 text-sm text-text-secondary"
+                            >
+                                <CheckCircle2
+                                    className="mt-0.5 size-4 shrink-0 text-text-accent"
+                                    aria-hidden
+                                />
+                                <span>
+                                    <span className="font-medium text-text-primary">
+                                        {clarification.requirement}
+                                    </span>{' '}
+                                    — {clarification.answer}
+                                    {clarification.answered_by &&
+                                        ` (${clarification.answered_by})`}
+                                </span>
+                            </li>
+                        ) : (
+                            <li
+                                key={clarification.ulid}
+                                className="space-y-2 rounded-kraken-sm border border-border-subtle p-3"
+                            >
+                                <p className="text-sm text-text-primary">
+                                    {clarification.question}
+                                </p>
+                                {canUpdate && (
+                                    <GapAnswerForm
+                                        application={application}
+                                        clarification={clarification}
+                                        subjects={subjects}
+                                    />
+                                )}
+                            </li>
+                        ),
+                    )}
+                </ul>
+            </CardContent>
+        </Card>
+    );
+}
+
+function GapAnswerForm({
+    application,
+    clarification,
+    subjects,
+}: {
+    application: string;
+    clarification: Clarification;
+    subjects: { value: string; label: string }[];
+}) {
+    const routeArgs: [string, string] = [application, clarification.ulid];
+    const errorBag = `gap_${clarification.ulid}`;
+
+    return (
+        <div className="space-y-2">
+            <Form
+                {...ClarificationController.answer.form(routeArgs)}
+                options={{ preserveScroll: true }}
+                errorBag={errorBag}
+                resetOnSuccess
+                className="space-y-2"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <Textarea
+                            name="answer"
+                            rows={2}
+                            maxLength={1000}
+                            required
+                            aria-label={`Your experience with: ${clarification.requirement}`}
+                            placeholder="e.g. Ran our Kubernetes clusters for 40 services at Contoso, cutting deploy time from 1 hour to 10 minutes."
+                        />
+                        <InputError message={errors.answer} />
+                        <div className="flex flex-wrap items-center gap-2">
+                            <NativeSelect
+                                name="subject"
+                                options={subjects}
+                                defaultValue="general"
+                                aria-label="Where this happened"
+                                className="h-9 w-auto max-w-xs"
+                            />
+                            <Button size="sm" disabled={processing}>
+                                Add bullet point
+                            </Button>
+                        </div>
+                        <InputError
+                            message={errors.subject ?? errors.statement}
+                        />
+                    </>
+                )}
+            </Form>
+            <Form
+                {...ClarificationController.dismiss.form(routeArgs)}
+                options={{ preserveScroll: true }}
+            >
+                {({ processing }) => (
+                    <Button size="sm" variant="ghost" disabled={processing}>
+                        I don&apos;t have this
+                    </Button>
+                )}
+            </Form>
         </div>
     );
 }

@@ -10,6 +10,8 @@ use App\Domain\Ai\PromptInjectionScanner;
  * - every requirement's quote must come from the job description: `found` (verbatim, ignoring
  *   case and spacing), `close` (≥ 80% of its words appear in order-free overlap), or
  *   `not_found` (the model paraphrased or invented it — show it as unconfirmed);
+ * - questions and the model's injection warnings are kept only when most of their words occur
+ *   in the job description (otherwise moved to `dropped_questions` / `dropped_injection_warnings`);
  * - prompt-injection passages found by the server are merged with the model's own warnings.
  */
 class BriefChecker
@@ -34,9 +36,112 @@ class BriefChecker
             }, (array) ($brief[$list] ?? []));
         }
 
+        // Questions and the model's injection warnings must point at text that is really there
+        // (the 3B model invents generic questions and warnings); the rest is kept aside, visibly.
+        [$brief['questions'], $brief['dropped_questions']] = self::matchQuestions((array) ($brief['questions'] ?? []), self::askedInText($jobDescription));
+        [$brief['injection_warnings'], $brief['dropped_injection_warnings']] = self::partition((array) ($brief['injection_warnings'] ?? []), $words, 0.5);
+
         $brief['server_injection_warnings'] = $this->scanner->scan($jobDescription);
 
         return $brief;
+    }
+
+    /**
+     * What the job description itself asks the applicant: sentences ending in "?" and prompts such
+     * as "Tell us…", "Describe…", "Please explain…".
+     *
+     * @return list<list<string>> the words of each asked passage
+     */
+    private static function askedInText(string $text): array
+    {
+        $asked = [];
+
+        foreach (preg_split('/(?<=[.!?])\s+|\n+/u', $text) ?: [] as $sentence) {
+            $sentence = trim((string) preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $sentence));
+
+            if ($sentence !== '' && (str_ends_with($sentence, '?') || preg_match('/^(please\s+)?(tell us|describe|explain|share|give (us )?an example|outline|summari[sz]e)\b/iu', $sentence) === 1)) {
+                $asked[] = array_values(array_filter(self::words($sentence), fn (string $word): bool => mb_strlen($word) > 2));
+            }
+        }
+
+        return $asked;
+    }
+
+    /**
+     * Keep the model's questions that correspond to something the text asks (≥ 60% of the
+     * question's words in one asked passage); the rest are dropped as invented.
+     *
+     * @param  array<mixed>  $questions
+     * @param  list<list<string>>  $asked
+     * @return array{list<string>, list<string>}
+     */
+    private static function matchQuestions(array $questions, array $asked): array
+    {
+        $kept = [];
+        $dropped = [];
+
+        foreach ($questions as $question) {
+            $text = trim(is_string($question) ? $question : '');
+
+            if ($text === '') {
+                continue;
+            }
+
+            $questionWords = array_values(array_filter(self::words($text), fn (string $word): bool => mb_strlen($word) > 2));
+            $matches = false;
+
+            foreach ($asked as $passage) {
+                $passageWords = array_flip($passage);
+                $present = array_filter($questionWords, fn (string $word): bool => isset($passageWords[$word]));
+
+                if ($questionWords !== [] && count($present) / count($questionWords) >= 0.6) {
+                    $matches = true;
+
+                    break;
+                }
+            }
+
+            if ($matches) {
+                $kept[] = $text;
+            } else {
+                $dropped[] = $text;
+            }
+        }
+
+        return [$kept, $dropped];
+    }
+
+    /**
+     * Split model-written strings into those whose words mostly appear in the job description and
+     * those that do not.
+     *
+     * @param  array<mixed>  $items
+     * @param  array<string, int>  $words
+     * @return array{list<string>, list<string>}
+     */
+    private static function partition(array $items, array $words, float $threshold): array
+    {
+        $kept = [];
+        $dropped = [];
+
+        foreach ($items as $item) {
+            $text = trim((string) (is_string($item) ? $item : ''));
+
+            if ($text === '') {
+                continue;
+            }
+
+            $itemWords = array_values(array_filter(self::words($text), fn (string $word): bool => mb_strlen($word) > 2));
+            $present = array_filter($itemWords, fn (string $word): bool => isset($words[$word]));
+
+            if ($itemWords !== [] && count($present) / count($itemWords) >= $threshold) {
+                $kept[] = $text;
+            } else {
+                $dropped[] = $text;
+            }
+        }
+
+        return [$kept, $dropped];
     }
 
     /**

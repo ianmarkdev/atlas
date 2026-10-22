@@ -16,6 +16,7 @@ import { formatDay, groupByStage } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
 import { cn } from '@/lib/utils';
 import { index } from '@/routes/applications';
+import { index as collectionsIndex } from '@/routes/collections';
 import type { JobApplication, SelectOption } from '@/types';
 
 type View = 'board' | 'table';
@@ -54,11 +55,13 @@ export default function Applications({
     filters,
     stages,
     canViewDeleted,
+    collection,
 }: {
     applications: JobApplication[];
     filters: { q: string; deleted: boolean; filter: QuickFilter };
     stages: SelectOption[];
     canViewDeleted: boolean;
+    collection: { ulid: string; name: string } | null;
 }) {
     const [search, setSearch] = useState(filters.q);
     const [view, setView] = useState<View>('board');
@@ -79,10 +82,17 @@ export default function Applications({
         q?: string;
         deleted?: boolean;
         filter?: QuickFilter;
-    }) =>
+        collection?: string | null;
+    }) => {
+        const inCollection =
+            query.collection === undefined
+                ? (collection?.ulid ?? null)
+                : query.collection;
+
         router.get(
             index.url(),
             {
+                ...(inCollection ? { collection: inCollection } : {}),
                 ...(query.q ? { q: query.q } : {}),
                 ...(query.deleted ? { deleted: 1 } : {}),
                 ...(query.filter && query.filter !== 'all'
@@ -91,6 +101,7 @@ export default function Applications({
             },
             { preserveState: true, preserveScroll: true, replace: true },
         );
+    };
 
     return (
         <>
@@ -107,13 +118,39 @@ export default function Applications({
                         description="Every job you are applying for, from saved to offer. Paste the job description once; the resume and answers for it live here too."
                     />
                     {!filters.deleted && (
-                        <Button asChild>
-                            <Link href={JobApplicationController.create()}>
-                                <Plus /> Add application
-                            </Link>
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="outline" asChild>
+                                <Link href={collectionsIndex()}>
+                                    Collections
+                                </Link>
+                            </Button>
+                            <Button asChild>
+                                <Link href={JobApplicationController.create()}>
+                                    <Plus /> Add application
+                                </Link>
+                            </Button>
+                        </div>
                     )}
                 </div>
+
+                {collection && (
+                    <p className="flex flex-wrap items-center gap-2 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle px-3 py-2 text-sm text-text-primary">
+                        Showing the collection “{collection.name}”.
+                        <button
+                            type="button"
+                            onClick={() =>
+                                visit({
+                                    q: filters.q,
+                                    filter: filters.filter,
+                                    collection: null,
+                                })
+                            }
+                            className="text-text-accent underline-offset-4 focus-ring hover:underline"
+                        >
+                            Show all applications
+                        </button>
+                    </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2">
                     <form

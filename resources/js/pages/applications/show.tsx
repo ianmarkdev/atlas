@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
+import JdCollectionController from '@/actions/App/Http/Controllers/Applications/JdCollectionController';
 import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
@@ -31,6 +32,7 @@ import {
 import { formatDay } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
 import { index } from '@/routes/applications';
+import { index as collectionsIndex } from '@/routes/collections';
 import ApplicationReviewController from '@/actions/App/Http/Controllers/Applications/ApplicationReviewController';
 import { ReviewBadge, Timeline } from '@/components/applications/review';
 import InputError from '@/components/input-error';
@@ -60,6 +62,7 @@ export default function ApplicationShow({
     variants,
     questionsSummary,
     analysisSummary,
+    collections,
     review,
     timeline,
 }: {
@@ -71,6 +74,10 @@ export default function ApplicationShow({
     variants: SelectOption[];
     questionsSummary: QuestionsSummary;
     analysisSummary: AnalysisSummary | null;
+    collections: {
+        member: { ulid: string; name: string; use_for_eval: boolean }[];
+        all: SelectOption[];
+    };
     review: ReviewProps;
     timeline: ActivityItem[];
 }) {
@@ -229,6 +236,10 @@ export default function ApplicationShow({
                                         </div>
                                     ))}
                                 </dl>
+                                <CollectionsRow
+                                    application={application}
+                                    collections={collections}
+                                />
                             </CardContent>
                         </Card>
 
@@ -714,6 +725,80 @@ function NoteDialog({
                 </Form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+/**
+ * Which collections the application is in, with add/remove.
+ */
+function CollectionsRow({
+    application,
+    collections,
+}: {
+    application: JobApplicationDetail;
+    collections: {
+        member: { ulid: string; name: string; use_for_eval: boolean }[];
+        all: SelectOption[];
+    };
+}) {
+    const memberIds = new Set(collections.member.map((c) => c.ulid));
+    const available = collections.all.filter((c) => !memberIds.has(c.value));
+    const toggle = (collection: string, member: boolean) =>
+        router.patch(
+            JdCollectionController.toggle.url(application.ulid),
+            { collection, member },
+            { preserveScroll: true },
+        );
+
+    return (
+        <div className="mt-4 space-y-2 border-t border-border-subtle pt-3">
+            <p className="flex items-center justify-between type-label text-text-label uppercase">
+                Collections
+                <Link
+                    href={collectionsIndex()}
+                    className="text-text-accent normal-case focus-ring hover:underline"
+                >
+                    Manage
+                </Link>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+                {collections.member.length === 0 && (
+                    <span className="type-caption text-text-muted">None</span>
+                )}
+                {collections.member.map((collection) => (
+                    <Badge
+                        key={collection.ulid}
+                        variant={
+                            collection.use_for_eval ? 'secondary' : 'outline'
+                        }
+                    >
+                        {collection.name}
+                        {application.can.update && (
+                            <button
+                                type="button"
+                                onClick={() => toggle(collection.ulid, false)}
+                                className="ml-1 focus-ring"
+                                aria-label={`Remove from ${collection.name}`}
+                            >
+                                ×
+                            </button>
+                        )}
+                    </Badge>
+                ))}
+            </div>
+            {application.can.update && available.length > 0 && (
+                <NativeSelect
+                    aria-label="Add to a collection"
+                    className="h-9"
+                    value=""
+                    placeholder="Add to a collection…"
+                    options={available}
+                    onChange={(event) =>
+                        event.target.value && toggle(event.target.value, true)
+                    }
+                />
+            )}
+        </div>
     );
 }
 

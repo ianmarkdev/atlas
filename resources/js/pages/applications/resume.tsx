@@ -4,6 +4,7 @@ import {
     Check,
     CheckCircle2,
     Copy,
+    GitCompare,
     History,
     RotateCcw,
     Undo2,
@@ -70,6 +71,8 @@ type PageProps = {
     usedElsewhere: ResumeUsage;
     versions: Version[];
     variants: SelectOption[];
+    changes: ResumeChange[] | null;
+    baseRevisionNo: number | null;
     can: {
         update: boolean;
         approve: boolean;
@@ -104,6 +107,8 @@ function TailoredResume({
     usedElsewhere,
     versions,
     variants,
+    changes,
+    baseRevisionNo,
     can,
 }: PageProps) {
     const backLink = (
@@ -122,6 +127,13 @@ function TailoredResume({
         <>
             <JobDescriptionSheet text={application.job_description} />
             <VersionsSheet versions={versions} />
+            {changes !== null && resume.based_on && (
+                <ChangesSheet
+                    changes={changes}
+                    basedOn={resume.based_on.name}
+                    revisionNo={baseRevisionNo}
+                />
+            )}
             {can.saveBack && resume.based_on && (
                 <SaveBackButton
                     basedOn={resume.based_on.name}
@@ -324,6 +336,114 @@ function versionOrigin(createdVia: string): string {
     }
 
     return createdVia.startsWith('ai') ? 'Written by AI' : 'Edited';
+}
+
+type ResumeChange = {
+    section: string;
+    change: 'changed' | 'added' | 'removed' | 'reworded' | 'reordered';
+    item: string;
+    before: string | null;
+    after: string | null;
+};
+
+const changeLabels: Record<ResumeChange['change'], string> = {
+    changed: 'Changed',
+    added: 'Added',
+    removed: 'Removed',
+    reworded: 'Reworded',
+    reordered: 'Reordered',
+};
+
+/**
+ * What this tailored resume changed compared with the resume it was copied from.
+ */
+function ChangesSheet({
+    changes,
+    basedOn,
+    revisionNo,
+}: {
+    changes: ResumeChange[];
+    basedOn: string;
+    revisionNo: number | null;
+}) {
+    const sections = [...new Set(changes.map((c) => c.section))];
+
+    return (
+        <Sheet>
+            <SheetTrigger asChild>
+                <Button type="button" size="sm" variant="outline">
+                    <GitCompare /> Changes ({changes.length})
+                </Button>
+            </SheetTrigger>
+            <SheetContent className="sm:max-w-xl">
+                <SheetHeader>
+                    <SheetTitle>Changes vs. “{basedOn}”</SheetTitle>
+                    <SheetDescription>
+                        Compared with revision {revisionNo ?? '?'} of “{basedOn}
+                        ”, the version it was copied from. Saved changes only.
+                    </SheetDescription>
+                </SheetHeader>
+                <div className="space-y-4 overflow-y-auto px-4 pb-4">
+                    {changes.length === 0 ? (
+                        <p className="type-body text-text-muted">
+                            No changes yet: this is still an exact copy.
+                        </p>
+                    ) : (
+                        sections.map((section) => (
+                            <section key={section} className="space-y-2">
+                                <h3 className="type-label text-text-label uppercase">
+                                    {section}
+                                </h3>
+                                <ul className="space-y-2">
+                                    {changes
+                                        .filter((c) => c.section === section)
+                                        .map((change, i) => (
+                                            <li
+                                                key={i}
+                                                className="space-y-1 rounded-kraken-sm border border-border-subtle p-2 text-sm"
+                                            >
+                                                <p className="flex flex-wrap items-center gap-2">
+                                                    <Badge
+                                                        variant={
+                                                            change.change ===
+                                                            'removed'
+                                                                ? 'destructive'
+                                                                : change.change ===
+                                                                    'added'
+                                                                  ? 'default'
+                                                                  : 'outline'
+                                                        }
+                                                    >
+                                                        {
+                                                            changeLabels[
+                                                                change.change
+                                                            ]
+                                                        }
+                                                    </Badge>
+                                                    <span className="text-text-primary">
+                                                        {change.item}
+                                                    </span>
+                                                </p>
+                                                {change.before !== null && (
+                                                    <p className="text-text-muted line-through">
+                                                        {change.before}
+                                                    </p>
+                                                )}
+                                                {change.after !== null && (
+                                                    <p className="text-text-secondary">
+                                                        {change.after}
+                                                    </p>
+                                                )}
+                                            </li>
+                                        ))}
+                                </ul>
+                            </section>
+                        ))
+                    )}
+                </div>
+            </SheetContent>
+        </Sheet>
+    );
 }
 
 function VersionsSheet({ versions }: { versions: Version[] }) {

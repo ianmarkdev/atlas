@@ -9,10 +9,12 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimService;
+use App\Domain\Resumes\ResumeDiff;
 use App\Domain\Resumes\ResumeDocumentValidator;
 use App\Domain\Resumes\ResumeFacts;
 use App\Domain\Resumes\ResumeUsage;
 use App\Domain\Resumes\ResumeVariant;
+use App\Domain\Resumes\ResumeVariantRevision;
 use App\Domain\Shared\PlainText;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Profile\ContactController;
@@ -61,6 +63,9 @@ class ApplicationResumeController extends Controller
 
         // An approved resume is shown with the facts it was approved with, even if the library changed.
         $frozen = $resume->isApproved() ? $resume->approvedVersion : null;
+        $liveLibrary = ResumeController::editorLibrary();
+        $document = $frozen !== null ? $frozen->document : $resume->document();
+        $baseRevision = $resume->based_on_revision_id === null ? null : ResumeVariantRevision::query()->find($resume->based_on_revision_id);
 
         $versions = ApplicationResumeVersion::query()
             ->where('application_resume_id', $resume->id)
@@ -81,13 +86,20 @@ class ApplicationResumeController extends Controller
                 'status' => $resume->status,
                 'lock_version' => $resume->lock_version,
                 'version_no' => ($frozen ?? $resume->currentVersion)?->version_no,
-                'document' => $frozen !== null ? $frozen->document : $resume->document(),
+                'document' => $document,
                 'based_on' => $resume->basedOn === null ? null : ['ulid' => $resume->basedOn->ulid, 'name' => $resume->basedOn->name],
                 'approved_at' => $resume->approved_at?->toIso8601String(),
                 'approved_by' => $resume->approver?->name,
             ],
             'contact' => $frozen !== null ? $frozen->facts_snapshot['contact'] : ContactController::contactOf(CandidateProfile::current()),
-            'library' => $frozen !== null ? $frozen->facts_snapshot['library'] : ResumeController::editorLibrary(),
+            'library' => $frozen !== null ? $frozen->facts_snapshot['library'] : $liveLibrary,
+            // What this tailored version changed compared with the resume revision it was copied from.
+            'changes' => $baseRevision === null ? null : app(ResumeDiff::class)->between(
+                [...ResumeDocumentValidator::emptyDocument(), ...$baseRevision->document],
+                $document,
+                $liveLibrary,
+            ),
+            'baseRevisionNo' => $baseRevision?->revision_no,
             'usedElsewhere' => ResumeUsage::map(),
             'versions' => $versions->map(fn (ApplicationResumeVersion $version): array => [
                 'id' => $version->id,

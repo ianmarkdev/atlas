@@ -102,14 +102,14 @@ There are no `documents` / `document_chunks` tables: nothing is uploaded or extr
 - **embeddings**: id, workspace_id, retrieval_unit_id, embedding_model_id, content_hash, embedding `halfvec` (no fixed dimension at column level; `ALTER COLUMN embedding SET STORAGE PLAIN` so values stay inline instead of TOASTed — S3), created_at. `UNIQUE(retrieval_unit_id, embedding_model_id)`.
 
 ### Applications
-- **jd_collections**: id, workspace_id, name, description, use_for_eval bool, created_by. `UNIQUE(workspace_id, name)`.
+- **jd_collections** (built in M7): id, ulid, workspace_id, name, description, use_for_eval bool (set by the candidate only), created_by. Names are not unique.
 - **jd_collection_items**: jd_collection_id, job_application_id, added_by, added_at. PK(collection, application). Many-to-many so one JD can sit in several groups.
 - **job_applications**: id, ulid, workspace_id, candidate_profile_id, company_name, role_title, source_url, location, employment_type, salary_text, stage (`saved|preparing|applied|interviewing|offer|rejected|withdrawn`, the job-search pipeline), review_status (`not_started|in_progress|in_review|changes_requested|approved`, the VA preparation workflow; D10), review_note (latest submit / request-changes note), review_status_changed_at, assigned_user_id, analysis_status (M7: `none|analysing|ready|failed`), owner_user_id, deadline_on (date), submitted_at, notes, lock_version, deleted_at.
 - **job_postings**: id, workspace_id, job_application_id (unique), raw_text (verbatim, immutable), raw_sha256, captured_at, captured_by.
 - **job_analyses** (built in M7): id, ulid, workspace_id, job_application_id, job_posting_id (the exact text analysed), generation_run_id, prompt_version, status (`queued|running|succeeded|failed|invalid_output`), matches jsonb (requirement ↔ evidence matrix, refreshable), matched_at, error_message, requested_by, completed_at; brief jsonb (validated: summary, employer language, seniority, must-haves, nice-to-haves, red flags, injection_warnings), status, created_at. Multiple per application (re-analysis); `job_applications.current_analysis_id`.
 - **requirements**: id, workspace_id, job_analysis_id, kind (`must|preferred|responsibility|employer_value`), text, importance smallint, verbatim_quote.
 - **application_questions**: id, ulid, workspace_id, job_application_id, origin (`extracted|manual|cover_letter`; at most one cover letter per application), prompt_text, word_limit, char_limit, position, created_by. Answer state lives on the answer draft.
-- **clarification_requests**: id, workspace_id, job_application_id, question_text, reason, related_requirement_id, answer_text, answered_by, converted_claim_id (if the answer became a proposed claim).
+- **clarification_requests** (built in M7): id, ulid, workspace_id, job_application_id, job_analysis_id, requirement, requirement_hash (one open request per requirement and application), question_text, status (`open|answered|dismissed|resolved`), answer_text, converted_claim_id (the bullet point the answer became), answered_by, answered_at.
 
 ### Resumes (D9, ADR-9)
 Facts live once in the master record; resume variants and tailored resumes only **choose, order and word** them.
