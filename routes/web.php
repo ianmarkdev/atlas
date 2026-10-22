@@ -105,6 +105,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('{question}/move', [ApplicationQuestionController::class, 'move'])->name('move');
         Route::put('{question}/answer', [ApplicationQuestionController::class, 'saveAnswer'])->name('answer');
         Route::post('{question}/answer/draft', [ApplicationQuestionController::class, 'draft'])->name('draft');
+        Route::patch('{question}/answer/claims-reviewed', [ApplicationQuestionController::class, 'claimsReviewed'])->name('claims-reviewed');
         Route::patch('{question}/answer/approve', [ApplicationQuestionController::class, 'approve'])->name('approve');
         Route::patch('{question}/answer/reopen', [ApplicationQuestionController::class, 'reopen'])->name('reopen');
         Route::post('{question}/answer/library', [ApplicationQuestionController::class, 'saveToLibrary'])->name('save-to-library');
@@ -116,6 +117,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::post('/', [ApplicationResumeController::class, 'store'])->name('store');
         Route::put('/', [ApplicationResumeController::class, 'update'])->name('update');
         Route::post('copy', [ApplicationResumeController::class, 'copy'])->name('copy');
+        Route::post('tailor', [ApplicationResumeController::class, 'tailor'])->name('tailor');
         Route::patch('approve', [ApplicationResumeController::class, 'approve'])->name('approve');
         Route::patch('reopen', [ApplicationResumeController::class, 'reopen'])->name('reopen');
         Route::post('save-back', [ApplicationResumeController::class, 'saveBack'])->name('save-back');

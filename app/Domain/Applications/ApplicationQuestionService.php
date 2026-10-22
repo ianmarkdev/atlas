@@ -184,6 +184,10 @@ class ApplicationQuestionService
             throw ValidationException::withMessages(['body' => __('Fill in or remove the [confirm: …] placeholders before approving.')]);
         }
 
+        if ($draft->needsClaimReview()) {
+            throw ValidationException::withMessages(['body' => __('Check the AI draft\'s unconfirmed claims first: edit them, or mark them as checked under "AI check".')]);
+        }
+
         $draft->forceFill([
             'status' => 'approved',
             'approved_version_id' => $draft->current_version_id,

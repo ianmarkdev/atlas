@@ -63,6 +63,16 @@ return [
             'temperature' => 0.4,
             'timeout' => 300,
         ],
+        'resume_tailoring' => [
+            'provider' => env('AI_RESUME_TAILORING_PROVIDER'),
+            'models' => [
+                'ollama' => env('AI_RESUME_TAILORING_OLLAMA_MODEL', 'qwen2.5:7b'),
+                'claude' => env('AI_RESUME_TAILORING_CLAUDE_MODEL', 'claude-sonnet-5-5'),
+            ],
+            'max_tokens' => 4000,
+            'temperature' => 0.2,
+            'timeout' => 420,
+        ],
         'claim_check' => [
             'provider' => env('AI_CLAIM_CHECK_PROVIDER'),
             'models' => [

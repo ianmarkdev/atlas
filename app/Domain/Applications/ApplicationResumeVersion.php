@@ -22,10 +22,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $author_user_id
  * @property string $created_via
  * @property int|null $parent_version_id
+ * @property int|null $generation_run_id
+ * @property array{refused: list<array{item: string, what: string, reason: string, kept: ?string}>, notes: list<string>}|null $ai_report what the server kept and refused from an AI proposal
  * @property CarbonImmutable $created_at
  * @property-read User|null $author
  */
-#[Fillable(['workspace_id', 'application_resume_id', 'version_no', 'document', 'facts_snapshot', 'author_type', 'author_user_id', 'created_via', 'parent_version_id'])]
+#[Fillable(['workspace_id', 'application_resume_id', 'version_no', 'document', 'facts_snapshot', 'author_type', 'author_user_id', 'created_via', 'parent_version_id', 'generation_run_id', 'ai_report'])]
 class ApplicationResumeVersion extends Model
 {
     use BelongsToWorkspace;
@@ -50,6 +52,7 @@ class ApplicationResumeVersion extends Model
         return [
             'document' => 'array',
             'facts_snapshot' => 'array',
+            'ai_report' => 'array',
             'created_at' => 'datetime',
         ];
     }

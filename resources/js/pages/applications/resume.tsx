@@ -1,4 +1,4 @@
-import { Form, Head, Link, router, usePage } from '@inertiajs/react';
+import { Form, Head, Link, router, usePage, usePoll } from '@inertiajs/react';
 import {
     ArrowLeft,
     Check,
@@ -6,12 +6,15 @@ import {
     Copy,
     GitCompare,
     History,
+    ListChecks,
+    Loader2,
     RotateCcw,
+    Sparkles,
     Undo2,
     Upload,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
@@ -48,6 +51,33 @@ type TailoredResume = {
     based_on: { ulid: string; name: string } | null;
     approved_at: string | null;
     approved_by: string | null;
+    generation: {
+        status: 'queued' | 'running' | 'failed';
+        error: string | null;
+        requested_at: string | null;
+    } | null;
+    ai_report: AiReport | null;
+};
+
+type AiReport = {
+    refused: {
+        item: string;
+        what: string;
+        reason: string;
+        kept: string | null;
+    }[];
+    notes: string[];
+};
+
+const refusalReasons: Record<string, string> = {
+    not_item_bullet: 'not a bullet point of this item',
+    no_bullets_left: 'the AI left no bullet points; the current ones were kept',
+    job_kept:
+        'the AI wanted to remove this job; jobs stay, so the resume has no gap',
+    adds_number: 'the rewording adds a number that is not in the bullet point',
+    title_candidate_only: 'only the candidate changes how a job title is shown',
+    title_not_in_use: 'not a title you already use for this job',
+    summary_number: 'the summary mentions a number that is not on the resume',
 };
 
 type Version = {
@@ -74,6 +104,7 @@ type PageProps = {
     variants: SelectOption[];
     changes: ResumeChange[] | null;
     baseRevisionNo: number | null;
+    hasAnalysis: boolean;
     can: {
         update: boolean;
         approve: boolean;
@@ -83,8 +114,23 @@ type PageProps = {
     };
 };
 
+const isTailoring = (resume: TailoredResume): boolean =>
+    resume.generation?.status === 'queued' ||
+    resume.generation?.status === 'running';
+
 export default function ApplicationResumePage(props: PageProps) {
     const { application, resume } = props;
+    const tailoring = isTailoring(resume);
+    const poll = usePoll(3000, {}, { autoStart: false });
+
+    useEffect(() => {
+        if (tailoring) {
+            poll.start();
+        } else {
+            poll.stop();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tailoring]);
 
     return (
         <>
@@ -110,8 +156,10 @@ function TailoredResume({
     variants,
     changes,
     baseRevisionNo,
+    hasAnalysis,
     can,
 }: PageProps) {
+    const tailoring = isTailoring(resume);
     const backLink = (
         <Link
             href={JobApplicationController.show(application.ulid)}
@@ -136,7 +184,8 @@ function TailoredResume({
                     revisionNo={baseRevisionNo}
                 />
             )}
-            {can.saveBack && resume.based_on && (
+            {resume.ai_report && <AiReportSheet report={resume.ai_report} />}
+            {can.saveBack && resume.based_on && !tailoring && (
                 <SaveBackButton
                     basedOn={resume.based_on.name}
                     application={application.ulid}
@@ -145,7 +194,7 @@ function TailoredResume({
         </>
     );
 
-    if (!can.update) {
+    if (!can.update || tailoring) {
         return (
             <ReadOnlyResume
                 backLink={backLink}
@@ -155,9 +204,42 @@ function TailoredResume({
                 contact={contact}
                 library={library}
                 canReopen={can.reopen}
+                notice={
+                    tailoring ? (
+                        <p
+                            className="flex items-center gap-2 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3 text-sm text-text-primary"
+                            aria-live="polite"
+                        >
+                            <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                            />
+                            {resume.generation?.status === 'queued'
+                                ? 'Waiting to start… (background jobs need a queue worker: php artisan queue:work)'
+                                : 'Tailoring the resume for this job… with a local model this can take a few minutes. This page updates by itself.'}
+                        </p>
+                    ) : null
+                }
             />
         );
     }
+
+    const tailor = (dirty: boolean) => {
+        if (
+            dirty &&
+            !window.confirm(
+                'Your unsaved changes will be lost when the tailored version arrives. Continue?',
+            )
+        ) {
+            return;
+        }
+
+        router.post(
+            ApplicationResumeController.tailor.url(application.ulid),
+            {},
+            { preserveScroll: true },
+        );
+    };
 
     const save = (document: ResumeDocument, done: () => void) =>
         router.put(
@@ -167,66 +249,176 @@ function TailoredResume({
         );
 
     return (
-        <ResumeEditor
-            initialDocument={resume.document}
-            library={library}
-            contact={contact}
-            usedElsewhere={usedElsewhere}
-            statusText={`Saved · version ${resume.version_no ?? 0}`}
-            onSave={save}
-            applyBulletUrl={(claimUlid) =>
-                ApplicationResumeController.applyBullet.url([
-                    application.ulid,
-                    claimUlid,
-                ])
-            }
-            canEditDisplayTitles={can.editDisplayTitles}
-            toolbarStart={
-                <>
-                    {backLink}
-                    <Badge variant="outline">Draft</Badge>
-                    {resume.based_on && (
-                        <span className="hidden type-caption text-text-muted xl:inline">
-                            from “{resume.based_on.name}”
-                        </span>
-                    )}
-                </>
-            }
-            toolbarEnd={(dirty) => (
-                <>
-                    {sharedTools}
-                    <CopyFromSheet
-                        application={application.ulid}
-                        variants={variants}
-                        lockVersion={resume.lock_version}
-                        dirty={dirty}
-                    />
-                    {can.approve && (
-                        <Form
-                            {...ApplicationResumeController.approve.form(
-                                application.ulid,
-                            )}
-                            options={{ preserveScroll: true }}
+        <>
+            {(resume.generation?.status === 'failed' || !hasAnalysis) && (
+                <div className="px-4 pt-4 lg:px-6">
+                    {resume.generation?.status === 'failed' ? (
+                        <p
+                            role="alert"
+                            className="rounded-kraken-sm border border-border-error bg-surface-error-subtle p-3 text-sm text-text-error"
                         >
-                            {({ processing }) => (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={processing || dirty}
-                                    title={
-                                        dirty
-                                            ? 'Save your changes before approving'
-                                            : undefined
-                                    }
-                                >
-                                    <CheckCircle2 /> Approve
-                                </Button>
-                            )}
-                        </Form>
+                            AI tailoring failed: {resume.generation.error}
+                        </p>
+                    ) : (
+                        <p className="rounded-kraken-sm border border-border-subtle bg-surface-tile p-3 type-caption text-text-secondary">
+                            Tip: analyse the job description first.{' '}
+                            <strong>Tailor with AI</strong> then knows the job’s
+                            must-haves and the employer’s own words.
+                        </p>
                     )}
-                </>
+                </div>
             )}
-        />
+            <ResumeEditor
+                initialDocument={resume.document}
+                library={library}
+                contact={contact}
+                usedElsewhere={usedElsewhere}
+                statusText={`Saved · version ${resume.version_no ?? 0}`}
+                onSave={save}
+                applyBulletUrl={(claimUlid) =>
+                    ApplicationResumeController.applyBullet.url([
+                        application.ulid,
+                        claimUlid,
+                    ])
+                }
+                canEditDisplayTitles={can.editDisplayTitles}
+                toolbarStart={
+                    <>
+                        {backLink}
+                        <Badge variant="outline">Draft</Badge>
+                        {resume.based_on && (
+                            <span className="hidden type-caption text-text-muted xl:inline">
+                                from “{resume.based_on.name}”
+                            </span>
+                        )}
+                    </>
+                }
+                toolbarEnd={(dirty) => (
+                    <>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => tailor(dirty)}
+                        >
+                            <Sparkles /> Tailor with AI
+                        </Button>
+                        {sharedTools}
+                        <CopyFromSheet
+                            application={application.ulid}
+                            variants={variants}
+                            lockVersion={resume.lock_version}
+                            dirty={dirty}
+                        />
+                        {can.approve && (
+                            <Form
+                                {...ApplicationResumeController.approve.form(
+                                    application.ulid,
+                                )}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing }) => (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={processing || dirty}
+                                        title={
+                                            dirty
+                                                ? 'Save your changes before approving'
+                                                : undefined
+                                        }
+                                    >
+                                        <CheckCircle2 /> Approve
+                                    </Button>
+                                )}
+                            </Form>
+                        )}
+                    </>
+                )}
+            />
+        </>
+    );
+}
+
+function AiReportSheet({ report }: { report: AiReport }) {
+    return (
+        <Sheet>
+            <SheetTrigger asChild>
+                <Button type="button" size="sm" variant="ghost">
+                    <ListChecks /> AI check
+                    {report.refused.length > 0 && (
+                        <Badge variant="outline" className="ml-1">
+                            {report.refused.length} refused
+                        </Badge>
+                    )}
+                </Button>
+            </SheetTrigger>
+            <SheetContent className="sm:max-w-xl">
+                <SheetHeader>
+                    <SheetTitle>What the server kept from the AI</SheetTitle>
+                    <SheetDescription>
+                        The AI may only choose and word your bullet points.
+                        Anything that would add a fact was refused, and the
+                        earlier wording kept. Compare the full change with
+                        “Changes”.
+                    </SheetDescription>
+                </SheetHeader>
+                <div className="space-y-6 overflow-y-auto px-4 pb-4">
+                    <section className="space-y-2">
+                        <h3 className="type-label text-text-label uppercase">
+                            Refused
+                        </h3>
+                        {report.refused.length === 0 ? (
+                            <p className="type-body text-text-muted">
+                                Nothing: every proposed change passed the check.
+                            </p>
+                        ) : (
+                            <ul className="space-y-2">
+                                {report.refused.map((item, i) => (
+                                    <li
+                                        key={i}
+                                        className="space-y-1 rounded-kraken-sm border border-border-subtle p-3"
+                                    >
+                                        <p className="type-caption text-text-muted">
+                                            {item.item === 'summary'
+                                                ? 'Summary'
+                                                : item.item}
+                                        </p>
+                                        {item.what !== '' && (
+                                            <p className="text-sm text-text-primary">
+                                                {item.reason.startsWith('title')
+                                                    ? `Shown as “${item.what}”`
+                                                    : item.what}
+                                            </p>
+                                        )}
+                                        <p className="type-caption text-text-secondary">
+                                            Refused:{' '}
+                                            {refusalReasons[item.reason] ??
+                                                item.reason}
+                                            {item.kept !== null &&
+                                                item.kept !== '' &&
+                                                ` — kept “${item.kept}”`}
+                                        </p>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                    {report.notes.length > 0 && (
+                        <section className="space-y-2">
+                            <h3 className="type-label text-text-label uppercase">
+                                Notes from the AI
+                            </h3>
+                            <ul className="list-disc space-y-1 pl-5 text-sm">
+                                {report.notes.map((note, i) => (
+                                    <li key={i}>{note}</li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
+                </div>
+            </SheetContent>
+        </Sheet>
     );
 }
 
@@ -238,6 +430,7 @@ function ReadOnlyResume({
     contact,
     library,
     canReopen,
+    notice = null,
 }: {
     backLink: ReactNode;
     tools: ReactNode;
@@ -246,6 +439,7 @@ function ReadOnlyResume({
     contact: Contact;
     library: ResumeLibrary;
     canReopen: boolean;
+    notice?: ReactNode;
 }) {
     const [copied, setCopied] = useState(false);
     const index = indexLibrary(library);
@@ -305,6 +499,7 @@ function ReadOnlyResume({
                 </div>
             </div>
 
+            {notice}
             {approved && (
                 <p className="rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3 text-sm text-text-primary">
                     Frozen as approved: this is exactly what goes out, even if

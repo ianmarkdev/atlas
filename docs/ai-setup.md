@@ -45,12 +45,15 @@ Embeddings and text generation are configured separately; changing one never cha
 ### Hardware notes
 
 On a laptop RTX 3050 (4 GB VRAM), 3–4B models run fully on the GPU; the 7B writer spills partly
-into system RAM and is slower (expect tens of seconds per answer). If that is too slow, use the 3B
-model for answers too:
+into system RAM and is slower (expect tens of seconds per answer). If that is too slow, or the 7B
+model is not pulled yet, use the 3B model for answers and resume tailoring too:
 
 ```
 AI_ANSWER_WRITING_OLLAMA_MODEL=qwen2.5:3b
+AI_RESUME_TAILORING_OLLAMA_MODEL=qwen2.5:3b
 ```
+
+Measured with `qwen2.5:3b` on that laptop: tailoring a two-job resume ≈ 20 s, a cover letter ≈ 30 s.
 
 Ollama keeps a model loaded for `OLLAMA_KEEP_ALIVE` (default `10m`) after the last call.
 
@@ -86,7 +89,8 @@ Claude is supported but never required. Use it for some or all tasks:
    ```
 
    Models per task: `AI_JD_ANALYSIS_CLAUDE_MODEL`, `AI_ANSWER_WRITING_CLAUDE_MODEL`,
-   `AI_CLAIM_CHECK_CLAUDE_MODEL` (and the `..._OLLAMA_MODEL` equivalents).
+   `AI_RESUME_TAILORING_CLAUDE_MODEL`, `AI_CLAIM_CHECK_CLAUDE_MODEL` (and the `..._OLLAMA_MODEL`
+   equivalents).
 
 3. Compare before switching: `php artisan app:compare-llm --providers=ollama,claude`. The samples are
    synthetic (`tests/Eval/fixtures/llm-comparison.php`), so no real application is sent.

@@ -19,6 +19,7 @@ import {
     Trash2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
@@ -82,6 +83,10 @@ type AiCheck = {
         flags: string[];
     }[];
     questions: { question: string; why: string }[];
+    instruction: string | null;
+    from_resume_version: number | null;
+    to_check: number;
+    needs_review: boolean;
 };
 
 type Question = {
@@ -180,6 +185,9 @@ export default function ApplicationQuestions({
                         <JobDescriptionSheet
                             text={application.job_description}
                         />
+                        {answered > 0 && (
+                            <CopyAllButton questions={questions} />
+                        )}
                         {canAdd && !hasCoverLetter && (
                             <Form
                                 {...ApplicationQuestionController.coverLetter.form(
@@ -207,7 +215,7 @@ export default function ApplicationQuestions({
                 </div>
 
                 {questions.length > 0 && canAdd && !hasAnalysis && (
-                    <p className="bg-surface-subtle rounded-kraken-sm border border-border-subtle p-3 type-caption text-text-secondary">
+                    <p className="rounded-kraken-sm border border-border-subtle bg-surface-tile p-3 type-caption text-text-secondary">
                         Tip: analyse the job description first.{' '}
                         <strong>Draft with AI</strong> then uses the facts
                         matched to each requirement, not just a search of your
@@ -247,6 +255,34 @@ export default function ApplicationQuestions({
                 {canAdd && <AddQuestionForm application={application.ulid} />}
             </div>
         </>
+    );
+}
+
+/**
+ * Every question with its saved answer, as plain text for pasting into a form or an email.
+ */
+function CopyAllButton({ questions }: { questions: Question[] }) {
+    const [copied, setCopied] = useState(false);
+
+    const copyAll = async () => {
+        const text = questions
+            .filter((q) => (q.answer?.body ?? '').trim() !== '')
+            .map((q) =>
+                q.origin === 'cover_letter'
+                    ? `Cover letter\n\n${q.answer?.body ?? ''}`
+                    : `${q.prompt_text}\n\n${q.answer?.body ?? ''}`,
+            )
+            .join('\n\n---\n\n');
+
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <Button type="button" size="sm" variant="outline" onClick={copyAll}>
+            {copied ? <Check /> : <Copy />} {copied ? 'Copied' : 'Copy all'}
+        </Button>
     );
 }
 
@@ -460,7 +496,9 @@ function QuestionCard({
     const generation = question.answer?.generation ?? null;
     const hasPlaceholders = /\[confirm:[^\]]*\]/i.test(body);
 
-    const draftWithAi = () => {
+    const needsReview = question.answer?.ai?.needs_review ?? false;
+
+    const draftWithAi = (instruction: string | null) => {
         if (
             dirty &&
             !window.confirm(
@@ -472,7 +510,7 @@ function QuestionCard({
 
         router.post(
             ApplicationQuestionController.draft.url(routeArgs),
-            {},
+            { instruction },
             { preserveScroll: true, errorBag },
         );
     };
@@ -672,6 +710,17 @@ function QuestionCard({
                         remove it, before approving.
                     </p>
                 )}
+                {needsReview && !dirty && !approved && (
+                    <p className="flex items-center gap-2 type-caption text-text-secondary">
+                        <AlertTriangle className="size-4" aria-hidden />
+                        {question.answer?.ai?.to_check}{' '}
+                        {question.answer?.ai?.to_check === 1
+                            ? 'claim is'
+                            : 'claims are'}{' '}
+                        not backed by a verified fact. Open “AI check” to review
+                        them, or edit the text, before approving.
+                    </p>
+                )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -685,18 +734,22 @@ function QuestionCard({
                         >
                             Save
                         </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={draftWithAi}
-                            disabled={generating}
-                        >
-                            <Sparkles />{' '}
-                            {saved.trim() === ''
-                                ? 'Draft with AI'
-                                : 'Redraft with AI'}
-                        </Button>
+                        {saved.trim() === '' ? (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => draftWithAi(null)}
+                                disabled={generating}
+                            >
+                                <Sparkles /> Draft with AI
+                            </Button>
+                        ) : (
+                            <RedraftDialog
+                                disabled={generating}
+                                onSubmit={draftWithAi}
+                            />
+                        )}
                         <InsertFromLibrary
                             library={library}
                             onInsert={(entry) => {
@@ -723,7 +776,13 @@ function QuestionCard({
                     />
                 )}
                 {question.answer?.ai && (
-                    <AiCheckSheet check={question.answer.ai} />
+                    <AiCheckSheet
+                        check={question.answer.ai}
+                        body={saved}
+                        routeArgs={routeArgs}
+                        errorBag={errorBag}
+                        canReview={question.can.approve && !approved}
+                    />
                 )}
                 <VersionHistory revisions={question.history} />
                 <div className="ml-auto flex gap-2">
@@ -743,14 +802,17 @@ function QuestionCard({
                                         processing ||
                                         dirty ||
                                         generating ||
-                                        hasPlaceholders
+                                        hasPlaceholders ||
+                                        needsReview
                                     }
                                     title={
                                         dirty
                                             ? 'Save the answer before approving'
                                             : hasPlaceholders
                                               ? 'Fill in the [confirm: …] placeholders first'
-                                              : undefined
+                                              : needsReview
+                                                ? 'Review the AI draft’s unconfirmed claims first'
+                                                : undefined
                                     }
                                 >
                                     <CheckCircle2 /> Approve
@@ -811,21 +873,181 @@ const flagLabels: Record<string, string> = {
     metric_without_source: 'a number that is not in your facts',
 };
 
-function AiCheckSheet({ check }: { check: AiCheck }) {
-    const unbacked = check.claims.filter(
-        (claim) =>
-            claim.classification === 'proposed' ||
-            claim.classification === 'hypothetical',
-    ).length;
+const quickInstructions = [
+    'Shorter',
+    'More formal',
+    'Warmer and more personal',
+    'More specific about results',
+    'Use more of the employer’s own words',
+];
 
+function RedraftDialog({
+    disabled,
+    onSubmit,
+}: {
+    disabled: boolean;
+    onSubmit: (instruction: string | null) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [instruction, setInstruction] = useState('');
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={disabled}
+                >
+                    <Sparkles /> Redraft with AI
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Redraft with AI</DialogTitle>
+                    <DialogDescription>
+                        The new draft is added as a version; the current text
+                        stays in the history. Say what should change, or leave
+                        it empty for a fresh attempt.
+                    </DialogDescription>
+                </DialogHeader>
+                <form
+                    className="space-y-3"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        setOpen(false);
+                        onSubmit(
+                            instruction.trim() === ''
+                                ? null
+                                : instruction.trim(),
+                        );
+                    }}
+                >
+                    <Label htmlFor="redraft_instruction">
+                        Instruction (optional)
+                    </Label>
+                    <Textarea
+                        id="redraft_instruction"
+                        rows={3}
+                        maxLength={500}
+                        value={instruction}
+                        onChange={(event) => setInstruction(event.target.value)}
+                        placeholder="e.g. Shorter, and lead with the payments migration"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                        {quickInstructions.map((text) => (
+                            <Button
+                                key={text}
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setInstruction(text)}
+                            >
+                                {text}
+                            </Button>
+                        ))}
+                    </div>
+                    <Button>
+                        <Sparkles /> Redraft
+                    </Button>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/**
+ * The saved text with each claim the AI listed marked by its label (the label is written out,
+ * so colour is not the only signal). Claims not found word for word are listed below only.
+ */
+function AnnotatedDraft({
+    body,
+    claims,
+}: {
+    body: string;
+    claims: AiCheck['claims'];
+}) {
+    const lower = body.toLocaleLowerCase();
+    const spans: { start: number; end: number; label: ClaimLabel }[] = [];
+
+    for (const claim of claims) {
+        const needle = claim.text.trim().toLocaleLowerCase();
+        const start = needle === '' ? -1 : lower.indexOf(needle);
+
+        if (
+            start >= 0 &&
+            !spans.some((s) => start < s.end && start + needle.length > s.start)
+        ) {
+            spans.push({
+                start,
+                end: start + needle.length,
+                label: claim.classification,
+            });
+        }
+    }
+
+    spans.sort((a, b) => a.start - b.start);
+    const parts: ReactNode[] = [];
+    let cursor = 0;
+
+    spans.forEach((span, i) => {
+        parts.push(body.slice(cursor, span.start));
+        parts.push(
+            <mark
+                key={i}
+                className={cn(
+                    'rounded-sm px-0.5 text-text-primary',
+                    span.label === 'verified'
+                        ? 'bg-surface-accent-subtle'
+                        : span.label === 'inferred'
+                          ? 'bg-surface-input-subtle'
+                          : 'bg-surface-tile underline decoration-dotted underline-offset-2',
+                )}
+            >
+                {body.slice(span.start, span.end)}
+                <sup className="ml-0.5 type-caption text-text-secondary">
+                    {claimLabels[span.label]?.label ?? span.label}
+                </sup>
+            </mark>,
+        );
+        cursor = span.end;
+    });
+    parts.push(body.slice(cursor));
+
+    return (
+        <p className="rounded-kraken-sm border border-border-subtle p-3 text-sm leading-relaxed whitespace-pre-line">
+            {parts}
+        </p>
+    );
+}
+
+function AiCheckSheet({
+    check,
+    body,
+    routeArgs,
+    errorBag,
+    canReview,
+}: {
+    check: AiCheck;
+    body: string;
+    routeArgs: [string, string];
+    errorBag: string;
+    canReview: boolean;
+}) {
     return (
         <Sheet>
             <SheetTrigger asChild>
                 <Button type="button" size="sm" variant="ghost">
                     <ListChecks /> AI check
-                    {unbacked > 0 && (
-                        <Badge variant="outline" className="ml-1">
-                            {unbacked} to check
+                    {check.to_check > 0 && (
+                        <Badge
+                            variant={check.needs_review ? 'default' : 'outline'}
+                            className="ml-1"
+                        >
+                            {check.needs_review
+                                ? `${check.to_check} to check`
+                                : 'checked'}
                         </Badge>
                     )}
                 </Button>
@@ -837,9 +1059,49 @@ function AiCheckSheet({ check }: { check: AiCheck }) {
                         Each claim is checked on the server against the facts
                         the AI was given. Labels are only ever lowered, never
                         raised.
+                        {check.from_resume_version !== null &&
+                            ` Written from version ${check.from_resume_version} of the tailored resume.`}
+                        {check.instruction !== null &&
+                            ` Instruction: “${check.instruction}”.`}
                     </SheetDescription>
                 </SheetHeader>
                 <div className="space-y-6 overflow-y-auto px-4 pb-4">
+                    {check.needs_review && canReview && (
+                        <div className="space-y-2 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3">
+                            <p className="text-sm text-text-primary">
+                                {check.to_check}{' '}
+                                {check.to_check === 1
+                                    ? 'claim needs'
+                                    : 'claims need'}{' '}
+                                your check: true as worded, or hedged enough?
+                                Edit the text if not. Otherwise confirm, and the
+                                answer can be approved.
+                            </p>
+                            <Form
+                                {...ApplicationQuestionController.claimsReviewed.form(
+                                    routeArgs,
+                                )}
+                                options={{ preserveScroll: true }}
+                                errorBag={errorBag}
+                            >
+                                {({ processing }) => (
+                                    <Button size="sm" disabled={processing}>
+                                        <Check /> I’ve checked these claims
+                                    </Button>
+                                )}
+                            </Form>
+                        </div>
+                    )}
+
+                    {check.claims.length > 0 && body.trim() !== '' && (
+                        <section className="space-y-2">
+                            <h3 className="type-label text-text-label uppercase">
+                                The draft, marked up
+                            </h3>
+                            <AnnotatedDraft body={body} claims={check.claims} />
+                        </section>
+                    )}
+
                     <section className="space-y-2">
                         <h3 className="type-label text-text-label uppercase">
                             Claims

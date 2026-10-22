@@ -12,6 +12,7 @@ use App\Domain\Applications\AiAnswerService;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\EvidencePackBuilder;
+use App\Domain\Knowledge\CandidateProfile;
 use App\Jobs\Middleware\WithWorkspaceContext;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,14 +57,19 @@ class GenerateAnswerDraft implements ShouldQueue
         $draft->forceFill(['generation_status' => 'running'])->save();
         $application = $question->application;
         $requester = $draft->generation_requested_by === null ? null : User::query()->find($draft->generation_requested_by);
-        $pack = $evidence->build($application, $question);
+        $built = $evidence->build($application, $question);
+        $pack = $built['pack'];
+        $instruction = $draft->generation_instruction;
 
         try {
             $result = $gateway->run('answer_writing', 'answer_writing', [
+                'candidate_name' => CandidateProfile::current()->display_name,
                 'company_name' => $application->companyLabel(),
                 'role_title' => $application->role_title,
                 'job_description' => $application->jobDescription() ?? '(no job description pasted)',
                 'evidence' => EvidencePackBuilder::render($pack),
+                'storyline' => $built['storyline'],
+                'instruction' => $instruction ?? '(none)',
                 'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
                 'limit' => self::limitOf($question),
             ], $requester, purpose: 'answer_generation', idempotencyKey: "answer:{$question->id}:".$draft->generation_requested_at?->getTimestamp());
@@ -82,7 +88,14 @@ class GenerateAnswerDraft implements ShouldQueue
 
         foreach ((array) ($data['segments'] ?? []) as $segment) {
             foreach ((array) ($segment['claims'] ?? []) as $claim) {
-                $claims[] = [
+                // Small models repeat claims across segments; check each statement once.
+                $key = mb_strtolower(trim((string) ($claim['text'] ?? '')));
+
+                if ($key === '' || isset($claims[$key])) {
+                    continue;
+                }
+
+                $claims[$key] = [
                     'text' => (string) ($claim['text'] ?? ''),
                     'classification' => (string) ($claim['classification'] ?? ''),
                     'evidence_ids' => array_values(array_map(strval(...), (array) ($claim['evidence_ids'] ?? []))),
@@ -92,16 +105,29 @@ class GenerateAnswerDraft implements ShouldQueue
 
         $answers->storeDraft(
             $draft,
-            trim((string) ($data['answer'] ?? '')),
+            self::withoutEvidenceIds((string) ($data['answer'] ?? '')),
             $result->run,
             $pack,
-            $grounding->check($claims, array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack)),
+            $grounding->check(array_values($claims), array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack)),
             array_values(array_map(fn (mixed $item): array => [
                 'question' => (string) ($item['question'] ?? ''),
                 'why' => (string) ($item['why'] ?? ''),
             ], array_filter((array) ($data['clarification_questions'] ?? []), is_array(...)))),
             $requester,
+            $instruction,
+            $built['resume_version_id'],
         );
+    }
+
+    /**
+     * The answer without evidence ids the model copied into the text ("(E1, E2)", "[E3]"):
+     * they belong in the claim list, not in what the employer reads.
+     */
+    private static function withoutEvidenceIds(string $answer): string
+    {
+        $clean = (string) preg_replace('/\s*[\(\[]\s*E\d+(?:\s*[,;]\s*E\d+)*\s*[\)\]]/u', '', $answer);
+
+        return trim((string) preg_replace('/ +([.,;:])/u', '$1', $clean));
     }
 
     private static function limitOf(ApplicationQuestion $question): string

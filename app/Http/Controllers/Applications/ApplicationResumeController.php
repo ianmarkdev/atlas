@@ -90,7 +90,15 @@ class ApplicationResumeController extends Controller
                 'based_on' => $resume->basedOn === null ? null : ['ulid' => $resume->basedOn->ulid, 'name' => $resume->basedOn->name],
                 'approved_at' => $resume->approved_at?->toIso8601String(),
                 'approved_by' => $resume->approver?->name,
+                'generation' => $resume->generation_status === null ? null : [
+                    'status' => $resume->generation_status,
+                    'error' => $resume->generation_error,
+                    'requested_at' => $resume->generation_requested_at?->toIso8601String(),
+                ],
+                // What the server refused from the AI's proposal, shown while that version is current.
+                'ai_report' => $frozen === null && $resume->currentVersion?->author_type === 'ai' ? $resume->currentVersion->ai_report : null,
             ],
+            'hasAnalysis' => $application->analyses()->where('status', 'succeeded')->exists(),
             'contact' => $frozen !== null ? $frozen->facts_snapshot['contact'] : ContactController::contactOf(CandidateProfile::current()),
             'library' => $frozen !== null ? $frozen->facts_snapshot['library'] : $liveLibrary,
             // What this tailored version changed compared with the resume revision it was copied from.
@@ -150,6 +158,21 @@ class ApplicationResumeController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Copied ":name" again. The earlier version is in the history.', ['name' => $variant->name])]);
 
         return to_route('applications.resume.show', $application);
+    }
+
+    /**
+     * Queue AI tailoring (M8). The result arrives as a new version; nothing is overwritten.
+     */
+    public function tailor(Request $request, JobApplication $application): RedirectResponse
+    {
+        $resume = $this->resumeOf($application);
+        Gate::authorize('update', $resume);
+
+        $this->resumes->requestTailoring($resume, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tailoring the resume for this job. The new version appears here when ready.')]);
+
+        return back();
     }
 
     public function approve(Request $request, JobApplication $application): RedirectResponse

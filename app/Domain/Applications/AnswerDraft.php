@@ -23,6 +23,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $generation_error
  * @property CarbonImmutable|null $generation_requested_at
  * @property int|null $generation_requested_by
+ * @property string|null $generation_instruction what the requester asked the next AI draft to do differently
+ * @property int|null $claims_reviewed_version_id the AI version whose claims someone has checked
  * @property int|null $approved_by
  * @property CarbonImmutable|null $approved_at
  * @property int $lock_version
@@ -50,6 +52,21 @@ class AnswerDraft extends Model
     public function isGenerating(): bool
     {
         return in_array($this->generation_status, ['queued', 'running'], true);
+    }
+
+    /**
+     * An AI-written current version with claims to confirm (labelled `proposed` or lowered by the
+     * server check) that nobody has reviewed yet. It cannot be approved (docs/04 §4.5).
+     */
+    public function needsClaimReview(): bool
+    {
+        $version = $this->currentVersion;
+
+        if ($version === null || $version->author_type !== 'ai' || $this->claims_reviewed_version_id === $version->id) {
+            return false;
+        }
+
+        return $version->claimsToCheck() !== [];
     }
 
     public function body(): string

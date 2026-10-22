@@ -1,0 +1,46 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title", "summary", "summary_evidence_ids", "items", "notes"],
+    "properties": {
+        "title": { "type": "string", "maxLength": 255 },
+        "summary": { "type": "string", "maxLength": 2000 },
+        "summary_evidence_ids": {
+            "type": "array",
+            "maxItems": 30,
+            "items": { "type": "string", "maxLength": 10 }
+        },
+        "items": {
+            "type": "array",
+            "maxItems": 80,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "bullets"],
+                "properties": {
+                    "id": { "type": "string", "maxLength": 10 },
+                    "display_title": { "type": "string", "maxLength": 255 },
+                    "include": { "type": "boolean" },
+                    "bullets": {
+                        "type": "array",
+                        "maxItems": 30,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["id", "text"],
+                            "properties": {
+                                "id": { "type": "string", "maxLength": 10 },
+                                "text": { "type": "string", "maxLength": 1000 }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "notes": {
+            "type": "array",
+            "maxItems": 5,
+            "items": { "type": "string", "maxLength": 300 }
+        }
+    }
+}

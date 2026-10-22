@@ -2,9 +2,11 @@
 
 namespace App\Domain\Applications;
 
+use App\Domain\Ai\GenerationRun;
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Resumes\ResumeService;
 use App\Domain\Resumes\ResumeVariant;
+use App\Jobs\TailorApplicationResume;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -152,6 +154,70 @@ class ApplicationResumeService
         return $variant;
     }
 
+    /**
+     * Queue AI tailoring (M8). The result arrives as a new version written by `ai`.
+     *
+     * @throws ValidationException when the resume is approved or is already being tailored
+     */
+    public function requestTailoring(ApplicationResume $resume, User $actor): void
+    {
+        DB::transaction(function () use ($resume, $actor): void {
+            $current = ApplicationResume::query()->whereKey($resume->id)->lockForUpdate()->firstOrFail();
+
+            if ($current->isApproved()) {
+                throw ValidationException::withMessages(['resume' => __('This resume is approved. Reopen it before tailoring it again.')]);
+            }
+
+            if ($current->isGenerating()) {
+                throw ValidationException::withMessages(['resume' => __('The resume is already being tailored.')]);
+            }
+
+            $current->forceFill([
+                'generation_status' => 'queued',
+                'generation_error' => null,
+                'generation_requested_at' => now(),
+                'generation_requested_by' => $actor->id,
+            ])->save();
+
+            $this->audit->record('application_resume.tailoring_requested', $current, [], $actor);
+
+            TailorApplicationResume::dispatch($current->workspace_id, $current->id);
+        });
+    }
+
+    /**
+     * Store the tailored document as the resume's new current version, unless the resume was
+     * approved or saved by someone while the AI worked on the version `$fromVersionId`.
+     *
+     * @param  array<string, mixed>  $document  validated
+     * @param  array<string, mixed>  $snapshot
+     * @param  array{refused: list<array{item: string, what: string, reason: string, kept: ?string}>, notes: list<string>}  $report
+     */
+    public function storeTailored(ApplicationResume $resume, int $fromVersionId, array $document, array $snapshot, GenerationRun $run, array $report, ?User $requester): void
+    {
+        DB::transaction(function () use ($resume, $fromVersionId, $document, $snapshot, $run, $report, $requester): void {
+            $current = ApplicationResume::query()->whereKey($resume->id)->lockForUpdate()->firstOrFail();
+
+            if ($current->isApproved() || $current->current_version_id !== $fromVersionId) {
+                $this->failTailoring($current, __('The resume was saved or approved while the AI was tailoring it, so the AI version was discarded. Try again.'));
+
+                return;
+            }
+
+            $this->appendVersion($current, $document, $snapshot, $requester, 'ai', authorType: 'ai', runId: $run->id, report: $report);
+            $current->forceFill([
+                'lock_version' => $current->lock_version + 1,
+                'generation_status' => null,
+                'generation_error' => null,
+            ])->save();
+        });
+    }
+
+    public function failTailoring(ApplicationResume $resume, string $message): void
+    {
+        $resume->forceFill(['generation_status' => 'failed', 'generation_error' => mb_strimwidth($message, 0, 1000, '…')])->save();
+    }
+
     private function guardEditable(ApplicationResume $resume, int $expectedLockVersion): void
     {
         $current = ApplicationResume::query()->whereKey($resume->id)->lockForUpdate()->firstOrFail();
@@ -170,8 +236,9 @@ class ApplicationResumeService
     /**
      * @param  array<string, mixed>  $document
      * @param  array<string, mixed>  $snapshot
+     * @param  array<string, mixed>|null  $report
      */
-    private function appendVersion(ApplicationResume $resume, array $document, array $snapshot, User $actor, string $via): void
+    private function appendVersion(ApplicationResume $resume, array $document, array $snapshot, ?User $actor, string $via, string $authorType = 'user', ?int $runId = null, ?array $report = null): void
     {
         $nextNumber = (int) ApplicationResumeVersion::query()->where('application_resume_id', $resume->id)->max('version_no') + 1;
 
@@ -180,10 +247,12 @@ class ApplicationResumeService
             'version_no' => $nextNumber,
             'document' => $document,
             'facts_snapshot' => $snapshot,
-            'author_type' => 'user',
-            'author_user_id' => $actor->id,
+            'author_type' => $authorType,
+            'author_user_id' => $actor?->id,
             'created_via' => $via,
             'parent_version_id' => $resume->current_version_id,
+            'generation_run_id' => $runId,
+            'ai_report' => $report,
         ]);
 
         $resume->current_version_id = $version->id;

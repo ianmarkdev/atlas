@@ -10,6 +10,7 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerCategory;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerStatus;
+use App\Domain\Shared\PlainText;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Applications\BulkStoreQuestionsRequest;
 use App\Http\Requests\Applications\SaveAnswerDraftRequest;
@@ -31,7 +32,7 @@ class ApplicationQuestionController extends Controller
 
     public function index(Request $request, JobApplication $application): Response
     {
-        $application->load(['posting', 'questions.answer.currentVersion.libraryEntry', 'questions.answer.approver:id,name', 'questions.application']);
+        $application->load(['posting', 'questions.answer.currentVersion.libraryEntry', 'questions.answer.currentVersion.resumeVersion:id,version_no', 'questions.answer.approver:id,name', 'questions.application']);
         $user = $request->user();
 
         $histories = AnswerDraftVersion::query()
@@ -84,6 +85,10 @@ class ApplicationQuestionController extends Controller
                                 ->values()->all(),
                             'claims' => $answer->currentVersion->grounding ?? [],
                             'questions' => $answer->currentVersion->clarification_questions ?? [],
+                            'instruction' => $answer->currentVersion->instruction,
+                            'from_resume_version' => $answer->currentVersion->resumeVersion?->version_no,
+                            'to_check' => count($answer->currentVersion->claimsToCheck()),
+                            'needs_review' => $answer->needsClaimReview(),
                         ],
                     ],
                     'history' => ($histories[$answer->id ?? 0] ?? collect())->map(fn (AnswerDraftVersion $version): array => [
@@ -91,7 +96,7 @@ class ApplicationQuestionController extends Controller
                         'text' => $version->body,
                         'change_reason' => match ($version->created_via) {
                             'library' => __('Inserted from the answer library'),
-                            'ai' => __('Drafted with AI'),
+                            'ai' => $version->instruction === null ? __('Drafted with AI') : __('Drafted with AI: “:instruction”', ['instruction' => $version->instruction]),
                             default => null,
                         },
                         'author' => $version->author?->name,
@@ -200,9 +205,24 @@ class ApplicationQuestionController extends Controller
     {
         Gate::authorize('update', $question);
 
-        $this->aiAnswers->request($question, $request->user());
+        $validated = $request->validate(['instruction' => ['nullable', 'string', 'max:500']]);
+        $instruction = PlainText::normalize((string) ($validated['instruction'] ?? ''));
+
+        $this->aiAnswers->request($question, $request->user(), $instruction === '' ? null : $instruction);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Writing a draft. It appears here when ready.')]);
+
+        return back();
+    }
+
+    /**
+     * The candidate has checked the AI draft's unconfirmed claims and keeps them as worded.
+     */
+    public function claimsReviewed(Request $request, JobApplication $application, ApplicationQuestion $question): RedirectResponse
+    {
+        Gate::authorize('approve', $question);
+
+        $this->aiAnswers->markClaimsReviewed($question, $request->user());
 
         return back();
     }

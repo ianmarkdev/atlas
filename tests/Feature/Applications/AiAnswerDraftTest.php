@@ -6,6 +6,7 @@ use App\Domain\Ai\LlmRouter;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -43,7 +44,8 @@ test('an AI draft is written from the evidence pack and saved as a checked new v
     claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
     $question = questionToDraft($candidate, $application);
     $fake = app(LlmRouter::class)->fake(new FakeLlmClient([
-        answerOutput('I tuned PostgreSQL for a billing platform, cutting latency by 60%. I would bring the same care to Fabrikam.', [
+        answerOutput('I tuned PostgreSQL for a billing platform (E1), cutting latency by 60%. I would bring the same care to Fabrikam [E1, E9].', [
+            ['text' => 'I tuned PostgreSQL for a billing platform', 'classification' => 'verified', 'evidence_ids' => ['E1']],
             ['text' => 'I tuned PostgreSQL for a billing platform', 'classification' => 'verified', 'evidence_ids' => ['E1']],
             ['text' => 'cutting latency by 60%', 'classification' => 'verified', 'evidence_ids' => ['E1']],
             ['text' => 'I would bring the same care', 'classification' => 'hypothetical', 'evidence_ids' => ['E9']],
@@ -61,7 +63,7 @@ test('an AI draft is written from the evidence pack and saved as a checked new v
         ->and($prompt)->toContain('at most 150 words')
         ->and($draft->generation_status)->toBeNull()
         ->and($draft->lock_version)->toBe(1)
-        ->and($draft->body())->toStartWith('I tuned PostgreSQL')
+        ->and($draft->body())->toBe('I tuned PostgreSQL for a billing platform, cutting latency by 60%. I would bring the same care to Fabrikam.')
         ->and($draft->currentVersion->author_type)->toBe('ai')
         ->and($draft->currentVersion->generation_run_id)->not->toBeNull()
         ->and(array_column($draft->currentVersion->grounding, 'classification'))->toBe(['verified', 'proposed', 'hypothetical'])
@@ -126,6 +128,70 @@ test('an unusable model answer is recorded as a failed draft and keeps the text'
     expect($draft->generation_status)->toBe('failed')
         ->and($draft->generation_error)->toContain('not usable')
         ->and($draft->body())->toBe('My own words.');
+});
+
+test('a redraft passes the instruction to the AI and records it on the version', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('A shorter answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]), ['instruction' => '  Shorter, please ']);
+
+    $draft = draftOf($candidate, $question);
+    expect($fake->requests[0]->messages[0]['content'])->toContain("<instruction>\nShorter, please\n</instruction>")
+        ->and($draft->currentVersion->instruction)->toBe('Shorter, please')
+        ->and($draft->generation_instruction)->toBeNull();
+
+    $this->actingAs($candidate)
+        ->get(route('applications.questions.index', $application))
+        ->assertInertia(fn (Assert $page) => $page->where('questions.0.history.0.change_reason', 'Drafted with AI: “Shorter, please”'));
+});
+
+test('an AI draft with unconfirmed claims is approved only after the candidate checks them', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $question = questionToDraft($candidate, $application);
+    app(LlmRouter::class)->fake(new FakeLlmClient([
+        answerOutput('I would cut costs for Fabrikam.', [['text' => 'I would cut costs', 'classification' => 'proposed', 'evidence_ids' => []]]),
+    ]));
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $this->actingAs($candidate)
+        ->patch(route('applications.questions.approve', [$application, $question]))
+        ->assertSessionHasErrors('body');
+    $this->actingAs(vaOf($candidate))
+        ->patch(route('applications.questions.claims-reviewed', [$application, $question]))
+        ->assertForbidden();
+
+    $this->actingAs($candidate)->patch(route('applications.questions.claims-reviewed', [$application, $question]));
+    $this->actingAs($candidate)
+        ->patch(route('applications.questions.approve', [$application, $question]))
+        ->assertSessionHasNoErrors();
+
+    expect(draftOf($candidate, $question)->isApproved())->toBeTrue();
+});
+
+test('a cover letter is written from the tailored resume: its bullets lead the evidence, in a storyline', function () {
+    $candidate = candidateWithTwoFactor();
+    $employment = employmentOf($candidate);
+    $claim = claimOf($candidate, 'Migrated card payments to a new processor', $employment);
+    $variant = ResumeVariant::factory()->forProfile(profileOf($candidate))->withDocument(['experience' => [[
+        'employment' => $employment->ulid, 'display_title' => null, 'description' => null, 'projects' => [],
+        'bullets' => [['claim' => $claim->ulid, 'text' => 'Led the migration of card payments to a new processor']],
+    ]]])->create();
+    $application = draftedApplicationOf($candidate);
+    $this->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $letter = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('origin', 'cover_letter')->sole());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('Dear hiring team, …', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    expect($prompt)->toContain('<item id="E1" status="verified">Led the migration of card payments to a new processor</item>')
+        ->and($prompt)->toContain("1. {$employment->title} at {$employment->employer_name}: E1")
+        ->and(draftOf($candidate, $letter)->currentVersion->resume_version_id)->not->toBeNull();
 });
 
 test('an answer with AI placeholders left in cannot be approved', function () {

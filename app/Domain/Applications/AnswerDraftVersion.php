@@ -23,19 +23,45 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $author_user_id
  * @property string $created_via
  * @property int|null $generation_run_id
+ * @property string|null $instruction the requester's instruction for this AI draft
+ * @property int|null $resume_version_id the tailored resume version a cover letter was written from
  * @property array<string, array{ref: ?string, status: string, text: string}>|null $evidence_pack
  * @property list<array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}>|null $grounding
  * @property list<array{question: string, why: string}>|null $clarification_questions
  * @property CarbonImmutable $created_at
  * @property-read User|null $author
+ * @property-read ApplicationResumeVersion|null $resumeVersion
  * @property-read AnswerLibraryEntry|null $libraryEntry
  */
-#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'evidence_pack', 'grounding', 'clarification_questions'])]
+#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'instruction', 'resume_version_id', 'evidence_pack', 'grounding', 'clarification_questions'])]
 class AnswerDraftVersion extends Model
 {
     use BelongsToWorkspace;
 
     public const UPDATED_AT = null;
+
+    /**
+     * Claims of an AI draft the candidate should confirm: labelled `proposed`, or lowered or
+     * flagged by the server check. Hypothetical statements (approaches, opinions) are shown
+     * with their label but need no confirmation.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function claimsToCheck(): array
+    {
+        return array_values(array_filter(
+            $this->grounding ?? [],
+            fn (array $claim): bool => $claim['classification'] === 'proposed' || $claim['flags'] !== [],
+        ));
+    }
+
+    /**
+     * @return BelongsTo<ApplicationResumeVersion, $this>
+     */
+    public function resumeVersion(): BelongsTo
+    {
+        return $this->belongsTo(ApplicationResumeVersion::class, 'resume_version_id');
+    }
 
     /**
      * @return BelongsTo<User, $this>

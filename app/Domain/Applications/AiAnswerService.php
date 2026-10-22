@@ -19,11 +19,13 @@ class AiAnswerService
     public function __construct(private AuditLogger $audit) {}
 
     /**
+     * @param  string|null  $instruction  how this draft should differ ("shorter", "more formal")
+     *
      * @throws ValidationException when the answer is approved or a draft is already being written
      */
-    public function request(ApplicationQuestion $question, User $actor): AnswerDraft
+    public function request(ApplicationQuestion $question, User $actor, ?string $instruction = null): AnswerDraft
     {
-        return DB::transaction(function () use ($question, $actor): AnswerDraft {
+        return DB::transaction(function () use ($question, $actor, $instruction): AnswerDraft {
             $draft = AnswerDraft::query()->where('application_question_id', $question->id)->lockForUpdate()->first();
 
             if ($draft === null) {
@@ -44,9 +46,10 @@ class AiAnswerService
                 'generation_error' => null,
                 'generation_requested_at' => now(),
                 'generation_requested_by' => $actor->id,
+                'generation_instruction' => $instruction,
             ])->save();
 
-            $this->audit->record('answer_draft.generation_requested', $question, [], $actor);
+            $this->audit->record('answer_draft.generation_requested', $question, ['instruction' => $instruction], $actor);
 
             GenerateAnswerDraft::dispatch($question->workspace_id, $question->id);
 
@@ -61,9 +64,9 @@ class AiAnswerService
      * @param  list<array<string, mixed>>  $grounding
      * @param  list<array{question: string, why: string}>  $clarifications
      */
-    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester): void
+    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null): void
     {
-        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester): void {
+        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
 
             if ($draft->isApproved()) {
@@ -81,6 +84,8 @@ class AiAnswerService
                 'author_user_id' => $requester?->id,
                 'created_via' => 'ai',
                 'generation_run_id' => $run->id,
+                'instruction' => $instruction,
+                'resume_version_id' => $resumeVersionId,
                 'evidence_pack' => $evidencePack,
                 'grounding' => $grounding,
                 'clarification_questions' => $clarifications,
@@ -92,8 +97,29 @@ class AiAnswerService
                 'lock_version' => $draft->lock_version + 1,
                 'generation_status' => null,
                 'generation_error' => null,
+                'generation_instruction' => null,
             ])->save();
         });
+    }
+
+    /**
+     * Record that someone checked the claims of the current AI draft (accepting the hedged
+     * wording), which lets it be approved.
+     *
+     * @throws ValidationException when the current version is not an AI draft
+     */
+    public function markClaimsReviewed(ApplicationQuestion $question, User $actor): void
+    {
+        $draft = $question->answer?->loadMissing('currentVersion');
+        $version = $draft?->currentVersion;
+
+        if ($draft === null || $version === null || $version->author_type !== 'ai') {
+            throw ValidationException::withMessages(['body' => __('Only an AI draft has claims to check.')]);
+        }
+
+        $draft->forceFill(['claims_reviewed_version_id' => $version->id])->save();
+
+        $this->audit->record('answer_draft.claims_reviewed', $question, ['version_no' => $version->version_no], $actor);
     }
 
     public function fail(AnswerDraft $draft, string $message): void
