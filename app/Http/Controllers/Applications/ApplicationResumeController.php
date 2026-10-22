@@ -9,6 +9,8 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\ClaimService;
+use App\Domain\Knowledge\ClaimStatus;
+use App\Domain\Knowledge\ProposalService;
 use App\Domain\Resumes\ResumeDiff;
 use App\Domain\Resumes\ResumeDocumentValidator;
 use App\Domain\Resumes\ResumeFacts;
@@ -124,6 +126,7 @@ class ApplicationResumeController extends Controller
                 'approve' => $user->can('approve', $resume),
                 'reopen' => $user->can('reopen', $resume),
                 'saveBack' => $user->can('saveBack', $resume),
+                'headlineToVariant' => $resume->basedOn !== null && ! $resume->basedOn->isArchived() && $user->can('update', $application),
                 'editDisplayTitles' => $user->isCandidate(),
             ],
         ]);
@@ -213,28 +216,69 @@ class ApplicationResumeController extends Controller
     }
 
     /**
-     * "Apply everywhere" from the tailored resume: the rewording becomes the shared wording.
+     * "Apply everywhere" from the tailored resume: the rewording becomes the shared wording. A
+     * VA's rewording of a verified bullet point is suggested to the candidate instead (M10).
      */
-    public function applyBullet(Request $request, JobApplication $application, Claim $claim, ClaimService $claims): JsonResponse
+    public function applyBullet(Request $request, JobApplication $application, Claim $claim, ClaimService $claims, ProposalService $proposals): JsonResponse
     {
         Gate::authorize('update', $this->resumeOf($application));
-        Gate::authorize('update', $claim);
 
         $validated = $request->validate(['text' => ['required', 'string', 'max:1000']]);
+        $text = PlainText::normalize($validated['text']);
+        $reason = __('Applied from the resume for :role at :company', ['role' => $application->role_title, 'company' => $application->companyLabel()]);
+
+        if (! $request->user()->can('update', $claim)) {
+            Gate::authorize('propose', $claim);
+
+            $proposals->propose($claim, ['statement' => $text, 'kind' => $claim->kind->value, 'change_reason' => $reason], $reason, $claim->lock_version, $request->user());
+
+            return response()->json(['claim' => ClaimResource::make($claim->load('currentRevision'))->resolve($request), 'proposed' => true]);
+        }
 
         $claim->load(['currentRevision', 'subject']);
 
-        $claims->revise(
-            $claim,
-            PlainText::normalize($validated['text']),
-            $claim->kind,
-            __('Applied from the resume for :role at :company', ['role' => $application->role_title, 'company' => $application->companyLabel()]),
-            $claim->lock_version,
-            $request->user(),
-            allowNearDuplicate: true,
-        );
+        $claims->revise($claim, $text, $claim->kind, $reason, $claim->lock_version, $request->user(), allowNearDuplicate: true);
 
-        return response()->json(['claim' => ClaimResource::make($claim->refresh()->load('currentRevision'))->resolve($request)]);
+        return response()->json(['claim' => ClaimResource::make($claim->refresh()->load('currentRevision'))->resolve($request), 'proposed' => false]);
+    }
+
+    /**
+     * "Save as a new bullet point" from the tailored resume (M10): the rewording becomes a bullet
+     * point of its own about the same job or project — verified for the candidate, proposed for
+     * a VA — and the original stays as it is.
+     */
+    public function newBullet(Request $request, JobApplication $application, Claim $claim, ClaimService $claims): JsonResponse
+    {
+        Gate::authorize('update', $this->resumeOf($application));
+
+        $validated = $request->validate(['text' => ['required', 'string', 'max:1000']]);
+        $claim->load('subject');
+
+        if (! in_array($claim->status, ClaimStatus::live(), true)) {
+            throw ValidationException::withMessages(['text' => __('This bullet point is no longer in your library.')]);
+        }
+
+        $created = $claims->create(PlainText::normalize($validated['text']), $claim->kind, $claim->subject, $request->user(), allowNearDuplicate: true);
+
+        return response()->json(['claim' => ClaimResource::make($created->load('currentRevision'))->resolve($request)]);
+    }
+
+    /**
+     * Use the tailored title and summary on the resume variant (M10).
+     */
+    public function headlineToVariant(Request $request, JobApplication $application): RedirectResponse
+    {
+        $resume = $this->resumeOf($application);
+        Gate::authorize('update', $application);
+
+        $applied = $this->resumes->headlineToVariant($resume->load(['currentVersion', 'basedOn']), $request->user());
+        $name = $resume->basedOn?->name;
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $applied
+            ? __('":name" now uses this title and summary.', ['name' => $name])
+            : __('Suggested to the candidate: use this title and summary on ":name".', ['name' => $name])]);
+
+        return back();
     }
 
     private function resumeOf(JobApplication $application): ApplicationResume

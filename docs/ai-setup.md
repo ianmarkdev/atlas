@@ -90,7 +90,8 @@ Claude is supported but never required. Use it for some or all tasks:
 
    Models per task: `AI_JD_ANALYSIS_CLAUDE_MODEL`, `AI_ANSWER_WRITING_CLAUDE_MODEL`,
    `AI_RESUME_TAILORING_CLAUDE_MODEL`, `AI_ACHIEVEMENT_SUGGESTIONS_CLAUDE_MODEL`,
-   `AI_CLAIM_CHECK_CLAUDE_MODEL` (and the `..._OLLAMA_MODEL` equivalents).
+   `AI_FEEDBACK_ANALYSIS_CLAUDE_MODEL`, `AI_CLAIM_CHECK_CLAUDE_MODEL` (and the `..._OLLAMA_MODEL`
+   equivalents).
 
 3. Compare before switching: `php artisan app:compare-llm --providers=ollama,claude`. The samples are
    synthetic (`tests/Eval/fixtures/llm-comparison.php`), so no real application is sent.

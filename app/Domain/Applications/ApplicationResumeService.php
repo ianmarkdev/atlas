@@ -4,6 +4,7 @@ namespace App\Domain\Applications;
 
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Knowledge\ProposalService;
 use App\Domain\Resumes\ResumeService;
 use App\Domain\Resumes\ResumeVariant;
 use App\Jobs\TailorApplicationResume;
@@ -18,7 +19,7 @@ use Illuminate\Validation\ValidationException;
  */
 class ApplicationResumeService
 {
-    public function __construct(private AuditLogger $audit, private ResumeService $variants) {}
+    public function __construct(private AuditLogger $audit, private ResumeService $variants, private ProposalService $proposals) {}
 
     /**
      * @param  array<string, mixed>  $document  the variant's document, validated
@@ -152,6 +153,49 @@ class ApplicationResumeService
         $this->variants->save($variant, $variant->name, $resume->document(), $variant->lock_version, $actor, "from_application:{$resume->id}");
 
         return $variant;
+    }
+
+    /**
+     * Use this resume's title and summary on the variant it was copied from (M10): applied for
+     * the candidate, suggested to the candidate for a VA. The rest of the variant is unchanged.
+     *
+     * @return bool true when applied, false when suggested
+     *
+     * @throws ValidationException when the variant is gone or archived, or already says the same
+     */
+    public function headlineToVariant(ApplicationResume $resume, User $actor): bool
+    {
+        $variant = $resume->basedOn;
+
+        if ($variant === null || $variant->isArchived()) {
+            throw ValidationException::withMessages(['resume' => __('The resume this one was copied from no longer exists or is archived.')]);
+        }
+
+        $tailored = $resume->document();
+        $current = $variant->document();
+        $changes = array_filter(
+            ['title' => $tailored['title'] ?? null, 'summary' => $tailored['summary'] ?? null],
+            fn (?string $value, string $field): bool => $value !== null && $value !== ($current[$field] ?? null),
+            ARRAY_FILTER_USE_BOTH,
+        );
+
+        if ($changes === []) {
+            throw ValidationException::withMessages(['resume' => __('":name" already has this title and summary.', ['name' => $variant->name])]);
+        }
+
+        if ($actor->isCandidate()) {
+            $this->variants->save($variant, $variant->name, [...$current, ...$changes], $variant->lock_version, $actor, "from_application:{$resume->id}");
+
+            return true;
+        }
+
+        $application = $resume->application;
+        $this->proposals->suggest('revise_resume_variant', $variant, $changes, __('From the resume tailored for :role at :company', [
+            'role' => $application->role_title,
+            'company' => $application->companyLabel(),
+        ]), ['origin' => 'manual', 'proposer' => $actor]);
+
+        return false;
     }
 
     /**

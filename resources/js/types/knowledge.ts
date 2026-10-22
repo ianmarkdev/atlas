@@ -127,8 +127,18 @@ export type ProposalStatus =
     | 'superseded'
     | 'conflict';
 
+export type DiffPart = { op: 'equal' | 'insert' | 'delete'; text: string };
+
 export type KnowledgeProposal = {
     ulid: string;
+    type:
+        | 'revise_claim'
+        | 'revise_record'
+        | 'revise_library_answer'
+        | 'revise_resume_variant'
+        | 'create_claim'
+        | 'create_library_answer'
+        | 'create_writing_preference';
     status: ProposalStatus;
     origin: 'manual' | 'feedback' | 'achievement_suggestion' | 'clarification';
     suggestion: {
@@ -136,14 +146,36 @@ export type KnowledgeProposal = {
         current: string;
         draft: string;
     } | null;
+    /** The edited answer a feedback suggestion was learned from. */
+    learned_from: {
+        application: string;
+        application_ulid: string;
+        question: string;
+    } | null;
     target_type:
         | 'claim'
         | 'employment'
         | 'project'
         | 'credential'
-        | 'answer_library_entry';
+        | 'answer_library_entry'
+        | 'writing_preference'
+        | 'resume_variant';
     target_label: string;
-    changes: { label: string; from: string | null; to: string | null }[];
+    changes: {
+        label: string;
+        from: string | null;
+        to: string | null;
+        /** The wording the suggestion was based on, when the item changed since. */
+        base: string | null;
+        diff: DiffPart[] | null;
+    }[];
+    /** What may be reworded before approving, with the suggested value. */
+    editable: {
+        field: 'statement' | 'body' | 'rule';
+        value: string;
+        subject: string | null;
+    } | null;
+    personal: boolean;
     rationale: string | null;
     proposed_by: string | null;
     created_at: string | null;

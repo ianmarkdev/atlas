@@ -5,6 +5,7 @@ import {
     IdCard,
     LayoutGrid,
     MessageSquareText,
+    PenLine,
     Send,
     Users,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ import { dashboard } from '@/routes';
 import { index as applications } from '@/routes/applications';
 import { index as knowledge } from '@/routes/knowledge';
 import { index as answers } from '@/routes/knowledge/answers';
+import { index as writingStyle } from '@/routes/knowledge/preferences';
 import { index as proposals } from '@/routes/knowledge/proposals';
 import { index as profile } from '@/routes/resumes';
 import { index as team } from '@/routes/team';
@@ -38,6 +40,7 @@ const careerItems: NavItem[] = [
     { title: 'Profile', href: profile(), icon: IdCard },
     { title: 'Library', href: knowledge(), icon: BookUser },
     { title: 'Answers', href: answers(), icon: MessageSquareText },
+    { title: 'Writing style', href: writingStyle(), icon: PenLine },
 ];
 
 export function AppSidebar() {

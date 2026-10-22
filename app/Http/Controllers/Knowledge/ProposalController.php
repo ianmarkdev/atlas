@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Knowledge;
 
+use App\Domain\Knowledge\ClaimSubject;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\ProposalService;
 use App\Domain\Knowledge\ProposalStatus;
@@ -18,8 +19,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Suggested changes to verified facts. The candidate sees every pending suggestion and decides;
- * a VA sees the suggestions they made and what happened to them.
+ * The approval queue: suggested changes to verified facts, and what the AI learned from edited
+ * answers (M10). The candidate sees every suggestion and decides; a VA sees the suggestions they
+ * made, and decides the personal writing preferences learned from their own edits.
  */
 class ProposalController extends Controller
 {
@@ -29,18 +31,24 @@ class ProposalController extends Controller
     {
         $user = $request->user();
         $isReviewer = $user->can('approve-proposals');
-        $relations = ['target', 'proposer:id,name', 'decider:id,name'];
+        $relations = ['target', 'proposer:id,name', 'decider:id,name', 'feedbackEvent.answerDraft.question.application'];
+
+        // A VA sees what they suggested, and the personal writing preferences learned from their
+        // edits; those are not the candidate's to see.
+        $visible = fn ($query) => $query->where(fn ($mine) => $isReviewer
+            ? $mine->whereNull('reviewer_user_id')->orWhere('reviewer_user_id', $user->id)
+            : $mine->where('proposed_by_user_id', $user->id)->orWhere('reviewer_user_id', $user->id));
 
         $pending = KnowledgeProposal::query()
             ->where('status', ProposalStatus::Pending)
-            ->when(! $isReviewer, fn ($query) => $query->where('proposed_by_user_id', $user->id))
+            ->tap($visible)
             ->with($relations)
             ->oldest()
             ->get();
 
         $decided = KnowledgeProposal::query()
             ->where('status', '!=', ProposalStatus::Pending)
-            ->when(! $isReviewer, fn ($query) => $query->where('proposed_by_user_id', $user->id))
+            ->tap($visible)
             ->with($relations)
             ->latest('updated_at')
             ->limit(20)
@@ -48,7 +56,7 @@ class ProposalController extends Controller
 
         $loadClaimRevisions = function ($proposals): void {
             foreach ($proposals as $proposal) {
-                if (in_array($proposal->target_type, ['claim', 'answer_library_entry'], true)) {
+                if (in_array($proposal->target_type, ['claim', 'answer_library_entry', 'resume_variant'], true)) {
                     $proposal->target?->loadMissing('currentRevision');
                 }
             }
@@ -60,6 +68,7 @@ class ProposalController extends Controller
             'pending' => KnowledgeProposalResource::collection($pending)->resolve(),
             'decided' => KnowledgeProposalResource::collection($decided)->resolve(),
             'isReviewer' => $isReviewer,
+            'subjects' => $isReviewer ? ClaimSubject::options() : [],
             'suggesting' => $isReviewer ? Cache::get(SuggestAchievements::statusKey($tenant->workspaceId())) : null,
         ]);
     }
@@ -86,14 +95,39 @@ class ProposalController extends Controller
     }
 
     /**
-     * Route middleware `can:approve-proposals`.
+     * Approve as suggested, or with the reviewer's own wording (edit-then-approve). Route
+     * middleware `can:decide,proposal`.
      */
     public function approve(Request $request, KnowledgeProposal $proposal): RedirectResponse
     {
-        $validated = $request->validate(['statement' => ['nullable', 'string', 'max:1000']]);
-        $statement = isset($validated['statement']) ? PlainText::normalize($validated['statement']) : '';
+        $validated = $request->validate([
+            'statement' => ['nullable', 'string', 'max:1000'],
+            'body' => ['nullable', 'string', 'max:10000'],
+            'rule' => ['nullable', 'string', 'max:200'],
+            'subject' => ['nullable', 'string', 'max:100'],
+        ]);
 
-        $applied = $this->proposals->approve($proposal, $request->user(), $statement === '' ? null : $statement);
+        $edits = [];
+
+        foreach (['statement' => false, 'body' => true, 'rule' => false] as $field => $multiline) {
+            $value = PlainText::normalize((string) ($validated[$field] ?? ''), multiline: $multiline);
+
+            if ($value !== '') {
+                $edits[$field] = $value;
+            }
+        }
+
+        if ($proposal->proposal_type === 'create_claim' && isset($validated['subject'])) {
+            $subject = ClaimSubject::resolve($validated['subject']);
+
+            if ($subject === false) {
+                throw ValidationException::withMessages(['subject' => __('Choose a job or project from your library.')]);
+            }
+
+            $edits['subject'] = $subject;
+        }
+
+        $applied = $this->proposals->approve($proposal, $request->user(), $edits);
 
         Inertia::flash('toast', $applied
             ? ['type' => 'success', 'message' => __('Change approved and applied.')]
@@ -103,7 +137,7 @@ class ProposalController extends Controller
     }
 
     /**
-     * Route middleware `can:approve-proposals`.
+     * Route middleware `can:decide,proposal`.
      */
     public function reject(Request $request, KnowledgeProposal $proposal): RedirectResponse
     {

@@ -51,8 +51,14 @@ class EvidencePackBuilder
             : $question->prompt_text;
         $result = $this->search->search(new RetrievalQuery($query, $application->candidate_profile_id, 6));
 
+        // Bullet points keep their ref, so a correction learned from an edit can find them (M10).
+        $claimUlids = Claim::query()
+            ->whereIn('id', array_map(fn ($hit) => $hit->unit->source_id, array_filter($result->hits, fn ($hit) => $hit->unit->source_type === 'claim')))
+            ->pluck('ulid', 'id');
+
         foreach ($result->hits as $hit) {
-            $items[] = ['ref' => null, 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type];
+            $ulid = $hit->unit->source_type === 'claim' ? $claimUlids->get($hit->unit->source_id) : null;
+            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type];
         }
 
         $pack = [];

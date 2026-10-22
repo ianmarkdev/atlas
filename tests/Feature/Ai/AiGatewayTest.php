@@ -148,7 +148,7 @@ test('a paid model without a configured price is refused rather than guessed', f
 test('the registry serves the latest prompt version and refuses missing variables', function () {
     $prompt = app(PromptRegistry::class)->get('answer_writing');
 
-    expect($prompt->version)->toBe(2)
+    expect($prompt->version)->toBe(3)
         ->and($prompt->schema['required'])->toBe(['answer', 'segments', 'clarification_questions'])
         ->and(fn () => $prompt->render(['candidate_name' => 'Alex', 'company_name' => 'X']))->toThrow(LlmConfigurationError::class, 'needs "role_title"')
         ->and(fn () => app(PromptRegistry::class)->get('nope'))->toThrow(LlmConfigurationError::class, 'does not exist');

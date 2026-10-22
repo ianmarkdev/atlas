@@ -4,7 +4,10 @@ use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\ApplicationResumeVersion;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\Claim;
+use App\Domain\Knowledge\ClaimStatus;
 use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\KnowledgeProposal;
+use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
 use Illuminate\Database\QueryException;
@@ -284,4 +287,65 @@ test('the application page summarises its tailored resume', function () {
             ->where('tailoredResume.status', 'draft')
             ->where('tailoredResume.based_on', 'PHP focused')
             ->where('tailoredResume.jobs', 1));
+});
+
+describe('learning from the tailored resume', function () {
+    test("a VA's rewording of a verified bullet point is suggested to the candidate, not applied", function () {
+        ['candidate' => $candidate, 'claim' => $claim, 'variant' => $variant, 'application' => $application] = tailoringSetup();
+        $this->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
+        $va = vaOf($candidate);
+
+        $this->actingAs($va)
+            ->postJson(route('applications.resume.apply-bullet', [$application, $claim]), ['text' => 'Cut the monthly invoice run to 20 minutes'])
+            ->assertOk()
+            ->assertJsonPath('proposed', true)
+            ->assertJsonPath('claim.statement', 'Cut the invoice run to 20 minutes');
+
+        $proposal = inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole());
+        expect($proposal->proposal_type)->toBe('revise_claim')
+            ->and($proposal->payload['statement'])->toBe('Cut the monthly invoice run to 20 minutes')
+            ->and($proposal->proposed_by_user_id)->toBe($va->id);
+    });
+
+    test('a rewording saved as a new bullet point is about the same job, and proposed when a VA saves it', function () {
+        ['candidate' => $candidate, 'claim' => $claim, 'employment' => $employment, 'variant' => $variant, 'application' => $application] = tailoringSetup();
+        $this->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
+
+        $this->actingAs(vaOf($candidate))
+            ->postJson(route('applications.resume.new-bullet', [$application, $claim]), ['text' => 'Automated the invoice run'])
+            ->assertOk()
+            ->assertJsonPath('claim.statement', 'Automated the invoice run');
+
+        $created = inWorkspaceOf($candidate, fn () => Claim::query()->whereKeyNot($claim->id)->sole());
+        expect($created->status)->toBe(ClaimStatus::Proposed)
+            ->and($created->subject_id)->toBe($employment->id)
+            ->and(inWorkspaceOf($candidate, fn () => $claim->fresh('currentRevision'))->statement())->toBe('Cut the invoice run to 20 minutes');
+    });
+
+    test('the tailored title and summary go to the variant: directly for the candidate, as a suggestion from a VA', function () {
+        ['candidate' => $candidate, 'variant' => $variant, 'application' => $application] = tailoringSetup();
+        $this->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
+        $this->actingAs($candidate)->put(route('applications.resume.update', $application), tailoredSave(tailoredResumeOf($candidate), ['title' => 'Billing Engineer', 'summary' => 'I build billing systems.']));
+
+        $this->actingAs(vaOf($candidate))
+            ->post(route('applications.resume.headline-to-variant', $application))
+            ->assertInertiaFlash('toast.message', 'Suggested to the candidate: use this title and summary on "PHP focused".');
+
+        $proposal = inWorkspaceOf($candidate, fn () => KnowledgeProposal::query()->sole());
+        expect($proposal->proposal_type)->toBe('revise_resume_variant')
+            ->and($variant->refresh()->document()['title'])->toBe('Senior PHP Engineer');
+
+        $this->actingAs($candidate)->patch(route('knowledge.proposals.approve', $proposal))->assertSessionHasNoErrors();
+
+        $variant->refresh()->load('currentRevision');
+        expect($variant->document()['title'])->toBe('Billing Engineer')
+            ->and($variant->document()['summary'])->toBe('I build billing systems.')
+            ->and($variant->document()['experience'])->toHaveCount(1)
+            ->and($variant->currentRevision->created_via)->toBe("proposal:{$proposal->id}")
+            ->and($proposal->fresh()->status)->toBe(ProposalStatus::Approved);
+
+        $this->actingAs($candidate)
+            ->post(route('applications.resume.headline-to-variant', $application))
+            ->assertSessionHasErrors(['resume' => '"PHP focused" already has this title and summary.']);
+    });
 });

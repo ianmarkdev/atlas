@@ -83,6 +83,16 @@ return [
             'temperature' => 0.2,
             'timeout' => 180,
         ],
+        'feedback_analysis' => [
+            'provider' => env('AI_FEEDBACK_ANALYSIS_PROVIDER'),
+            'models' => [
+                'ollama' => env('AI_FEEDBACK_ANALYSIS_OLLAMA_MODEL', 'qwen2.5:3b'),
+                'claude' => env('AI_FEEDBACK_ANALYSIS_CLAUDE_MODEL', 'claude-sonnet-5-5'),
+            ],
+            'max_tokens' => 1500,
+            'temperature' => 0.0,
+            'timeout' => 180,
+        ],
         'claim_check' => [
             'provider' => env('AI_CLAIM_CHECK_PROVIDER'),
             'models' => [

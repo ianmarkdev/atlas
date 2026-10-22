@@ -18,6 +18,7 @@ use App\Http\Controllers\Knowledge\ProjectController;
 use App\Http\Controllers\Knowledge\ProposalController;
 use App\Http\Controllers\Knowledge\SearchPlaygroundController;
 use App\Http\Controllers\Knowledge\SkillController;
+use App\Http\Controllers\Knowledge\WritingPreferenceController;
 use App\Http\Controllers\Profile\ContactController;
 use App\Http\Controllers\Profile\LanguageController;
 use App\Http\Controllers\Profile\LinkController;
@@ -113,6 +114,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('{question}/answer/approve', [ApplicationQuestionController::class, 'approve'])->name('approve');
         Route::patch('{question}/answer/reopen', [ApplicationQuestionController::class, 'reopen'])->name('reopen');
         Route::post('{question}/answer/library', [ApplicationQuestionController::class, 'saveToLibrary'])->name('save-to-library');
+        Route::post('{question}/answer/learn', [ApplicationQuestionController::class, 'learn'])->name('learn');
     });
 
     // The resume tailored for one application (M7a slice B).
@@ -126,6 +128,8 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('reopen', [ApplicationResumeController::class, 'reopen'])->name('reopen');
         Route::post('save-back', [ApplicationResumeController::class, 'saveBack'])->name('save-back');
         Route::post('claims/{claim}/apply', [ApplicationResumeController::class, 'applyBullet'])->name('apply-bullet');
+        Route::post('claims/{claim}/new', [ApplicationResumeController::class, 'newBullet'])->name('new-bullet');
+        Route::post('headline-to-variant', [ApplicationResumeController::class, 'headlineToVariant'])->name('headline-to-variant');
     });
 
     // Library: every job, project and bullet point (the shared facts behind all resumes).
@@ -168,11 +172,16 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('answers/{answer}/restore', [AnswerLibraryController::class, 'restore'])->name('answers.restore');
 
         Route::get('proposals', [ProposalController::class, 'index'])->name('proposals.index');
-        Route::middleware('can:approve-proposals')->group(function () {
-            Route::post('proposals/suggest-achievements', [ProposalController::class, 'suggestAchievements'])->name('proposals.suggest');
-            Route::patch('proposals/{proposal}/approve', [ProposalController::class, 'approve'])->name('proposals.approve');
-            Route::patch('proposals/{proposal}/reject', [ProposalController::class, 'reject'])->name('proposals.reject');
-        });
+        Route::post('proposals/suggest-achievements', [ProposalController::class, 'suggestAchievements'])
+            ->middleware('can:approve-proposals')->name('proposals.suggest');
+        // The candidate decides; a personal writing preference is decided by its owner (M10).
+        Route::patch('proposals/{proposal}/approve', [ProposalController::class, 'approve'])->middleware('can:decide,proposal')->name('proposals.approve');
+        Route::patch('proposals/{proposal}/reject', [ProposalController::class, 'reject'])->middleware('can:decide,proposal')->name('proposals.reject');
+
+        // How answers are written (M10).
+        Route::get('writing-style', [WritingPreferenceController::class, 'index'])->name('preferences.index');
+        Route::post('writing-style', [WritingPreferenceController::class, 'store'])->name('preferences.store');
+        Route::patch('writing-style/{preference}/archive', [WritingPreferenceController::class, 'archive'])->name('preferences.archive');
 
         Route::get('claims/bulk', [ClaimController::class, 'bulkCreate'])->name('claims.bulk.create');
         Route::post('claims/bulk', [ClaimController::class, 'bulkStore'])->name('claims.bulk.store');

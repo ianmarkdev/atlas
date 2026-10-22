@@ -145,7 +145,13 @@ test('the candidate reviews pending suggestions with what changes', function () 
             ->where('pendingProposals', 1)
             ->has('pending', 1, fn (Assert $item) => $item
                 ->where('rationale', 'The CV says five.')
-                ->where('changes', [['label' => 'Bullet point', 'from' => 'Led a team of four', 'to' => 'Led a team of five']])
+                ->where('changes', [[
+                    'label' => 'Bullet point',
+                    'from' => 'Led a team of four',
+                    'to' => 'Led a team of five',
+                    'base' => null,
+                    'diff' => [['op' => 'equal', 'text' => 'Led a team of '], ['op' => 'delete', 'text' => 'four'], ['op' => 'insert', 'text' => 'five']],
+                ]])
                 ->where('can.decide', true)
                 ->etc()));
 });

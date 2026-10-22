@@ -3,23 +3,20 @@
 namespace App\Domain\Knowledge;
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Suggested changes to verified facts (D5): a VA proposes, the candidate approves or rejects.
- * Approving applies the change through the normal services, so history, duplicate checks and
- * audit are identical to a direct edit, and the approval counts as the candidate's confirmation.
+ * Suggested changes to verified facts (D5): a VA proposes, or the AI learns one from an edited
+ * answer (M10); the candidate approves or rejects — or, for a personal writing preference, the
+ * user it belongs to. Approving applies the change through ProposalApplier, and the approval
+ * counts as the candidate's confirmation.
  */
 class ProposalService
 {
-    public function __construct(
-        private ClaimService $claims,
-        private KnowledgeRecordService $records,
-        private AnswerLibraryService $answers,
-        private AuditLogger $audit,
-    ) {}
+    public function __construct(private ProposalApplier $applier, private AuditLogger $audit) {}
 
     /**
      * @param  array<string, mixed>  $payload  the new values, as validated by the item's form request
@@ -53,7 +50,7 @@ class ProposalService
                 },
                 'target_type' => $target->getMorphClass(),
                 'target_id' => $target->getKey(),
-                'base_version' => $this->versionOf($target),
+                'base_version' => ProposalApplier::versionOf($target),
                 'payload' => $payload,
                 'rationale' => $rationale,
                 'status' => ProposalStatus::Pending,
@@ -92,7 +89,7 @@ class ProposalService
                 'proposal_type' => 'revise_claim',
                 'target_type' => $claim->getMorphClass(),
                 'target_id' => $claim->id,
-                'base_version' => $this->versionOf($claim),
+                'base_version' => ProposalApplier::versionOf($claim),
                 'payload' => ['statement' => $draft, 'kind' => ClaimKind::Achievement->value, 'change_reason' => __('Achievement suggestion: :question', ['question' => $question])],
                 'rationale' => $question,
                 'status' => ProposalStatus::Pending,
@@ -105,63 +102,85 @@ class ProposalService
     }
 
     /**
-     * @param  string|null  $statement  the candidate's final wording of a bullet point
-     *                                  (edit-then-approve); required for achievement suggestions
+     * A suggestion that is not a VA's form edit (M10): learned from an edited answer
+     * (`feedback`), or a VA's "use everywhere" from a tailored resume (`manual`). Creating
+     * types have no target. For an item with a pending proposal, a newer manual one replaces it;
+     * an AI one is dropped, so the AI never overrides a person.
+     *
+     * @param  'revise_claim'|'create_claim'|'create_library_answer'|'create_writing_preference'|'revise_resume_variant'  $type
+     * @param  array<string, mixed>  $payload
+     * @param  array{origin: string, origin_id?: int|null, run_id?: int|null, proposer?: User|null, reviewer?: User|null}  $from
+     */
+    public function suggest(string $type, Claim|ResumeVariant|null $target, array $payload, ?string $rationale, array $from): ?KnowledgeProposal
+    {
+        return DB::transaction(function () use ($type, $target, $payload, $rationale, $from): ?KnowledgeProposal {
+            if ($target !== null) {
+                $pending = KnowledgeProposal::query()
+                    ->where('target_type', $target->getMorphClass())
+                    ->where('target_id', $target->getKey())
+                    ->where('status', ProposalStatus::Pending)
+                    ->lockForUpdate();
+
+                if ($from['origin'] !== 'manual') {
+                    if ($pending->exists()) {
+                        return null;
+                    }
+                } else {
+                    $pending->update(['status' => ProposalStatus::Superseded, 'updated_at' => now()]);
+                }
+            }
+
+            $proposal = new KnowledgeProposal;
+            $proposal->forceFill([
+                'candidate_profile_id' => $target->candidate_profile_id ?? CandidateProfile::current()->id,
+                'origin' => $from['origin'],
+                'origin_id' => $from['origin_id'] ?? null,
+                'proposal_type' => $type,
+                'target_type' => $target?->getMorphClass() ?? match ($type) {
+                    'create_claim' => 'claim',
+                    'create_library_answer' => 'answer_library_entry',
+                    default => 'writing_preference',
+                },
+                'target_id' => $target?->getKey(),
+                'base_version' => $target === null ? 0 : ProposalApplier::versionOf($target),
+                'payload' => $payload,
+                'rationale' => $rationale,
+                'status' => ProposalStatus::Pending,
+                'proposed_by_user_id' => ($from['proposer'] ?? null)?->id,
+                'proposed_by_run_id' => $from['run_id'] ?? null,
+                'reviewer_user_id' => ($from['reviewer'] ?? null)?->id,
+            ])->save();
+
+            $this->audit->record('proposal.created', $proposal, ['target' => $proposal->target_type, 'origin' => $proposal->origin], $from['proposer'] ?? null);
+
+            return $proposal;
+        });
+    }
+
+    /**
+     * @param  array{statement?: string, body?: string, rule?: string, subject?: Employment|Project|null}  $edits
+     *                                                                                                             the reviewer's final wording (edit-then-approve); a statement is required for achievement suggestions
      * @return bool true when the change was applied; false when the item changed after the
      *              suggestion was made (the proposal is then marked as a conflict)
      *
      * @throws ValidationException when applying fails (e.g. the new wording duplicates another claim),
      *                             or the wording still has `[confirm: …]` placeholders
      */
-    public function approve(KnowledgeProposal $proposal, User $actor, ?string $statement = null): bool
+    public function approve(KnowledgeProposal $proposal, User $actor, array $edits = []): bool
     {
-        return DB::transaction(function () use ($proposal, $actor, $statement): bool {
+        return DB::transaction(function () use ($proposal, $actor, $edits): bool {
             $proposal = KnowledgeProposal::query()->whereKey($proposal->id)->lockForUpdate()->firstOrFail();
             $this->ensurePending($proposal);
 
-            /** @var Claim|Employment|Project|Credential|AnswerLibraryEntry|null $target */
-            $target = $proposal->target()->lockForUpdate()->first();
+            $target = $proposal->isCreation() ? null : $proposal->target()->lockForUpdate()->first();
 
-            if ($target === null || ! $this->isApplicable($target, $proposal)) {
+            if ((! $proposal->isCreation() && $target === null) || ! $this->applier->isApplicable($proposal, $target)) {
                 $this->decide($proposal, ProposalStatus::Conflict, $actor, null);
 
                 return false;
             }
 
-            if ($target instanceof Claim) {
-                $wording = $statement ?? (string) $proposal->payload['statement'];
-
-                if (preg_match('/\[confirm:[^\]]*\]/iu', $wording) === 1) {
-                    throw ValidationException::withMessages(['statement' => __('Replace each [confirm: …] with the real detail first.')]);
-                }
-
-                $target->load(['currentRevision', 'subject']);
-                $this->claims->revise(
-                    $target,
-                    $wording,
-                    ClaimKind::from((string) $proposal->payload['kind']),
-                    $proposal->payload['change_reason'] ?? $proposal->rationale,
-                    $target->lock_version,
-                    $actor,
-                    allowNearDuplicate: true,
-                    via: "proposal:{$proposal->id}",
-                );
-            } elseif ($target instanceof AnswerLibraryEntry) {
-                $this->answers->revise(
-                    $target,
-                    (string) $proposal->payload['question'],
-                    (string) $proposal->payload['body'],
-                    AnswerCategory::from((string) $proposal->payload['category']),
-                    array_values(array_filter((array) ($proposal->payload['claim_ulids'] ?? []), is_string(...))),
-                    $proposal->rationale,
-                    $target->lock_version,
-                    $actor,
-                    via: "proposal:{$proposal->id}",
-                );
-            } else {
-                $this->records->update($target, $proposal->payload, $target->lock_version, $actor);
-            }
-
+            $this->applier->apply($proposal, $target, $actor, $edits);
             $this->decide($proposal, ProposalStatus::Approved, $actor, null);
 
             return true;
@@ -176,25 +195,6 @@ class ProposalService
 
             $this->decide($proposal, ProposalStatus::Rejected, $actor, $note);
         });
-    }
-
-    /**
-     * Still verified and unchanged since the suggestion was made.
-     */
-    private function isApplicable(Claim|Employment|Project|Credential|AnswerLibraryEntry $target, KnowledgeProposal $proposal): bool
-    {
-        $isVerified = match (true) {
-            $target instanceof Claim => $target->status === ClaimStatus::Verified,
-            $target instanceof AnswerLibraryEntry => $target->status === AnswerStatus::Approved,
-            default => $target->status === KnowledgeStatus::Verified,
-        };
-
-        return $isVerified && $this->versionOf($target) === $proposal->base_version;
-    }
-
-    private function versionOf(Claim|Employment|Project|Credential|AnswerLibraryEntry $target): int
-    {
-        return $target instanceof Claim ? (int) $target->current_revision_id : $target->lock_version;
     }
 
     /**

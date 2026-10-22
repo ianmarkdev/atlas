@@ -7,12 +7,15 @@ import { createContext, useContext } from 'react';
 type EditorOptions = {
     /** Endpoint for "Apply everywhere" on a reworded bullet, or null to hide the action. */
     applyBulletUrl: ((claimUlid: string) => string) | null;
+    /** Endpoint for "Save as a new bullet point" on a reworded bullet, or null to hide it. */
+    newBulletUrl: ((claimUlid: string) => string) | null;
     /** Display titles ("Shown as") are the candidate's call. */
     canEditDisplayTitles: boolean;
 };
 
 const EditorOptionsContext = createContext<EditorOptions>({
     applyBulletUrl: null,
+    newBulletUrl: null,
     canEditDisplayTitles: false,
 });
 

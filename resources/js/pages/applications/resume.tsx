@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
+import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { ResumeEditor } from '@/components/resume/resume-editor';
 import { ResumePreview } from '@/components/resume/resume-preview';
@@ -110,6 +111,7 @@ type PageProps = {
         approve: boolean;
         reopen: boolean;
         saveBack: boolean;
+        headlineToVariant: boolean;
         editDisplayTitles: boolean;
     };
 };
@@ -189,6 +191,13 @@ function TailoredResume({
                 <SaveBackButton
                     basedOn={resume.based_on.name}
                     application={application.ulid}
+                />
+            )}
+            {can.headlineToVariant && resume.based_on && !tailoring && (
+                <HeadlineButton
+                    basedOn={resume.based_on.name}
+                    application={application.ulid}
+                    isCandidate={can.editDisplayTitles}
                 />
             )}
         </>
@@ -277,6 +286,12 @@ function TailoredResume({
                 onSave={save}
                 applyBulletUrl={(claimUlid) =>
                     ApplicationResumeController.applyBullet.url([
+                        application.ulid,
+                        claimUlid,
+                    ])
+                }
+                newBulletUrl={(claimUlid) =>
+                    ApplicationResumeController.newBullet.url([
                         application.ulid,
                         claimUlid,
                     ])
@@ -774,6 +789,48 @@ function SaveBackButton({
                 >
                     <Upload /> Save to “{basedOn}”
                 </Button>
+            )}
+        </Form>
+    );
+}
+
+/**
+ * Use this resume's title and summary on the resume it came from (M10). A VA's request is
+ * suggested to the candidate.
+ */
+function HeadlineButton({
+    basedOn,
+    application,
+    isCandidate,
+}: {
+    basedOn: string;
+    application: string;
+    isCandidate: boolean;
+}) {
+    return (
+        <Form
+            {...ApplicationResumeController.headlineToVariant.form(application)}
+            options={{ preserveScroll: true }}
+        >
+            {({ processing, errors }) => (
+                <>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={processing}
+                        title={
+                            isCandidate
+                                ? `Use the saved title and summary on “${basedOn}”; nothing else there changes`
+                                : `Suggest the saved title and summary for “${basedOn}” to the candidate`
+                        }
+                    >
+                        <Upload />{' '}
+                        {isCandidate
+                            ? 'Use summary on the resume'
+                            : 'Suggest summary for the resume'}
+                    </Button>
+                    <InputError message={errors.resume} />
+                </>
             )}
         </Form>
     );

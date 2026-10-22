@@ -49,9 +49,16 @@ class HandleInertiaRequests extends Middleware
                 ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-            // Lazy: resolved when the page renders, after the tenant context is set. Candidate only.
-            'pendingProposals' => fn (): int => $request->user()?->can('approve-proposals') && app(TenantContext::class)->hasWorkspace()
-                ? KnowledgeProposal::query()->where('status', ProposalStatus::Pending)->count()
+            // Lazy: resolved when the page renders, after the tenant context is set. What the user decides.
+            'pendingProposals' => fn (): int => $request->user() !== null && app(TenantContext::class)->hasWorkspace()
+                ? KnowledgeProposal::query()
+                    ->where('status', ProposalStatus::Pending)
+                    ->when(
+                        $request->user()->can('approve-proposals'),
+                        fn ($query) => $query->where(fn ($mine) => $mine->whereNull('reviewer_user_id')->orWhere('reviewer_user_id', $request->user()->id)),
+                        fn ($query) => $query->where('reviewer_user_id', $request->user()->id),
+                    )
+                    ->count()
                 : 0,
         ];
     }

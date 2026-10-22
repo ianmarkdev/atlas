@@ -1,17 +1,19 @@
-import { Form, Head, usePoll } from '@inertiajs/react';
-import { ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
+import { Form, Head, Link, usePoll } from '@inertiajs/react';
+import { ArrowRight, Check, Loader2, Pencil, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import ProposalController from '@/actions/App/Http/Controllers/Knowledge/ProposalController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { NativeSelect } from '@/components/native-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { index as library } from '@/routes/knowledge';
+import { index as questions } from '@/routes/applications/questions';
 import { index } from '@/routes/knowledge/proposals';
-import type { KnowledgeProposal } from '@/types';
+import type { DiffPart, KnowledgeProposal, SelectOption } from '@/types';
 
 const statusLabels: Record<KnowledgeProposal['status'], string> = {
     pending: 'Waiting for review',
@@ -31,11 +33,13 @@ export default function Proposals({
     decided,
     isReviewer,
     suggesting,
+    subjects,
 }: {
     pending: KnowledgeProposal[];
     decided: KnowledgeProposal[];
     isReviewer: boolean;
     suggesting: SuggestingStatus;
+    subjects: SelectOption[];
 }) {
     const searching = suggesting?.status === 'queued';
     const poll = usePoll(
@@ -65,8 +69,8 @@ export default function Proposals({
                     title="Suggested changes"
                     description={
                         isReviewer
-                            ? 'Changes your VAs suggested to verified facts, and achievements the AI thinks your bullet points are missing. Nothing changes until you approve; approving counts as your confirmation.'
-                            : 'Changes you suggested to verified facts, and what the candidate decided.'
+                            ? 'Changes your VAs suggested, what the AI learned from edited answers, and achievements your bullet points are missing. Nothing changes until you approve; approving counts as your confirmation.'
+                            : 'Changes you suggested and what the candidate decided, plus writing habits learned from your own edits, for you to approve.'
                     }
                 />
 
@@ -154,6 +158,7 @@ export default function Proposals({
                                 <ProposalCard
                                     key={proposal.ulid}
                                     proposal={proposal}
+                                    subjects={subjects}
                                 />
                             ))}
                         </ul>
@@ -168,6 +173,7 @@ export default function Proposals({
                                 <ProposalCard
                                     key={proposal.ulid}
                                     proposal={proposal}
+                                    subjects={subjects}
                                 />
                             ))}
                         </ul>
@@ -256,17 +262,45 @@ function SuggestionCard({ proposal }: { proposal: KnowledgeProposal }) {
     );
 }
 
-function ProposalCard({ proposal }: { proposal: KnowledgeProposal }) {
+function ProposalCard({
+    proposal,
+    subjects,
+}: {
+    proposal: KnowledgeProposal;
+    subjects: SelectOption[];
+}) {
+    const editable = proposal.editable;
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(editable?.value ?? '');
+    const [subject, setSubject] = useState(editable?.subject ?? 'general');
+
     return (
         <li className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                     <p className="font-medium">{proposal.target_label}</p>
                     <p className="text-xs text-muted-foreground">
-                        Suggested by {proposal.proposed_by ?? 'someone'}
+                        {proposal.learned_from
+                            ? 'Learned by the AI from an edit'
+                            : `Suggested by ${proposal.proposed_by ?? 'someone'}`}
                         {proposal.created_at &&
                             ` on ${new Date(proposal.created_at).toLocaleDateString()}`}
+                        {proposal.personal && ' · only for your own drafts'}
                     </p>
+                    {proposal.learned_from && (
+                        <p className="text-xs text-muted-foreground">
+                            From the answer to “{proposal.learned_from.question}
+                            ” for{' '}
+                            <Link
+                                href={questions(
+                                    proposal.learned_from.application_ulid,
+                                )}
+                                className="underline underline-offset-2"
+                            >
+                                {proposal.learned_from.application}
+                            </Link>
+                        </p>
+                    )}
                 </div>
                 <Badge
                     variant={
@@ -282,7 +316,7 @@ function ProposalCard({ proposal }: { proposal: KnowledgeProposal }) {
                     No differences from the current version.
                 </p>
             ) : (
-                <dl className="space-y-2 text-sm">
+                <dl className="space-y-3 text-sm">
                     {proposal.changes.map((change) => (
                         <div
                             key={change.label}
@@ -291,17 +325,33 @@ function ProposalCard({ proposal }: { proposal: KnowledgeProposal }) {
                             <dt className="text-muted-foreground">
                                 {change.label}
                             </dt>
-                            <dd className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-kraken-sm bg-surface-error-subtle px-1.5 py-0.5 line-through decoration-border-error/60">
-                                    {change.from ?? '(empty)'}
-                                </span>
-                                <ArrowRight
-                                    className="size-3.5 text-muted-foreground"
-                                    aria-label="becomes"
-                                />
-                                <span className="rounded-kraken-sm bg-surface-accent-subtle px-1.5 py-0.5">
-                                    {change.to ?? '(empty)'}
-                                </span>
+                            <dd className="space-y-1">
+                                {change.diff ? (
+                                    <TextDiff parts={change.diff} />
+                                ) : change.from === null ? (
+                                    <span className="rounded-kraken-sm bg-surface-accent-subtle px-1.5 py-0.5 whitespace-pre-line">
+                                        {change.to ?? '(empty)'}
+                                    </span>
+                                ) : (
+                                    <span className="flex flex-wrap items-center gap-2">
+                                        <span className="rounded-kraken-sm bg-surface-error-subtle px-1.5 py-0.5 line-through decoration-border-error/60">
+                                            {change.from}
+                                        </span>
+                                        <ArrowRight
+                                            className="size-3.5 text-muted-foreground"
+                                            aria-label="becomes"
+                                        />
+                                        <span className="rounded-kraken-sm bg-surface-accent-subtle px-1.5 py-0.5">
+                                            {change.to ?? '(empty)'}
+                                        </span>
+                                    </span>
+                                )}
+                                {change.base !== null && (
+                                    <p className="type-caption text-text-secondary">
+                                        Changed since this was suggested. It was
+                                        based on: “{change.base}”
+                                    </p>
+                                )}
                             </dd>
                         </div>
                     ))}
@@ -325,50 +375,150 @@ function ProposalCard({ proposal }: { proposal: KnowledgeProposal }) {
             )}
 
             {proposal.can.decide && (
-                <div className="flex flex-wrap items-start gap-2 border-t pt-3">
-                    <Form
-                        {...ProposalController.approve.form(proposal.ulid)}
-                        options={{ preserveScroll: true }}
-                    >
-                        {({ processing, errors }) => (
-                            <>
-                                <Button size="sm" disabled={processing}>
-                                    Approve
-                                </Button>
-                                <InputError
-                                    message={
-                                        errors.proposal ?? errors.statement
-                                    }
-                                />
-                            </>
+                <div className="space-y-3 border-t pt-3">
+                    {editable && editing && (
+                        <div className="space-y-2">
+                            <Label htmlFor={`edit_${proposal.ulid}`}>
+                                {editLabels[editable.field]}
+                            </Label>
+                            <Textarea
+                                id={`edit_${proposal.ulid}`}
+                                rows={editable.field === 'body' ? 8 : 3}
+                                value={value}
+                                onChange={(event) =>
+                                    setValue(event.target.value)
+                                }
+                            />
+                            {editable.subject !== null && (
+                                <>
+                                    <Label htmlFor={`subject_${proposal.ulid}`}>
+                                        Where did this happen?
+                                    </Label>
+                                    <NativeSelect
+                                        id={`subject_${proposal.ulid}`}
+                                        options={subjects}
+                                        value={subject}
+                                        onChange={(event) =>
+                                            setSubject(event.target.value)
+                                        }
+                                    />
+                                </>
+                            )}
+                        </div>
+                    )}
+                    <div className="flex flex-wrap items-start gap-2">
+                        <Form
+                            {...ProposalController.approve.form(proposal.ulid)}
+                            options={{ preserveScroll: true }}
+                            transform={(data) =>
+                                editable && editing
+                                    ? {
+                                          ...data,
+                                          [editable.field]: value,
+                                          ...(editable.subject !== null
+                                              ? { subject }
+                                              : {}),
+                                      }
+                                    : data
+                            }
+                        >
+                            {({ processing, errors }) => (
+                                <>
+                                    <Button size="sm" disabled={processing}>
+                                        {editing
+                                            ? 'Approve my version'
+                                            : 'Approve'}
+                                    </Button>
+                                    <InputError
+                                        message={
+                                            errors.proposal ??
+                                            errors.statement ??
+                                            errors.body ??
+                                            errors.rule ??
+                                            errors.subject ??
+                                            errors.lock_version
+                                        }
+                                    />
+                                </>
+                            )}
+                        </Form>
+                        {editable && !editing && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditing(true)}
+                            >
+                                <Pencil /> Edit, then approve
+                            </Button>
                         )}
-                    </Form>
-                    <Form
-                        {...ProposalController.reject.form(proposal.ulid)}
-                        options={{ preserveScroll: true }}
-                        className="flex min-w-64 flex-1 gap-2"
-                    >
-                        {({ processing }) => (
-                            <>
-                                <Input
-                                    name="decision_note"
-                                    placeholder="Note for the VA (optional)"
-                                    aria-label="Note for the VA"
-                                    maxLength={1000}
-                                />
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={processing}
-                                >
-                                    Reject
-                                </Button>
-                            </>
-                        )}
-                    </Form>
+                        <Form
+                            {...ProposalController.reject.form(proposal.ulid)}
+                            options={{ preserveScroll: true }}
+                            className="flex min-w-64 flex-1 gap-2"
+                        >
+                            {({ processing }) => (
+                                <>
+                                    <Input
+                                        name="decision_note"
+                                        placeholder="Note (optional)"
+                                        aria-label="Note about the rejection"
+                                        maxLength={1000}
+                                    />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={processing}
+                                    >
+                                        Reject
+                                    </Button>
+                                </>
+                            )}
+                        </Form>
+                    </div>
                 </div>
             )}
         </li>
+    );
+}
+
+const editLabels: Record<
+    NonNullable<KnowledgeProposal['editable']>['field'],
+    string
+> = {
+    statement: 'Your bullet point',
+    body: 'Your answer',
+    rule: 'Your rule',
+};
+
+/**
+ * A word diff: removed words struck through, added words underlined, so the change does not
+ * rely on colour alone.
+ */
+function TextDiff({ parts }: { parts: DiffPart[] }) {
+    return (
+        <p className="whitespace-pre-line">
+            {parts.map((part, index) =>
+                part.op === 'equal' ? (
+                    <span key={index}>{part.text}</span>
+                ) : part.op === 'delete' ? (
+                    <del
+                        key={index}
+                        className="rounded-kraken-sm bg-surface-error-subtle px-0.5 decoration-border-error/60"
+                    >
+                        <span className="sr-only">Removed: </span>
+                        {part.text}
+                    </del>
+                ) : (
+                    <ins
+                        key={index}
+                        className="rounded-kraken-sm bg-surface-accent-subtle px-0.5 underline-offset-2"
+                    >
+                        <span className="sr-only">Added: </span>
+                        {part.text}
+                    </ins>
+                ),
+            )}
+        </p>
     );
 }
 

@@ -9,6 +9,7 @@ import {
     CheckCircle2,
     Copy,
     Library,
+    Lightbulb,
     ListChecks,
     ListPlus,
     Loader2,
@@ -53,6 +54,7 @@ import { lengthStatus, parseQuestions } from '@/lib/questions';
 import { cn } from '@/lib/utils';
 import { companyLabel } from '@/lib/applications';
 import { index as applicationsIndex } from '@/routes/applications';
+import { index as proposals } from '@/routes/knowledge/proposals';
 import type { SelectOption, TextRevision } from '@/types';
 
 type Answer = {
@@ -70,6 +72,13 @@ type Answer = {
         requested_at: string | null;
     } | null;
     ai: AiCheck | null;
+    /** The latest edit of an AI draft the AI learned from (M10). */
+    feedback: {
+        status: 'pending_analysis' | 'analysed' | 'failed';
+        error: string | null;
+        suggestions: number;
+        pending: number;
+    } | null;
 };
 
 type ClaimLabel = 'verified' | 'inferred' | 'proposed' | 'hypothetical';
@@ -111,7 +120,7 @@ type Question = {
     char_limit: number | null;
     answer: Answer | null;
     history: TextRevision[];
-    can: { update: boolean; approve: boolean; reopen: boolean };
+    can: { update: boolean; approve: boolean; reopen: boolean; learn: boolean };
 };
 
 type LibraryAnswer = {
@@ -806,6 +815,24 @@ function QuestionCard({
                     />
                 )}
                 <VersionHistory revisions={question.history} />
+                {question.can.learn && !dirty && (
+                    <Form
+                        {...ApplicationQuestionController.learn.form(routeArgs)}
+                        options={{ preserveScroll: true }}
+                        errorBag={errorBag}
+                    >
+                        {({ processing }) => (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={processing}
+                                title="Turn what you changed in the AI draft into suggestions for your library and writing style. Approving does this too."
+                            >
+                                <Lightbulb /> Learn from my edits
+                            </Button>
+                        )}
+                    </Form>
+                )}
                 <div className="ml-auto flex gap-2">
                     {question.can.approve && saved.trim() !== '' && (
                         <Form
@@ -862,7 +889,56 @@ function QuestionCard({
                     )}
                 </div>
             </div>
+            {question.answer?.feedback && (
+                <FeedbackStatus feedback={question.answer.feedback} />
+            )}
         </article>
+    );
+}
+
+/**
+ * What the AI learned from the latest edit of its draft. Suggestions wait for approval.
+ */
+function FeedbackStatus({
+    feedback,
+}: {
+    feedback: NonNullable<Answer['feedback']>;
+}) {
+    if (feedback.status === 'failed') {
+        return (
+            <p className="type-caption text-text-secondary">
+                Learning from your edits failed: {feedback.error}
+            </p>
+        );
+    }
+
+    if (feedback.status === 'pending_analysis') {
+        return (
+            <p className="type-caption text-text-secondary" aria-live="polite">
+                Learning from your edits… Suggestions appear under{' '}
+                <Link href={proposals()} className="underline">
+                    Suggestions
+                </Link>
+                .
+            </p>
+        );
+    }
+
+    return (
+        <p className="type-caption text-text-secondary">
+            <Lightbulb className="mr-1 inline size-3.5" />
+            {feedback.suggestions === 0
+                ? 'Nothing to learn from your edits beyond this answer.'
+                : `${feedback.suggestions} suggestion${feedback.suggestions === 1 ? '' : 's'} learned from your edits${feedback.pending > 0 ? `, ${feedback.pending} waiting for approval under ` : '.'}`}
+            {feedback.suggestions > 0 && feedback.pending > 0 && (
+                <>
+                    <Link href={proposals()} className="underline">
+                        Suggestions
+                    </Link>
+                    .
+                </>
+            )}
+        </p>
     );
 }
 

@@ -7,6 +7,8 @@ use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Feedback\FeedbackEvent;
+use App\Domain\Feedback\FeedbackService;
 use App\Domain\Knowledge\AnswerCategory;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerStatus;
@@ -29,7 +31,7 @@ use Inertia\Response;
  */
 class ApplicationQuestionController extends Controller
 {
-    public function __construct(private ApplicationQuestionService $questions, private AiAnswerService $aiAnswers) {}
+    public function __construct(private ApplicationQuestionService $questions, private AiAnswerService $aiAnswers, private FeedbackService $feedback) {}
 
     public function index(Request $request, JobApplication $application): Response
     {
@@ -42,6 +44,16 @@ class ApplicationQuestionController extends Controller
             ->orderByDesc('version_no')
             ->get()
             ->groupBy('answer_draft_id');
+
+        // The latest edit learned from per answer, with how many of its suggestions still wait.
+        $feedback = FeedbackEvent::query()
+            ->whereIn('answer_draft_id', $application->questions->pluck('answer.id')->filter())
+            ->withCount(['proposals as pending_count' => fn ($query) => $query->where('status', 'pending')])
+            ->withCount('proposals')
+            ->latest('id')
+            ->get()
+            ->unique('answer_draft_id')
+            ->keyBy('answer_draft_id');
 
         $library = AnswerLibraryEntry::query()
             ->whereIn('status', [AnswerStatus::Approved, AnswerStatus::Draft])
@@ -57,8 +69,9 @@ class ApplicationQuestionController extends Controller
                 'role_title' => $application->role_title,
                 'job_description' => $application->jobDescription(),
             ],
-            'questions' => $application->questions->map(function (ApplicationQuestion $question) use ($user, $histories): array {
+            'questions' => $application->questions->map(function (ApplicationQuestion $question) use ($user, $histories, $feedback): array {
                 $answer = $question->answer;
+                $learned = $feedback->get($answer->id ?? 0);
 
                 return [
                     'ulid' => $question->ulid,
@@ -91,6 +104,12 @@ class ApplicationQuestionController extends Controller
                             'to_check' => count($answer->currentVersion->openClaims()),
                             'needs_review' => $answer->needsClaimReview(),
                         ],
+                        'feedback' => $learned === null ? null : [
+                            'status' => $learned->status,
+                            'error' => $learned->error,
+                            'suggestions' => $learned->proposals_count,
+                            'pending' => $learned->pending_count,
+                        ],
                     ],
                     'history' => ($histories[$answer->id ?? 0] ?? collect())->map(fn (AnswerDraftVersion $version): array => [
                         'revision_no' => $version->version_no,
@@ -108,6 +127,7 @@ class ApplicationQuestionController extends Controller
                         'update' => $user->can('update', $question) && ! ($answer?->isApproved() ?? false),
                         'approve' => $user->can('approve', $question),
                         'reopen' => $user->can('reopen', $question),
+                        'learn' => $answer !== null && $user->can('update', $question) && $this->feedback->learnableEdit($answer) !== null,
                     ],
                 ];
             })->values()->all(),
@@ -269,6 +289,23 @@ class ApplicationQuestionController extends Controller
         Gate::authorize('reopen', $question);
 
         $this->questions->reopenAnswer($question, $request->user());
+
+        return back();
+    }
+
+    /**
+     * Learn from the edits made to the AI draft without approving (M10). Approving learns too.
+     */
+    public function learn(Request $request, JobApplication $application, ApplicationQuestion $question): RedirectResponse
+    {
+        Gate::authorize('update', $question);
+
+        $draft = $question->answer;
+        abort_if($draft === null, 404);
+
+        $this->feedback->capture($draft, $request->user(), 'manual');
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Learning from your edits. Suggestions appear under Suggestions for approval.')]);
 
         return back();
     }

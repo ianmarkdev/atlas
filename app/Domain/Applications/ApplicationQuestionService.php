@@ -3,6 +3,7 @@
 namespace App\Domain\Applications;
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Feedback\FeedbackService;
 use App\Domain\Knowledge\AnswerCategory;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerLibraryService;
@@ -16,7 +17,7 @@ use Illuminate\Validation\ValidationException;
  */
 class ApplicationQuestionService
 {
-    public function __construct(private AuditLogger $audit, private AnswerLibraryService $library) {}
+    public function __construct(private AuditLogger $audit, private AnswerLibraryService $library, private FeedbackService $feedback) {}
 
     public function add(JobApplication $application, string $prompt, ?int $wordLimit, ?int $charLimit, User $actor, string $origin = 'manual'): ApplicationQuestion
     {
@@ -163,6 +164,8 @@ class ApplicationQuestionService
     }
 
     /**
+     * Approving an edited AI draft also learns from the edit (M10): see FeedbackService.
+     *
      * @throws ValidationException for an empty answer, one over the question's limits, or one with AI placeholders left in
      */
     public function approveAnswer(ApplicationQuestion $question, User $actor): void
@@ -197,6 +200,8 @@ class ApplicationQuestionService
         ])->save();
 
         $this->audit->record('answer_draft.approved', $question, [], $actor);
+
+        $this->feedback->capture($draft, $actor, 'approval');
     }
 
     public function reopenAnswer(ApplicationQuestion $question, User $actor): void

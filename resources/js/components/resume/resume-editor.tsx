@@ -63,6 +63,8 @@ export type ResumeEditorProps = {
     onSave: (document: ResumeDocument, done: () => void) => void;
     /** Endpoint for "Apply everywhere" on a reworded bullet, or null to hide it. */
     applyBulletUrl: ((claimUlid: string) => string) | null;
+    /** Endpoint for "Save as a new bullet point" on a reworded bullet; omitted to hide it. */
+    newBulletUrl?: ((claimUlid: string) => string) | null;
     canEditDisplayTitles: boolean;
 };
 
@@ -82,6 +84,7 @@ export function ResumeEditor({
     extraDirty = false,
     onSave,
     applyBulletUrl,
+    newBulletUrl = null,
     canEditDisplayTitles,
 }: ResumeEditorProps) {
     const [document, setDocument] = useState<ResumeDocument>(initialDocument);
@@ -94,8 +97,8 @@ export function ResumeEditor({
     const libraryIndex = useMemo(() => indexLibrary(library), [library]);
     const isDirty = dirty || extraDirty;
     const options = useMemo(
-        () => ({ applyBulletUrl, canEditDisplayTitles }),
-        [applyBulletUrl, canEditDisplayTitles],
+        () => ({ applyBulletUrl, newBulletUrl, canEditDisplayTitles }),
+        [applyBulletUrl, newBulletUrl, canEditDisplayTitles],
     );
 
     useEffect(() => {

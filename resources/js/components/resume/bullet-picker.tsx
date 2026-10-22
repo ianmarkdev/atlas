@@ -75,6 +75,13 @@ export function BulletPicker({
                         }
                         onReword={(text) => update(index, { ...bullet, text })}
                         onClaimUpdated={onClaimUpdated}
+                        onReplaceClaim={(created) => {
+                            // Adds the claim to the library (and appends it); the replacement
+                            // below is the later document write, so the new bullet takes this
+                            // bullet's place instead.
+                            onClaimsAdded([created], false);
+                            update(index, { claim: created.ulid, text: null });
+                        }}
                         canEdit={canEdit}
                     />
                 ))}
@@ -127,6 +134,7 @@ function IncludedBullet({
     onMove,
     onReword,
     onClaimUpdated,
+    onReplaceClaim,
     canEdit,
 }: {
     bullet: ResumeBullet;
@@ -137,12 +145,18 @@ function IncludedBullet({
     onMove: (delta: number) => void;
     onReword: (text: string | null) => void;
     onClaimUpdated: (claim: Claim) => void;
+    onReplaceClaim: (claim: Claim) => void;
     canEdit: boolean;
 }) {
-    const { applyBulletUrl } = useResumeEditorOptions();
+    const { applyBulletUrl, newBulletUrl } = useResumeEditorOptions();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(bullet.text ?? claim.statement);
-    const apply = useHttp<{ text: string }, { claim: Claim }>({ text: '' });
+    const [suggested, setSuggested] = useState(false);
+    const apply = useHttp<
+        { text: string },
+        { claim: Claim; proposed?: boolean }
+    >({ text: '' });
+    const saveNew = useHttp<{ text: string }, { claim: Claim }>({ text: '' });
     const isReworded = bullet.text !== null;
 
     const saveRewording = () => {
@@ -160,10 +174,31 @@ function IncludedBullet({
 
         try {
             const response = await apply.post(applyBulletUrl(claim.ulid));
-            onClaimUpdated(response.claim);
-            onReword(null);
+
+            if (response.proposed) {
+                // A VA's suggestion: the rewording stays on this resume until the candidate decides.
+                setSuggested(true);
+            } else {
+                onClaimUpdated(response.claim);
+                onReword(null);
+            }
         } catch {
             // Validation errors are shown below via apply.errors.
+        }
+    };
+
+    const saveAsNewBullet = async () => {
+        if (newBulletUrl === null) {
+            return;
+        }
+
+        saveNew.transform(() => ({ text: bullet.text ?? '' }));
+
+        try {
+            const response = await saveNew.post(newBulletUrl(claim.ulid));
+            onReplaceClaim(response.claim);
+        } catch {
+            // Validation errors are shown below via saveNew.errors.
         }
     };
 
@@ -229,7 +264,14 @@ function IncludedBullet({
                             Shared wording: {claim.statement}
                         </p>
                     )}
-                    <InputError message={apply.errors.text} />
+                    {suggested && (
+                        <p className="text-xs text-muted-foreground">
+                            Suggested to the candidate for everywhere.
+                        </p>
+                    )}
+                    <InputError
+                        message={apply.errors.text ?? saveNew.errors.text}
+                    />
                 </div>
 
                 {canEdit && !editing && (
@@ -281,15 +323,32 @@ function IncludedBullet({
                             >
                                 Revert to shared wording
                             </Button>
-                            {claim.can.update && applyBulletUrl !== null && (
+                            {(claim.can.update ||
+                                (claim.can.propose && newBulletUrl !== null)) &&
+                                applyBulletUrl !== null &&
+                                !suggested && (
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        disabled={apply.processing}
+                                        onClick={applyEverywhere}
+                                    >
+                                        {claim.can.update
+                                            ? 'Apply everywhere'
+                                            : 'Suggest for everywhere'}
+                                    </Button>
+                                )}
+                            {newBulletUrl !== null && (
                                 <Button
                                     type="button"
                                     size="sm"
                                     variant="ghost"
-                                    disabled={apply.processing}
-                                    onClick={applyEverywhere}
+                                    disabled={saveNew.processing}
+                                    onClick={saveAsNewBullet}
+                                    title="Keep the original and add this wording as a bullet point of its own"
                                 >
-                                    Apply everywhere
+                                    Save as a new bullet point
                                 </Button>
                             )}
                         </>
