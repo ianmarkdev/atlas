@@ -4,6 +4,7 @@ namespace App\Domain\Applications;
 
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Knowledge\CandidateProfile;
+use App\Domain\Tenancy\TenantContext;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ use Illuminate\Validation\ValidationException;
  */
 class JobApplicationService
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private AuditLogger $audit, private DuplicateApplicationDetector $duplicates) {}
 
     /**
      * @param  ApplicationDetails  $details
@@ -40,6 +41,40 @@ class JobApplicationService
             $this->storeJobDescription($application, $jobDescription, $actor);
 
             $this->audit->record('application.created', $application, ['stage' => $application->stage->value], $actor);
+
+            return $application;
+        });
+    }
+
+    /**
+     * Save a job listing captured by the browser extension as a new application in `saved`.
+     * An existing application for the same listing is never changed: the capture is refused
+     * unless `$allowDuplicate`. `$capture` holds what the extension found besides the form
+     * fields (extraction method, site, listing id, structured salary…), kept in the audit log.
+     *
+     * @param  ApplicationDetails  $details
+     * @param  array<string, mixed>  $capture
+     *
+     * @throws DuplicateApplication
+     */
+    public function capture(array $details, ?string $jobDescription, array $capture, bool $allowDuplicate, User $actor): JobApplication
+    {
+        return DB::transaction(function () use ($details, $jobDescription, $capture, $allowDuplicate, $actor): JobApplication {
+            // One capture at a time per workspace, so a double click cannot save the listing twice.
+            DB::select('SELECT pg_advisory_xact_lock(hashtext(?), ?::int)', ['job_applications.capture', app(TenantContext::class)->workspaceId()]);
+
+            $existing = $details['source_url'] === null ? null : $this->duplicates->forSourceUrl($details['source_url']);
+
+            if ($existing !== null && ! $allowDuplicate) {
+                throw new DuplicateApplication($existing);
+            }
+
+            $application = $this->create($details, $jobDescription, ApplicationStage::Saved, $actor);
+
+            $this->audit->record('application.captured', $application, [
+                ...$capture,
+                'duplicate_of' => $existing?->ulid,
+            ], $actor);
 
             return $application;
         });

@@ -25,6 +25,9 @@ class SetTenantContext
         $user = $request->user();
 
         if ($user !== null && ! $user->is_active) {
+            // API tokens have no session to end: refuse the request instead.
+            abort_unless($request->hasSession(), Response::HTTP_FORBIDDEN, __('This account has been deactivated.'));
+
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();

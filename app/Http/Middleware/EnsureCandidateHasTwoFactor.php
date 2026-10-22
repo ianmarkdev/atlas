@@ -23,6 +23,8 @@ class EnsureCandidateHasTwoFactor
         if (config('app.require_candidate_two_factor')
             && $user?->isCandidate()
             && ! $user->hasEnabledTwoFactorAuthentication()) {
+            abort_unless($request->hasSession(), Response::HTTP_FORBIDDEN, __('Set up two-factor authentication to continue.'));
+
             Inertia::flash('toast', ['type' => 'error', 'message' => __('Set up two-factor authentication to continue.')]);
 
             return redirect()->route('security.edit');

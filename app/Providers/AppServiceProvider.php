@@ -23,11 +23,14 @@ use App\Domain\Tenancy\Workspace;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -62,6 +65,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureGates();
+        $this->configureRateLimiting();
 
         // Short, stable type names in polymorphic columns (audit_events.subject_type, later claim subjects).
         Relation::morphMap([
@@ -98,6 +102,15 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('edit-candidate-profile', fn (User $user): bool => $user->isCandidate());
         Gate::define('edit-resumes', fn (User $user): bool => $user->isCandidate());
         Gate::define('approve-proposals', fn (User $user): bool => $user->isCandidate());
+    }
+
+    /**
+     * Saving jobs from the browser extension is one click per listing; anything faster is a loop.
+     */
+    protected function configureRateLimiting(): void
+    {
+        RateLimiter::for('application-capture', fn (Request $request): Limit => Limit::perMinute(30)
+            ->by((string) ($request->user()?->getAuthIdentifier() ?? $request->ip())));
     }
 
     /**
