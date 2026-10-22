@@ -32,6 +32,7 @@ import {
     resumeToPlainText,
     wordCount,
 } from '@/lib/resume-document';
+import { copyToClipboard } from '@/lib/clipboard';
 import type {
     Claim,
     Contact,
@@ -147,10 +148,10 @@ export function ResumeEditor({
     };
 
     const copyText = async () => {
-        await navigator.clipboard.writeText(
+        const isCopied = await copyToClipboard(
             resumeToPlainText(document, contact, libraryIndex),
         );
-        setCopied(true);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 

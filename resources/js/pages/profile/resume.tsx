@@ -16,6 +16,7 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { indexLibrary, resumeToPlainText } from '@/lib/resume-document';
+import { copyToClipboard } from '@/lib/clipboard';
 import { index as resumesIndex } from '@/routes/resumes';
 import type {
     Contact,
@@ -77,10 +78,10 @@ function ResumeEditorPage({
     if (!canEdit) {
         const index = indexLibrary(library);
         const copyText = async () => {
-            await navigator.clipboard.writeText(
+            const isCopied = await copyToClipboard(
                 resumeToPlainText(resume.document, contact, index),
             );
-            setCopied(true);
+            setCopied(isCopied);
             window.setTimeout(() => setCopied(false), 2000);
         };
 

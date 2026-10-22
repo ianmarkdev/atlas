@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/sheet';
 import { indexLibrary, resumeToPlainText } from '@/lib/resume-document';
 import { companyLabel } from '@/lib/applications';
+import { copyToClipboard } from '@/lib/clipboard';
 import { index as applicationsIndex } from '@/routes/applications';
 import type {
     Contact,
@@ -462,10 +463,10 @@ function ReadOnlyResume({
     const approved = resume.status === 'approved';
 
     const copyText = async () => {
-        await navigator.clipboard.writeText(
+        const isCopied = await copyToClipboard(
             resumeToPlainText(resume.document, contact, index),
         );
-        setCopied(true);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 

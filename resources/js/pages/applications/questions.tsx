@@ -53,6 +53,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { lengthStatus, parseQuestions } from '@/lib/questions';
 import { cn } from '@/lib/utils';
 import { companyLabel } from '@/lib/applications';
+import { copyToClipboard } from '@/lib/clipboard';
 import { index as applicationsIndex } from '@/routes/applications';
 import { index as proposals } from '@/routes/knowledge/proposals';
 import type { SelectOption, TextRevision } from '@/types';
@@ -312,8 +313,8 @@ function CopyAllButton({ questions }: { questions: Question[] }) {
             )
             .join('\n\n---\n\n');
 
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
+        const isCopied = await copyToClipboard(text);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 
@@ -576,8 +577,8 @@ function QuestionCard({
     };
 
     const copy = async () => {
-        await navigator.clipboard.writeText(body);
-        setCopied(true);
+        const isCopied = await copyToClipboard(body);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 

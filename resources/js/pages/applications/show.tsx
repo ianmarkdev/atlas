@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/card';
 import { companyLabel, formatDay } from '@/lib/applications';
 import { timeAgo } from '@/lib/time';
+import { copyToClipboard } from '@/lib/clipboard';
 import { index } from '@/routes/applications';
 import { index as collectionsIndex } from '@/routes/collections';
 import ApplicationReviewController from '@/actions/App/Http/Controllers/Applications/ApplicationReviewController';
@@ -283,8 +284,8 @@ function JobDescriptionCard({
     }
 
     const copy = async () => {
-        await navigator.clipboard.writeText(jobDescription.text);
-        setCopied(true);
+        const isCopied = await copyToClipboard(jobDescription.text);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 

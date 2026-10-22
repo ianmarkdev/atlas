@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { index } from '@/routes/team';
+import { copyToClipboard } from '@/lib/clipboard';
 
 type Va = {
     ulid: string;
@@ -211,8 +212,8 @@ function PasswordLinkNotice({ link }: { link: PasswordLink }) {
     const [copied, setCopied] = useState(false);
 
     const copy = async () => {
-        await navigator.clipboard.writeText(link.url);
-        setCopied(true);
+        const isCopied = await copyToClipboard(link.url);
+        setCopied(isCopied);
     };
 
     return (

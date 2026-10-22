@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { wordCount } from '@/lib/resume-document';
+import { copyToClipboard } from '@/lib/clipboard';
 import { index } from '@/routes/knowledge/answers';
 import type { Answer, SelectOption } from '@/types';
 
@@ -147,8 +148,8 @@ function AnswerCard({
     const [copied, setCopied] = useState(false);
 
     const copy = async () => {
-        await navigator.clipboard.writeText(answer.body);
-        setCopied(true);
+        const isCopied = await copyToClipboard(answer.body);
+        setCopied(isCopied);
         window.setTimeout(() => setCopied(false), 2000);
     };
 
