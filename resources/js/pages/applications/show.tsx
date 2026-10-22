@@ -1,14 +1,16 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
+import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
 import {
     Check,
     Copy,
     ExternalLink,
     FileText,
     MessageSquareText,
+    Sparkles,
     Pencil,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
+import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
 import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import {
@@ -57,6 +59,7 @@ export default function ApplicationShow({
     tailoredResume,
     variants,
     questionsSummary,
+    analysisSummary,
     review,
     timeline,
 }: {
@@ -67,6 +70,7 @@ export default function ApplicationShow({
     tailoredResume: TailoredResumeSummary | null;
     variants: SelectOption[];
     questionsSummary: QuestionsSummary;
+    analysisSummary: AnalysisSummary | null;
     review: ReviewProps;
     timeline: ActivityItem[];
 }) {
@@ -177,6 +181,11 @@ export default function ApplicationShow({
 
                 <div className="grid gap-6 lg:grid-cols-3">
                     <div className="flex flex-col gap-6 lg:col-span-2">
+                        <AnalysisCard
+                            application={application}
+                            summary={analysisSummary}
+                            hasJobDescription={jobDescription !== null}
+                        />
                         <TailoredResumeCard
                             application={application}
                             resume={tailoredResume}
@@ -705,6 +714,118 @@ function NoteDialog({
                 </Form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+type AnalysisSummary = {
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'invalid_output';
+    created_at: string | null;
+    must_haves: number;
+    strong: number;
+    gaps: number;
+    injection_warnings: number;
+    error_message: string | null;
+    is_latest_posting: boolean;
+};
+
+/**
+ * The AI analysis of the job description: start it, see its state, open the brief.
+ */
+function AnalysisCard({
+    application,
+    summary,
+    hasJobDescription,
+}: {
+    application: JobApplicationDetail;
+    summary: AnalysisSummary | null;
+    hasJobDescription: boolean;
+}) {
+    const pending =
+        summary !== null &&
+        (summary.status === 'queued' || summary.status === 'running');
+    const poll = usePoll(
+        3000,
+        { only: ['analysisSummary', 'timeline'] },
+        { autoStart: false },
+    );
+
+    useEffect(() => {
+        if (pending) {
+            poll.start();
+        } else {
+            poll.stop();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pending]);
+
+    const description = (() => {
+        if (!hasJobDescription) {
+            return 'Paste the job description to analyse it.';
+        }
+
+        if (summary === null) {
+            return "Let AI read the job description: requirements, the employer's language, questions to answer, and which of your facts match each requirement.";
+        }
+
+        if (pending) {
+            return 'Analysing… this can take a minute or two with a local model.';
+        }
+
+        if (summary.status !== 'succeeded') {
+            return `The last analysis failed: ${summary.error_message ?? 'unknown error'}`;
+        }
+
+        return `${summary.must_haves} must-haves · ${summary.strong} with strong evidence · ${summary.gaps} gaps${summary.injection_warnings > 0 ? ' · contains instructions aimed at AI' : ''}${summary.is_latest_posting ? '' : ' · the job description changed since'}`;
+    })();
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="size-4" aria-hidden /> Job analysis
+                        {pending && <Badge variant="secondary">Running</Badge>}
+                        {summary !== null &&
+                            summary.status !== 'succeeded' &&
+                            !pending && (
+                                <Badge variant="destructive">Failed</Badge>
+                            )}
+                    </CardTitle>
+                    <div className="flex gap-2">
+                        {summary !== null && (
+                            <Button size="sm" variant="outline" asChild>
+                                <Link
+                                    href={JobAnalysisController.show(
+                                        application.ulid,
+                                    )}
+                                >
+                                    Open brief
+                                </Link>
+                            </Button>
+                        )}
+                        {application.can.update && hasJobDescription && (
+                            <Form
+                                {...JobAnalysisController.store.form(
+                                    application.ulid,
+                                )}
+                            >
+                                {({ processing }) => (
+                                    <Button
+                                        size="sm"
+                                        disabled={processing || pending}
+                                    >
+                                        {summary === null
+                                            ? 'Analyse'
+                                            : 'Re-analyse'}
+                                    </Button>
+                                )}
+                            </Form>
+                        )}
+                    </div>
+                </div>
+                <CardDescription>{description}</CardDescription>
+            </CardHeader>
+        </Card>
     );
 }
 

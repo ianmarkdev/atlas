@@ -101,7 +101,7 @@ class JobApplicationController extends Controller
 
     public function show(Request $request, JobApplication $application, ApplicationReviewService $reviews): Response
     {
-        $application->load(['posting', 'owner:id,name', 'assignee:id,ulid,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion']);
+        $application->load(['posting', 'owner:id,name', 'assignee:id,ulid,name', 'resume.currentVersion', 'resume.basedOn', 'questions.answer.currentVersion', 'latestAnalysis']);
         $resume = $application->resume;
         $questions = $application->questions;
         $user = $request->user();
@@ -121,6 +121,7 @@ class JobApplicationController extends Controller
                 'based_on' => $resume->basedOn?->name,
                 'updated_at' => $resume->updated_at?->toIso8601String(),
             ],
+            'analysisSummary' => self::analysisSummary($application),
             'questionsSummary' => [
                 'total' => $questions->count(),
                 'answered' => $questions->filter(fn (ApplicationQuestion $question): bool => trim($question->answer?->body() ?? '') !== '')->count(),
@@ -236,6 +237,34 @@ class JobApplicationController extends Controller
             fn (ApplicationStage $stage): array => ['value' => $stage->value, 'label' => $stage->label()],
             ApplicationStage::cases(),
         );
+    }
+
+    /**
+     * The latest AI analysis in brief, for the application page card.
+     *
+     * @return array{status: string, created_at: ?string, must_haves: int, strong: int, gaps: int, injection_warnings: int, error_message: ?string, is_latest_posting: bool}|null
+     */
+    private static function analysisSummary(JobApplication $application): ?array
+    {
+        $analysis = $application->latestAnalysis;
+
+        if ($analysis === null) {
+            return null;
+        }
+
+        $musts = array_values(array_filter((array) ($analysis->matches['requirements'] ?? []), fn (mixed $row): bool => is_array($row) && ($row['kind'] ?? null) === 'must'));
+        $coverage = array_count_values(array_map(fn (array $row): string => (string) ($row['coverage'] ?? ''), $musts));
+
+        return [
+            'status' => $analysis->status,
+            'created_at' => $analysis->created_at?->toIso8601String(),
+            'must_haves' => count($musts),
+            'strong' => $coverage['strong'] ?? 0,
+            'gaps' => $coverage['gap'] ?? 0,
+            'injection_warnings' => count((array) ($analysis->brief['server_injection_warnings'] ?? [])) + count((array) ($analysis->brief['injection_warnings'] ?? [])),
+            'error_message' => $analysis->error_message,
+            'is_latest_posting' => $analysis->job_posting_id === $application->posting?->id,
+        ];
     }
 
     /**

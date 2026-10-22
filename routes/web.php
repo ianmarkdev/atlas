@@ -3,6 +3,7 @@
 use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\ApplicationReviewController;
+use App\Http\Controllers\Applications\JobAnalysisController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
@@ -63,6 +64,14 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
     Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
         ->withTrashed()->name('applications.restore');
+
+    // AI analysis of the job description (M7).
+    Route::prefix('applications/{application}/analysis')->name('applications.analysis.')->scopeBindings()->group(function () {
+        Route::get('/', [JobAnalysisController::class, 'show'])->name('show');
+        Route::post('/', [JobAnalysisController::class, 'store'])->name('store');
+        Route::post('{analysis}/refresh', [JobAnalysisController::class, 'refresh'])->name('refresh');
+        Route::post('{analysis}/questions', [JobAnalysisController::class, 'addQuestions'])->name('questions');
+    });
 
     // The VA workflow of one application (M7a slice D).
     Route::prefix('applications/{application}/review')->name('applications.review.')->group(function () {

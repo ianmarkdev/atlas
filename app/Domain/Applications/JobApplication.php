@@ -123,6 +123,24 @@ class JobApplication extends Model
     }
 
     /**
+     * Newest first.
+     *
+     * @return HasMany<JobAnalysis, $this>
+     */
+    public function analyses(): HasMany
+    {
+        return $this->hasMany(JobAnalysis::class)->orderByDesc('id');
+    }
+
+    /**
+     * @return HasOne<JobAnalysis, $this>
+     */
+    public function latestAnalysis(): HasOne
+    {
+        return $this->hasOne(JobAnalysis::class)->latestOfMany();
+    }
+
+    /**
      * @return HasOne<ApplicationResume, $this>
      */
     public function resume(): HasOne
