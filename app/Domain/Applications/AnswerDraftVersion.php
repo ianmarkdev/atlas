@@ -7,8 +7,10 @@ use App\Domain\Tenancy\BelongsToWorkspace;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Append-only (a database trigger rejects updates).
@@ -31,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable $created_at
  * @property-read User|null $author
  * @property-read ApplicationResumeVersion|null $resumeVersion
+ * @property-read Collection<int, AnswerClaimReview> $reviews
  * @property-read AnswerLibraryEntry|null $libraryEntry
  */
 #[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'instruction', 'resume_version_id', 'evidence_pack', 'grounding', 'clarification_questions'])]
@@ -45,14 +48,37 @@ class AnswerDraftVersion extends Model
      * flagged by the server check. Hypothetical statements (approaches, opinions) are shown
      * with their label but need no confirmation.
      *
-     * @return list<array<string, mixed>>
+     * @return array<int, array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}> keyed by their index in `grounding`
      */
     public function claimsToCheck(): array
     {
-        return array_values(array_filter(
+        return array_filter(
             $this->grounding ?? [],
             fn (array $claim): bool => $claim['classification'] === 'proposed' || $claim['flags'] !== [],
-        ));
+        );
+    }
+
+    /**
+     * Claims to check that no decision has settled yet (M9).
+     *
+     * @return array<int, array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}>
+     */
+    public function openClaims(): array
+    {
+        $settled = $this->reviews
+            ->filter(fn (AnswerClaimReview $review): bool => $review->item_type === 'claim' && $review->settlesClaim())
+            ->pluck('item_index')
+            ->all();
+
+        return array_diff_key($this->claimsToCheck(), array_flip($settled));
+    }
+
+    /**
+     * @return HasMany<AnswerClaimReview, $this>
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(AnswerClaimReview::class);
     }
 
     /**

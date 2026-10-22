@@ -11,3 +11,6 @@ Artisan::command('inspire', function () {
 
 // AI prompt/response bodies are kept only for `ai.payload_retention_days` (M4).
 Schedule::command('model:prune', ['--model' => [GenerationPayload::class]])->daily();
+
+// Weekly "knowledge health": suggest results for plain bullet points (M9).
+Schedule::command('app:suggest-achievements')->weeklyOn(1, '07:00');

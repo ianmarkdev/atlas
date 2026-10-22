@@ -3,6 +3,7 @@
 use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\ApplicationReviewController;
+use App\Http\Controllers\Applications\ClaimReviewController;
 use App\Http\Controllers\Applications\ClarificationController;
 use App\Http\Controllers\Applications\JdCollectionController;
 use App\Http\Controllers\Applications\JobAnalysisController;
@@ -106,6 +107,9 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::put('{question}/answer', [ApplicationQuestionController::class, 'saveAnswer'])->name('answer');
         Route::post('{question}/answer/draft', [ApplicationQuestionController::class, 'draft'])->name('draft');
         Route::patch('{question}/answer/claims-reviewed', [ApplicationQuestionController::class, 'claimsReviewed'])->name('claims-reviewed');
+        Route::post('{question}/answer/reviews/accept', [ClaimReviewController::class, 'accept'])->name('reviews.accept');
+        Route::post('{question}/answer/reviews/library', [ClaimReviewController::class, 'addToLibrary'])->name('reviews.library');
+        Route::post('{question}/answer/reviews/dismiss', [ClaimReviewController::class, 'dismiss'])->name('reviews.dismiss');
         Route::patch('{question}/answer/approve', [ApplicationQuestionController::class, 'approve'])->name('approve');
         Route::patch('{question}/answer/reopen', [ApplicationQuestionController::class, 'reopen'])->name('reopen');
         Route::post('{question}/answer/library', [ApplicationQuestionController::class, 'saveToLibrary'])->name('save-to-library');
@@ -165,6 +169,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
 
         Route::get('proposals', [ProposalController::class, 'index'])->name('proposals.index');
         Route::middleware('can:approve-proposals')->group(function () {
+            Route::post('proposals/suggest-achievements', [ProposalController::class, 'suggestAchievements'])->name('proposals.suggest');
             Route::patch('proposals/{proposal}/approve', [ProposalController::class, 'approve'])->name('proposals.approve');
             Route::patch('proposals/{proposal}/reject', [ProposalController::class, 'reject'])->name('proposals.reject');
         });

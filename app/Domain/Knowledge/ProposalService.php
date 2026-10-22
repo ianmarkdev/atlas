@@ -67,14 +67,55 @@ class ProposalService
     }
 
     /**
+     * An AI suggestion to turn a bullet point into an achievement (M9): a question for the
+     * candidate and a draft with `[confirm: …]` placeholders, waiting for the candidate's answer.
+     * A bullet that already has a pending suggestion of any kind is left alone.
+     */
+    public function suggestAchievement(Claim $claim, string $question, string $draft): ?KnowledgeProposal
+    {
+        return DB::transaction(function () use ($claim, $question, $draft): ?KnowledgeProposal {
+            $pending = KnowledgeProposal::query()
+                ->where('target_type', $claim->getMorphClass())
+                ->where('target_id', $claim->id)
+                ->where('status', ProposalStatus::Pending)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($pending) {
+                return null;
+            }
+
+            $proposal = new KnowledgeProposal;
+            $proposal->forceFill([
+                'candidate_profile_id' => $claim->candidate_profile_id,
+                'origin' => 'achievement_suggestion',
+                'proposal_type' => 'revise_claim',
+                'target_type' => $claim->getMorphClass(),
+                'target_id' => $claim->id,
+                'base_version' => $this->versionOf($claim),
+                'payload' => ['statement' => $draft, 'kind' => ClaimKind::Achievement->value, 'change_reason' => __('Achievement suggestion: :question', ['question' => $question])],
+                'rationale' => $question,
+                'status' => ProposalStatus::Pending,
+            ])->save();
+
+            $this->audit->record('proposal.suggested', $proposal, ['target' => 'claim'], null);
+
+            return $proposal;
+        });
+    }
+
+    /**
+     * @param  string|null  $statement  the candidate's final wording of a bullet point
+     *                                  (edit-then-approve); required for achievement suggestions
      * @return bool true when the change was applied; false when the item changed after the
      *              suggestion was made (the proposal is then marked as a conflict)
      *
-     * @throws ValidationException when applying fails (e.g. the new wording duplicates another claim)
+     * @throws ValidationException when applying fails (e.g. the new wording duplicates another claim),
+     *                             or the wording still has `[confirm: …]` placeholders
      */
-    public function approve(KnowledgeProposal $proposal, User $actor): bool
+    public function approve(KnowledgeProposal $proposal, User $actor, ?string $statement = null): bool
     {
-        return DB::transaction(function () use ($proposal, $actor): bool {
+        return DB::transaction(function () use ($proposal, $actor, $statement): bool {
             $proposal = KnowledgeProposal::query()->whereKey($proposal->id)->lockForUpdate()->firstOrFail();
             $this->ensurePending($proposal);
 
@@ -88,10 +129,16 @@ class ProposalService
             }
 
             if ($target instanceof Claim) {
+                $wording = $statement ?? (string) $proposal->payload['statement'];
+
+                if (preg_match('/\[confirm:[^\]]*\]/iu', $wording) === 1) {
+                    throw ValidationException::withMessages(['statement' => __('Replace each [confirm: …] with the real detail first.')]);
+                }
+
                 $target->load(['currentRevision', 'subject']);
                 $this->claims->revise(
                     $target,
-                    (string) $proposal->payload['statement'],
+                    $wording,
                     ClaimKind::from((string) $proposal->payload['kind']),
                     $proposal->payload['change_reason'] ?? $proposal->rationale,
                     $target->lock_version,

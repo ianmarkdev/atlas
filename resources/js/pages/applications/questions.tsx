@@ -21,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
+import ClaimReviewController from '@/actions/App/Http/Controllers/Applications/ClaimReviewController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
 import Heading from '@/components/heading';
@@ -73,16 +74,29 @@ type Answer = {
 
 type ClaimLabel = 'verified' | 'inferred' | 'proposed' | 'hypothetical';
 
+type Review = {
+    decision: 'accepted' | 'added' | 'dismissed';
+    claim_status: string | null;
+};
+
 type AiCheck = {
     evidence: { id: string; status: string; text: string }[];
     claims: {
+        index: number;
         text: string;
         classification: ClaimLabel;
         model_classification: string;
         evidence_ids: string[];
         flags: string[];
+        to_check: boolean;
+        review: Review | null;
     }[];
-    questions: { question: string; why: string }[];
+    questions: {
+        index: number;
+        question: string;
+        why: string;
+        review: Review | null;
+    }[];
     instruction: string | null;
     from_resume_version: number | null;
     to_check: number;
@@ -121,6 +135,7 @@ type PageProps = {
     hasCoverLetter: boolean;
     canAdd: boolean;
     hasAnalysis: boolean;
+    subjects: SelectOption[];
     maxQuestions: number;
 };
 
@@ -136,6 +151,7 @@ export default function ApplicationQuestions({
     hasCoverLetter,
     canAdd,
     hasAnalysis,
+    subjects,
     maxQuestions,
 }: PageProps) {
     const answered = questions.filter(
@@ -246,6 +262,7 @@ export default function ApplicationQuestions({
                                     isLast={index === questions.length - 1}
                                     library={library}
                                     categories={categories}
+                                    subjects={subjects}
                                 />
                             </li>
                         ))}
@@ -465,6 +482,7 @@ function QuestionCard({
     isLast,
     library,
     categories,
+    subjects,
 }: {
     application: string;
     question: Question;
@@ -473,6 +491,7 @@ function QuestionCard({
     isLast: boolean;
     library: LibraryAnswer[];
     categories: SelectOption[];
+    subjects: SelectOption[];
 }) {
     const saved = question.answer?.body ?? '';
     const [body, setBody] = useState(saved);
@@ -782,6 +801,8 @@ function QuestionCard({
                         routeArgs={routeArgs}
                         errorBag={errorBag}
                         canReview={question.can.approve && !approved}
+                        canUpdate={question.can.update}
+                        subjects={subjects}
                     />
                 )}
                 <VersionHistory revisions={question.history} />
@@ -1022,18 +1043,170 @@ function AnnotatedDraft({
     );
 }
 
+function ReviewState({ review }: { review: Review | null }) {
+    if (review === null) {
+        return null;
+    }
+
+    const text =
+        review.decision === 'accepted'
+            ? 'Kept as worded'
+            : review.decision === 'dismissed'
+              ? 'Skipped'
+              : review.claim_status === 'verified'
+                ? 'Added to your library'
+                : 'Added to the library — waiting for the candidate to verify';
+
+    return (
+        <p className="flex items-center gap-1.5 type-caption text-text-secondary">
+            <CheckCircle2 className="size-3.5" aria-hidden /> {text}
+        </p>
+    );
+}
+
+/**
+ * Settle one claim (keep it, or save it as a fact) or answer one AI question.
+ */
+function ReviewActions({
+    itemType,
+    index,
+    initialStatement,
+    routeArgs,
+    subjects,
+    canAccept,
+    canAdd,
+}: {
+    itemType: 'claim' | 'question';
+    index: number;
+    initialStatement: string;
+    routeArgs: [string, string];
+    subjects: SelectOption[];
+    canAccept: boolean;
+    canAdd: boolean;
+}) {
+    const [adding, setAdding] = useState(itemType === 'question');
+    const errorBag = `review_${routeArgs[1]}_${itemType}_${index}`;
+
+    return (
+        <div className="space-y-2 pt-1">
+            {adding && canAdd ? (
+                <Form
+                    {...ClaimReviewController.addToLibrary.form(routeArgs)}
+                    options={{ preserveScroll: true }}
+                    errorBag={errorBag}
+                    transform={(data) => ({
+                        ...data,
+                        item_type: itemType,
+                        index,
+                    })}
+                    className="space-y-2"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <Textarea
+                                name="statement"
+                                rows={2}
+                                maxLength={1000}
+                                defaultValue={initialStatement}
+                                required
+                                aria-label={
+                                    itemType === 'claim'
+                                        ? 'The fact, as a bullet point'
+                                        : 'Your answer, as a bullet point'
+                                }
+                                placeholder="e.g. Cut the nightly invoice run from 4 hours to 20 minutes"
+                            />
+                            <InputError
+                                message={
+                                    errors.statement ??
+                                    errors.subject ??
+                                    errors.review
+                                }
+                            />
+                            <div className="flex flex-wrap items-center gap-2">
+                                <NativeSelect
+                                    name="subject"
+                                    options={subjects}
+                                    defaultValue="general"
+                                    aria-label="Where this happened"
+                                    className="h-9 w-auto max-w-xs"
+                                />
+                                <Button size="sm" disabled={processing}>
+                                    Add to library
+                                </Button>
+                            </div>
+                        </>
+                    )}
+                </Form>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+                {canAccept && (
+                    <Form
+                        {...ClaimReviewController.accept.form(routeArgs)}
+                        options={{ preserveScroll: true }}
+                        errorBag={errorBag}
+                        transform={(data) => ({ ...data, index })}
+                    >
+                        {({ processing }) => (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={processing}
+                            >
+                                <Check /> Keep as worded
+                            </Button>
+                        )}
+                    </Form>
+                )}
+                {canAdd && !adding && (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setAdding(true)}
+                    >
+                        <BookmarkPlus /> It’s true — add to library
+                    </Button>
+                )}
+                {itemType === 'question' && (
+                    <Form
+                        {...ClaimReviewController.dismiss.form(routeArgs)}
+                        options={{ preserveScroll: true }}
+                        errorBag={errorBag}
+                        transform={(data) => ({ ...data, index })}
+                    >
+                        {({ processing }) => (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={processing}
+                            >
+                                Skip
+                            </Button>
+                        )}
+                    </Form>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function AiCheckSheet({
     check,
     body,
     routeArgs,
     errorBag,
     canReview,
+    canUpdate,
+    subjects,
 }: {
     check: AiCheck;
     body: string;
     routeArgs: [string, string];
     errorBag: string;
     canReview: boolean;
+    canUpdate: boolean;
+    subjects: SelectOption[];
 }) {
     return (
         <Sheet>
@@ -1073,9 +1246,10 @@ function AiCheckSheet({
                                 {check.to_check === 1
                                     ? 'claim needs'
                                     : 'claims need'}{' '}
-                                your check: true as worded, or hedged enough?
-                                Edit the text if not. Otherwise confirm, and the
-                                answer can be approved.
+                                your check. For each one below: keep it as
+                                worded, or add it to your library as a fact
+                                (reworded if needed). If it is not true, edit
+                                the answer instead.
                             </p>
                             <Form
                                 {...ApplicationQuestionController.claimsReviewed.form(
@@ -1085,8 +1259,12 @@ function AiCheckSheet({
                                 errorBag={errorBag}
                             >
                                 {({ processing }) => (
-                                    <Button size="sm" disabled={processing}>
-                                        <Check /> I’ve checked these claims
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={processing}
+                                    >
+                                        <Check /> Keep all as worded
                                     </Button>
                                 )}
                             </Form>
@@ -1159,6 +1337,21 @@ function AiCheckSheet({
                                                     .join('; ')}
                                             </p>
                                         )}
+                                        <ReviewState review={claim.review} />
+                                        {claim.to_check &&
+                                            claim.review === null && (
+                                                <ReviewActions
+                                                    itemType="claim"
+                                                    index={claim.index}
+                                                    initialStatement={
+                                                        claim.text
+                                                    }
+                                                    routeArgs={routeArgs}
+                                                    subjects={subjects}
+                                                    canAccept={canReview}
+                                                    canAdd={canUpdate}
+                                                />
+                                            )}
                                     </li>
                                 ))}
                             </ul>
@@ -1183,6 +1376,18 @@ function AiCheckSheet({
                                             <p className="type-caption text-text-muted">
                                                 {item.why}
                                             </p>
+                                        )}
+                                        <ReviewState review={item.review} />
+                                        {item.review === null && canUpdate && (
+                                            <ReviewActions
+                                                itemType="question"
+                                                index={item.index}
+                                                initialStatement=""
+                                                routeArgs={routeArgs}
+                                                subjects={subjects}
+                                                canAccept={false}
+                                                canAdd
+                                            />
                                         )}
                                     </li>
                                 ))}

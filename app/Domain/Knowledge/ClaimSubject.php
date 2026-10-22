@@ -33,4 +33,24 @@ class ClaimSubject
     {
         return $subject === null ? 'general' : $subject->getMorphClass().':'.$subject->ulid;
     }
+
+    /**
+     * Choices for "where did this happen?" when a bullet point is added outside the library.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    public static function options(): array
+    {
+        $options = [['value' => 'general', 'label' => __('General (not tied to a job or project)')]];
+
+        foreach (Employment::query()->notArchived()->orderByDesc('start_date')->get() as $employment) {
+            $options[] = ['value' => self::key($employment), 'label' => "{$employment->title} — {$employment->employer_name}"];
+        }
+
+        foreach (Project::query()->notArchived()->orderByDesc('start_date')->get() as $project) {
+            $options[] = ['value' => self::key($project), 'label' => __('Project: :name', ['name' => $project->name])];
+        }
+
+        return $options;
+    }
 }

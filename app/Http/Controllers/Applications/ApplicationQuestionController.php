@@ -10,6 +10,7 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\AnswerCategory;
 use App\Domain\Knowledge\AnswerLibraryEntry;
 use App\Domain\Knowledge\AnswerStatus;
+use App\Domain\Knowledge\ClaimSubject;
 use App\Domain\Shared\PlainText;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Applications\BulkStoreQuestionsRequest;
@@ -32,7 +33,7 @@ class ApplicationQuestionController extends Controller
 
     public function index(Request $request, JobApplication $application): Response
     {
-        $application->load(['posting', 'questions.answer.currentVersion.libraryEntry', 'questions.answer.currentVersion.resumeVersion:id,version_no', 'questions.answer.approver:id,name', 'questions.application']);
+        $application->load(['posting', 'questions.answer.currentVersion.libraryEntry', 'questions.answer.currentVersion.resumeVersion:id,version_no', 'questions.answer.currentVersion.reviews.claim:id,status', 'questions.answer.approver:id,name', 'questions.application']);
         $user = $request->user();
 
         $histories = AnswerDraftVersion::query()
@@ -83,11 +84,11 @@ class ApplicationQuestionController extends Controller
                             'evidence' => collect($answer->currentVersion->evidence_pack ?? [])
                                 ->map(fn (array $item, string $id): array => ['id' => $id, 'status' => $item['status'], 'text' => $item['text']])
                                 ->values()->all(),
-                            'claims' => $answer->currentVersion->grounding ?? [],
-                            'questions' => $answer->currentVersion->clarification_questions ?? [],
+                            'claims' => self::withReviews($answer->currentVersion->grounding ?? [], 'claim', $answer->currentVersion, $answer->currentVersion->claimsToCheck()),
+                            'questions' => self::withReviews($answer->currentVersion->clarification_questions ?? [], 'question', $answer->currentVersion),
                             'instruction' => $answer->currentVersion->instruction,
                             'from_resume_version' => $answer->currentVersion->resumeVersion?->version_no,
-                            'to_check' => count($answer->currentVersion->claimsToCheck()),
+                            'to_check' => count($answer->currentVersion->openClaims()),
                             'needs_review' => $answer->needsClaimReview(),
                         ],
                     ],
@@ -124,8 +125,35 @@ class ApplicationQuestionController extends Controller
             'hasCoverLetter' => $application->questions->contains(fn (ApplicationQuestion $question): bool => $question->isCoverLetter()),
             'canAdd' => $user->can('update', $application),
             'hasAnalysis' => $application->analyses()->where('status', 'succeeded')->exists(),
+            'subjects' => ClaimSubject::options(),
             'maxQuestions' => BulkStoreQuestionsRequest::MAX_QUESTIONS,
         ]);
+    }
+
+    /**
+     * AI claims or questions with their index, whether they need checking, and the decision made.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, mixed>  $toCheck  claims that need checking, keyed by index
+     * @return list<array<string, mixed>>
+     */
+    private static function withReviews(array $items, string $itemType, AnswerDraftVersion $version, array $toCheck = []): array
+    {
+        $reviews = $version->reviews->where('item_type', $itemType)->keyBy('item_index');
+
+        return array_map(function (int $index, array $item) use ($reviews, $toCheck): array {
+            $review = $reviews->get($index);
+
+            return [
+                ...$item,
+                'index' => $index,
+                'to_check' => array_key_exists($index, $toCheck),
+                'review' => $review === null ? null : [
+                    'decision' => $review->decision,
+                    'claim_status' => $review->claim?->status->value,
+                ],
+            ];
+        }, array_keys($items), $items);
     }
 
     public function store(SaveQuestionRequest $request, JobApplication $application): RedirectResponse

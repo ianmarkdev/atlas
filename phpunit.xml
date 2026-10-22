@@ -31,6 +31,11 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="EMBEDDINGS_PROVIDER" value="fake"/>
+        <!-- Local model choices in .env must not change what the tests see. -->
+        <env name="AI_PROVIDER" value="ollama" force="true"/>
+        <env name="AI_ALLOW_EXTERNAL" value="false" force="true"/>
+        <env name="AI_ANSWER_WRITING_OLLAMA_MODEL" value="qwen2.5:7b" force="true"/>
+        <env name="AI_RESUME_TAILORING_OLLAMA_MODEL" value="qwen2.5:7b" force="true"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

@@ -73,6 +73,16 @@ return [
             'temperature' => 0.2,
             'timeout' => 420,
         ],
+        'achievement_suggestions' => [
+            'provider' => env('AI_ACHIEVEMENT_SUGGESTIONS_PROVIDER'),
+            'models' => [
+                'ollama' => env('AI_ACHIEVEMENT_SUGGESTIONS_OLLAMA_MODEL', 'qwen2.5:3b'),
+                'claude' => env('AI_ACHIEVEMENT_SUGGESTIONS_CLAUDE_MODEL', 'claude-haiku-5-5'),
+            ],
+            'max_tokens' => 2000,
+            'temperature' => 0.2,
+            'timeout' => 180,
+        ],
         'claim_check' => [
             'provider' => env('AI_CLAIM_CHECK_PROVIDER'),
             'models' => [

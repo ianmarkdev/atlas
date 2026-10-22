@@ -56,7 +56,8 @@ class AnswerDraft extends Model
 
     /**
      * An AI-written current version with claims to confirm (labelled `proposed` or lowered by the
-     * server check) that nobody has reviewed yet. It cannot be approved (docs/04 §4.5).
+     * server check) that are not settled yet, one by one (M9) or all at once. It cannot be
+     * approved (docs/04 §4.5).
      */
     public function needsClaimReview(): bool
     {
@@ -66,7 +67,7 @@ class AnswerDraft extends Model
             return false;
         }
 
-        return $version->claimsToCheck() !== [];
+        return $version->openClaims() !== [];
     }
 
     public function body(): string

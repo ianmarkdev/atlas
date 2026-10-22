@@ -57,6 +57,13 @@ class KnowledgeProposalResource extends JsonResource
         return [
             'ulid' => $this->ulid,
             'status' => $this->status->value,
+            'origin' => $this->origin,
+            // An AI achievement suggestion: the question to answer and the draft to complete (M9).
+            'suggestion' => $this->origin !== 'achievement_suggestion' || ! $target instanceof Claim ? null : [
+                'question' => $this->rationale,
+                'current' => $target->statement(),
+                'draft' => (string) ($this->payload['statement'] ?? ''),
+            ],
             'target_type' => $this->target_type,
             'target_label' => $target === null ? __('Deleted item') : $this->targetLabel($target),
             'changes' => $target === null ? [] : $this->changes($target),

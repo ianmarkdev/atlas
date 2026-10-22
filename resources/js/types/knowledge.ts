@@ -130,6 +130,12 @@ export type ProposalStatus =
 export type KnowledgeProposal = {
     ulid: string;
     status: ProposalStatus;
+    origin: 'manual' | 'feedback' | 'achievement_suggestion' | 'clarification';
+    suggestion: {
+        question: string | null;
+        current: string;
+        draft: string;
+    } | null;
     target_type:
         | 'claim'
         | 'employment'

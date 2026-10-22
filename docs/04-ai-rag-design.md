@@ -71,9 +71,9 @@ For each claim from the model:
 7. Approval gate: an answer cannot be approved while it has `open` claims classified `proposed` or flagged — user must accept (keep as hedged wording), edit, remove, or "convert to proposal" (creates a `knowledge_proposal` for the candidate). Hypothetical claims are allowed but shown with a label.
 
 ## 4.6 Achievement suggestions
-- Triggered (a) during generation (schema field above), (b) by a scheduled "knowledge health" job over claims of kind `responsibility` with no linked `achievement/metric` (Haiku, batched, budget-capped).
-- Stored as `knowledge_proposals(origin=achievement_suggestion, proposal_type=create_claim, payload={draft_statement_with_placeholders, questions[]})`, status `pending`.
-- UI: candidate answers the question (e.g. "about 6 hours/week"), edits the draft statement, confirms → claim `verified` with `claim_sources(user_confirmation)`; reject → stored rejection (prevents re-suggesting via `rejected_suggestion_hash`).
+- Triggered (a) during generation: the answer's `clarification_questions` are answered in its AI check, each answer becoming a bullet point; (b) by the "knowledge health" pass `SuggestAchievements` (weekly `app:suggest-achievements`, or **Find achievements** on Suggested changes) over verified responsibility/achievement claims without any number (local `qwen2.5:3b` by default, up to 15 bullets per run, budget-guarded).
+- Stored as `knowledge_proposals(origin=achievement_suggestion, proposal_type=revise_claim, target = the claim, base_version = its current revision, payload={statement: draft with [confirm: …] placeholders, kind: achievement, change_reason}, rationale = the question)`, status `pending`. The server keeps only suggestions for bullets it offered, with at least one placeholder and no number outside the placeholders.
+- UI (Library → Suggested changes, candidate only): the candidate turns the draft into the real statement and saves (refused while placeholders remain) → the claim gets a new revision through ClaimService, stays `verified` and becomes kind `achievement`; "Doesn't apply" rejects it. A bullet is not suggested again while it is at the revision a suggestion was decided on; editing the bullet makes it eligible again (this replaces `rejected_suggestion_hash`).
 
 ## 4.7 Feedback and approval pipeline
 1. Human edit saved → new `answer_version(author=user)`.

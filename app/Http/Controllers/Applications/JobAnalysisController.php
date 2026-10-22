@@ -7,8 +7,6 @@ use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobAnalysisService;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\ClaimSubject;
-use App\Domain\Knowledge\Employment;
-use App\Domain\Knowledge\Project;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,29 +76,9 @@ class JobAnalysisController extends Controller
                     'answer' => $clarification->answer_text,
                     'answered_by' => $clarification->answerer?->name,
                 ])->values()->all(),
-            'subjects' => self::subjectOptions(),
+            'subjects' => ClaimSubject::options(),
             'canUpdate' => $request->user()->can('update', $application),
         ]);
-    }
-
-    /**
-     * Where an answered gap's bullet point can go: general, or one of the jobs or projects.
-     *
-     * @return list<array{value: string, label: string}>
-     */
-    private static function subjectOptions(): array
-    {
-        $options = [['value' => 'general', 'label' => __('General (not tied to a job or project)')]];
-
-        foreach (Employment::query()->notArchived()->orderByDesc('start_date')->get() as $employment) {
-            $options[] = ['value' => ClaimSubject::key($employment), 'label' => "{$employment->title} — {$employment->employer_name}"];
-        }
-
-        foreach (Project::query()->notArchived()->orderByDesc('start_date')->get() as $project) {
-            $options[] = ['value' => ClaimSubject::key($project), 'label' => __('Project: :name', ['name' => $project->name])];
-        }
-
-        return $options;
     }
 
     public function store(Request $request, JobApplication $application): RedirectResponse
