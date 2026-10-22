@@ -163,7 +163,7 @@ class ApplicationQuestionService
     }
 
     /**
-     * @throws ValidationException for an empty answer or one over the question's limits
+     * @throws ValidationException for an empty answer, one over the question's limits, or one with AI placeholders left in
      */
     public function approveAnswer(ApplicationQuestion $question, User $actor): void
     {
@@ -178,6 +178,10 @@ class ApplicationQuestionService
 
         if ($problem !== null) {
             throw ValidationException::withMessages(['body' => __('Too long to approve: :problem', ['problem' => $problem])]);
+        }
+
+        if (preg_match('/\[confirm:[^\]]*\]/iu', $body) === 1) {
+            throw ValidationException::withMessages(['body' => __('Fill in or remove the [confirm: …] placeholders before approving.')]);
         }
 
         $draft->forceFill([

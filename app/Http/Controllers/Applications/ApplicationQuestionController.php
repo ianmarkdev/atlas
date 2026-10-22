@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Applications;
 
+use App\Domain\Applications\AiAnswerService;
 use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
@@ -26,7 +27,7 @@ use Inertia\Response;
  */
 class ApplicationQuestionController extends Controller
 {
-    public function __construct(private ApplicationQuestionService $questions) {}
+    public function __construct(private ApplicationQuestionService $questions, private AiAnswerService $aiAnswers) {}
 
     public function index(Request $request, JobApplication $application): Response
     {
@@ -72,11 +73,27 @@ class ApplicationQuestionController extends Controller
                         'library_entry' => $answer->currentVersion?->libraryEntry?->ulid,
                         'approved_at' => $answer->approved_at?->toIso8601String(),
                         'approved_by' => $answer->approver?->name,
+                        'generation' => $answer->generation_status === null ? null : [
+                            'status' => $answer->generation_status,
+                            'error' => $answer->generation_error,
+                            'requested_at' => $answer->generation_requested_at?->toIso8601String(),
+                        ],
+                        'ai' => $answer->currentVersion?->author_type !== 'ai' ? null : [
+                            'evidence' => collect($answer->currentVersion->evidence_pack ?? [])
+                                ->map(fn (array $item, string $id): array => ['id' => $id, 'status' => $item['status'], 'text' => $item['text']])
+                                ->values()->all(),
+                            'claims' => $answer->currentVersion->grounding ?? [],
+                            'questions' => $answer->currentVersion->clarification_questions ?? [],
+                        ],
                     ],
                     'history' => ($histories[$answer->id ?? 0] ?? collect())->map(fn (AnswerDraftVersion $version): array => [
                         'revision_no' => $version->version_no,
                         'text' => $version->body,
-                        'change_reason' => $version->created_via === 'library' ? __('Inserted from the answer library') : null,
+                        'change_reason' => match ($version->created_via) {
+                            'library' => __('Inserted from the answer library'),
+                            'ai' => __('Drafted with AI'),
+                            default => null,
+                        },
                         'author' => $version->author?->name,
                         'from_suggestion' => false,
                         'created_at' => $version->created_at->toIso8601String(),
@@ -101,6 +118,7 @@ class ApplicationQuestionController extends Controller
             ),
             'hasCoverLetter' => $application->questions->contains(fn (ApplicationQuestion $question): bool => $question->isCoverLetter()),
             'canAdd' => $user->can('update', $application),
+            'hasAnalysis' => $application->analyses()->where('status', 'succeeded')->exists(),
             'maxQuestions' => BulkStoreQuestionsRequest::MAX_QUESTIONS,
         ]);
     }
@@ -171,6 +189,20 @@ class ApplicationQuestionController extends Controller
         $this->questions->saveAnswer($question, $request->body(), $request->libraryEntry(), $request->integer('lock_version'), $request->user());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Answer saved.')]);
+
+        return back();
+    }
+
+    /**
+     * Queue an AI-written draft (M8). It arrives as a new version of the answer.
+     */
+    public function draft(Request $request, JobApplication $application, ApplicationQuestion $question): RedirectResponse
+    {
+        Gate::authorize('update', $question);
+
+        $this->aiAnswers->request($question, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Writing a draft. It appears here when ready.')]);
 
         return back();
     }

@@ -1,5 +1,6 @@
-import { Form, Head, Link, router, usePage } from '@inertiajs/react';
+import { Form, Head, Link, router, usePage, usePoll } from '@inertiajs/react';
 import {
+    AlertTriangle,
     ArrowDown,
     ArrowLeft,
     ArrowUp,
@@ -8,13 +9,16 @@ import {
     CheckCircle2,
     Copy,
     Library,
+    ListChecks,
     ListPlus,
+    Loader2,
     Mail,
     Pencil,
     RotateCcw,
+    Sparkles,
     Trash2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
@@ -58,6 +62,26 @@ type Answer = {
     library_entry: string | null;
     approved_at: string | null;
     approved_by: string | null;
+    generation: {
+        status: 'queued' | 'running' | 'failed';
+        error: string | null;
+        requested_at: string | null;
+    } | null;
+    ai: AiCheck | null;
+};
+
+type ClaimLabel = 'verified' | 'inferred' | 'proposed' | 'hypothetical';
+
+type AiCheck = {
+    evidence: { id: string; status: string; text: string }[];
+    claims: {
+        text: string;
+        classification: ClaimLabel;
+        model_classification: string;
+        evidence_ids: string[];
+        flags: string[];
+    }[];
+    questions: { question: string; why: string }[];
 };
 
 type Question = {
@@ -91,8 +115,13 @@ type PageProps = {
     categories: SelectOption[];
     hasCoverLetter: boolean;
     canAdd: boolean;
+    hasAnalysis: boolean;
     maxQuestions: number;
 };
+
+const isGenerating = (question: Question): boolean =>
+    question.answer?.generation?.status === 'queued' ||
+    question.answer?.generation?.status === 'running';
 
 export default function ApplicationQuestions({
     application,
@@ -101,6 +130,7 @@ export default function ApplicationQuestions({
     categories,
     hasCoverLetter,
     canAdd,
+    hasAnalysis,
     maxQuestions,
 }: PageProps) {
     const answered = questions.filter(
@@ -109,6 +139,17 @@ export default function ApplicationQuestions({
     const approved = questions.filter(
         (q) => q.answer?.status === 'approved',
     ).length;
+    const generating = questions.some(isGenerating);
+    const poll = usePoll(3000, { only: ['questions'] }, { autoStart: false });
+
+    useEffect(() => {
+        if (generating) {
+            poll.start();
+        } else {
+            poll.stop();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [generating]);
 
     return (
         <>
@@ -164,6 +205,23 @@ export default function ApplicationQuestions({
                         )}
                     </div>
                 </div>
+
+                {questions.length > 0 && canAdd && !hasAnalysis && (
+                    <p className="bg-surface-subtle rounded-kraken-sm border border-border-subtle p-3 type-caption text-text-secondary">
+                        Tip: analyse the job description first.{' '}
+                        <strong>Draft with AI</strong> then uses the facts
+                        matched to each requirement, not just a search of your
+                        profile.{' '}
+                        <Link
+                            href={JobApplicationController.show(
+                                application.ulid,
+                            )}
+                            className="underline focus-ring"
+                        >
+                            Back to the application
+                        </Link>
+                    </p>
+                )}
 
                 {questions.length > 0 && (
                     <ol className="space-y-4">
@@ -398,6 +456,26 @@ function QuestionCard({
     const dirty = body !== saved;
     const length = lengthStatus(body, question);
     const routeArgs: [string, string] = [application, question.ulid];
+    const generating = isGenerating(question);
+    const generation = question.answer?.generation ?? null;
+    const hasPlaceholders = /\[confirm:[^\]]*\]/i.test(body);
+
+    const draftWithAi = () => {
+        if (
+            dirty &&
+            !window.confirm(
+                'Your unsaved changes will be lost when the AI draft arrives. Continue?',
+            )
+        ) {
+            return;
+        }
+
+        router.post(
+            ApplicationQuestionController.draft.url(routeArgs),
+            {},
+            { preserveScroll: true, errorBag },
+        );
+    };
 
     const save = () => {
         setSaving(true);
@@ -542,7 +620,7 @@ function QuestionCard({
                         setBody(event.target.value);
                         setLibraryEntry(null);
                     }}
-                    readOnly={approved || !question.can.update}
+                    readOnly={approved || generating || !question.can.update}
                     rows={question.origin === 'cover_letter' ? 14 : 6}
                     aria-label={`Answer to: ${question.prompt_text}`}
                     placeholder="Write your answer, or insert one from your library."
@@ -571,6 +649,29 @@ function QuestionCard({
                         {errors.lock_version}
                     </p>
                 )}
+                {generating && (
+                    <p
+                        className="flex items-center gap-2 type-caption text-text-secondary"
+                        aria-live="polite"
+                    >
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                        {generation?.status === 'queued'
+                            ? 'Waiting to start… (background jobs need a queue worker: php artisan queue:work)'
+                            : 'Writing a draft from your evidence… with a local model this can take a minute or two.'}
+                    </p>
+                )}
+                {generation?.status === 'failed' && (
+                    <p role="alert" className="text-sm text-text-error">
+                        The AI draft failed: {generation.error}
+                    </p>
+                )}
+                {hasPlaceholders && !approved && (
+                    <p className="flex items-center gap-2 type-caption text-text-secondary">
+                        <AlertTriangle className="size-4" aria-hidden />
+                        Replace each [confirm: …] with the real detail, or
+                        remove it, before approving.
+                    </p>
+                )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -580,9 +681,21 @@ function QuestionCard({
                             type="button"
                             size="sm"
                             onClick={save}
-                            disabled={!dirty || saving}
+                            disabled={!dirty || saving || generating}
                         >
                             Save
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={draftWithAi}
+                            disabled={generating}
+                        >
+                            <Sparkles />{' '}
+                            {saved.trim() === ''
+                                ? 'Draft with AI'
+                                : 'Redraft with AI'}
                         </Button>
                         <InsertFromLibrary
                             library={library}
@@ -609,6 +722,9 @@ function QuestionCard({
                         errorBag={errorBag}
                     />
                 )}
+                {question.answer?.ai && (
+                    <AiCheckSheet check={question.answer.ai} />
+                )}
                 <VersionHistory revisions={question.history} />
                 <div className="ml-auto flex gap-2">
                     {question.can.approve && saved.trim() !== '' && (
@@ -623,11 +739,18 @@ function QuestionCard({
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    disabled={processing || dirty}
+                                    disabled={
+                                        processing ||
+                                        dirty ||
+                                        generating ||
+                                        hasPlaceholders
+                                    }
                                     title={
                                         dirty
                                             ? 'Save the answer before approving'
-                                            : undefined
+                                            : hasPlaceholders
+                                              ? 'Fill in the [confirm: …] placeholders first'
+                                              : undefined
                                     }
                                 >
                                     <CheckCircle2 /> Approve
@@ -657,6 +780,187 @@ function QuestionCard({
                 </div>
             </div>
         </article>
+    );
+}
+
+const claimLabels: Record<ClaimLabel, { label: string; hint: string }> = {
+    verified: {
+        label: 'Verified',
+        hint: 'Stated by a fact you confirmed',
+    },
+    inferred: {
+        label: 'Inferred',
+        hint: 'A fair conclusion from your facts — check the wording',
+    },
+    proposed: {
+        label: 'Check this',
+        hint: 'Not in your facts as written — confirm or change it',
+    },
+    hypothetical: {
+        label: 'Not backed',
+        hint: 'An approach or opinion, or a claim with no evidence — keep only if true',
+    },
+};
+
+const flagLabels: Record<string, string> = {
+    unknown_label: 'the AI used an unknown label',
+    unknown_evidence: 'it cited evidence that was not supplied',
+    downgraded_no_verified_evidence:
+        'labelled verified, but no verified fact backs it',
+    downgraded_no_evidence: 'labelled inferred, but it cites no evidence',
+    metric_without_source: 'a number that is not in your facts',
+};
+
+function AiCheckSheet({ check }: { check: AiCheck }) {
+    const unbacked = check.claims.filter(
+        (claim) =>
+            claim.classification === 'proposed' ||
+            claim.classification === 'hypothetical',
+    ).length;
+
+    return (
+        <Sheet>
+            <SheetTrigger asChild>
+                <Button type="button" size="sm" variant="ghost">
+                    <ListChecks /> AI check
+                    {unbacked > 0 && (
+                        <Badge variant="outline" className="ml-1">
+                            {unbacked} to check
+                        </Badge>
+                    )}
+                </Button>
+            </SheetTrigger>
+            <SheetContent className="sm:max-w-xl">
+                <SheetHeader>
+                    <SheetTitle>What the AI draft is based on</SheetTitle>
+                    <SheetDescription>
+                        Each claim is checked on the server against the facts
+                        the AI was given. Labels are only ever lowered, never
+                        raised.
+                    </SheetDescription>
+                </SheetHeader>
+                <div className="space-y-6 overflow-y-auto px-4 pb-4">
+                    <section className="space-y-2">
+                        <h3 className="type-label text-text-label uppercase">
+                            Claims
+                        </h3>
+                        {check.claims.length === 0 ? (
+                            <p className="type-body text-text-muted">
+                                The AI listed no claims.
+                            </p>
+                        ) : (
+                            <ul className="space-y-2">
+                                {check.claims.map((claim, i) => (
+                                    <li
+                                        key={i}
+                                        className="space-y-1 rounded-kraken-sm border border-border-subtle p-3"
+                                    >
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <Badge
+                                                variant={
+                                                    claim.classification ===
+                                                    'verified'
+                                                        ? 'default'
+                                                        : 'outline'
+                                                }
+                                                title={
+                                                    claimLabels[
+                                                        claim.classification
+                                                    ]?.hint
+                                                }
+                                            >
+                                                {claimLabels[
+                                                    claim.classification
+                                                ]?.label ??
+                                                    claim.classification}
+                                            </Badge>
+                                            {claim.evidence_ids.length > 0 && (
+                                                <span className="type-caption text-text-muted">
+                                                    {claim.evidence_ids.join(
+                                                        ', ',
+                                                    )}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-sm text-text-primary">
+                                            {claim.text}
+                                        </p>
+                                        {claim.flags.length > 0 && (
+                                            <p className="type-caption text-text-secondary">
+                                                Lowered:{' '}
+                                                {claim.flags
+                                                    .map(
+                                                        (flag) =>
+                                                            flagLabels[flag] ??
+                                                            flag,
+                                                    )
+                                                    .join('; ')}
+                                            </p>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+
+                    {check.questions.length > 0 && (
+                        <section className="space-y-2">
+                            <h3 className="type-label text-text-label uppercase">
+                                The AI asks
+                            </h3>
+                            <ul className="space-y-2">
+                                {check.questions.map((item, i) => (
+                                    <li
+                                        key={i}
+                                        className="rounded-kraken-sm border border-border-subtle p-3"
+                                    >
+                                        <p className="text-sm font-medium">
+                                            {item.question}
+                                        </p>
+                                        {item.why !== '' && (
+                                            <p className="type-caption text-text-muted">
+                                                {item.why}
+                                            </p>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
+
+                    <section className="space-y-2">
+                        <h3 className="type-label text-text-label uppercase">
+                            Evidence given to the AI
+                        </h3>
+                        {check.evidence.length === 0 ? (
+                            <p className="type-body text-text-muted">
+                                None matched. Add facts to your profile, or
+                                analyse the job description first.
+                            </p>
+                        ) : (
+                            <ul className="space-y-1">
+                                {check.evidence.map((item) => (
+                                    <li key={item.id} className="text-sm">
+                                        <span className="mr-2 font-medium tabular-nums">
+                                            {item.id}
+                                        </span>
+                                        {item.text}
+                                        {item.status === 'proposed' && (
+                                            <Badge
+                                                variant="outline"
+                                                className="ml-2"
+                                            >
+                                                Not verified
+                                            </Badge>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+                </div>
+            </SheetContent>
+        </Sheet>
     );
 }
 

@@ -104,6 +104,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::delete('{question}', [ApplicationQuestionController::class, 'destroy'])->name('destroy');
         Route::patch('{question}/move', [ApplicationQuestionController::class, 'move'])->name('move');
         Route::put('{question}/answer', [ApplicationQuestionController::class, 'saveAnswer'])->name('answer');
+        Route::post('{question}/answer/draft', [ApplicationQuestionController::class, 'draft'])->name('draft');
         Route::patch('{question}/answer/approve', [ApplicationQuestionController::class, 'approve'])->name('approve');
         Route::patch('{question}/answer/reopen', [ApplicationQuestionController::class, 'reopen'])->name('reopen');
         Route::post('{question}/answer/library', [ApplicationQuestionController::class, 'saveToLibrary'])->name('save-to-library');

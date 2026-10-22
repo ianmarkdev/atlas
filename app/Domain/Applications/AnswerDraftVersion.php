@@ -22,11 +22,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $author_type
  * @property int|null $author_user_id
  * @property string $created_via
+ * @property int|null $generation_run_id
+ * @property array<string, array{ref: ?string, status: string, text: string}>|null $evidence_pack
+ * @property list<array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}>|null $grounding
+ * @property list<array{question: string, why: string}>|null $clarification_questions
  * @property CarbonImmutable $created_at
  * @property-read User|null $author
  * @property-read AnswerLibraryEntry|null $libraryEntry
  */
-#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via'])]
+#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'evidence_pack', 'grounding', 'clarification_questions'])]
 class AnswerDraftVersion extends Model
 {
     use BelongsToWorkspace;
@@ -58,6 +62,9 @@ class AnswerDraftVersion extends Model
     {
         return [
             'created_at' => 'datetime',
+            'evidence_pack' => 'array',
+            'grounding' => 'array',
+            'clarification_questions' => 'array',
         ];
     }
 }
