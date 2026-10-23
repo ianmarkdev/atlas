@@ -50,6 +50,8 @@ return [
         'title' => 'Answer "Why do you want to join us?" (200 words)',
         'task' => 'answer_writing',
         'prompt' => 'answer_writing',
+        // v4: the writer labels its own claims, which is what the comparison scores.
+        'prompt_version' => 4,
         'variables' => [
             'company_name' => 'Fabrikam Pay', 'role_title' => 'Senior Backend Engineer', 'job_description' => $jobDescription,
             'question' => 'Why do you want to join Fabrikam Pay, and what would you bring to the Merchant Payments team?',
@@ -62,6 +64,8 @@ return [
         'title' => 'Answer a competency question about batch jobs (150 words)',
         'task' => 'answer_writing',
         'prompt' => 'answer_writing',
+        // v4: the writer labels its own claims, which is what the comparison scores.
+        'prompt_version' => 4,
         'variables' => [
             'company_name' => 'Fabrikam Pay', 'role_title' => 'Senior Backend Engineer', 'job_description' => $jobDescription,
             'question' => 'Tell us about a time you made a slow or unreliable background process better. What did you do, and what changed?',
@@ -74,6 +78,8 @@ return [
         'title' => 'Short cover letter (250 words)',
         'task' => 'answer_writing',
         'prompt' => 'answer_writing',
+        // v4: the writer labels its own claims, which is what the comparison scores.
+        'prompt_version' => 4,
         'variables' => [
             'company_name' => 'Fabrikam Pay', 'role_title' => 'Senior Backend Engineer', 'job_description' => $jobDescription,
             'question' => 'Write a cover letter for this role.',

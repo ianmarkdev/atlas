@@ -27,6 +27,9 @@ use Illuminate\Foundation\Queue\Queueable;
  * have the server check every claim label against that evidence, and store the result as a new
  * version of the answer. Failures are stored on the draft.
  *
+ * With `ai.answer_claims = separate` (the default) the writer writes only the text and
+ * CheckAnswerClaims labels its claims afterwards; until then the draft cannot be approved.
+ *
  * A paragraph redraft runs the answer_paragraph prompt over the version it was requested from
  * and puts the new paragraph back in place (AiAnswerService::storeParagraph).
  */
@@ -95,9 +98,20 @@ class GenerateAnswerDraft implements ShouldQueue
             ? ['storyline' => $built['storyline']]
             : ParagraphRedraft::context($base->body, $paragraph);
         $requestKey = "answer:{$question->id}:".$draft->generation_requested_at?->getTimestamp().($paragraph === null ? '' : ":p{$paragraph}");
+        // A whole draft's claims are labelled afterwards by CheckAnswerClaims (faster on a small GPU),
+        // unless configured to have the writer label them (answer_writing v4).
+        $checkSeparately = $base === null && config('ai.answer_claims') === 'separate';
 
         try {
-            $result = $gateway->run('answer_writing', $base === null ? 'answer_writing' : 'answer_paragraph', $variables, $requester, purpose: 'answer_generation', idempotencyKey: $requestKey);
+            $result = $gateway->run(
+                'answer_writing',
+                $base === null ? 'answer_writing' : 'answer_paragraph',
+                $variables,
+                $requester,
+                purpose: 'answer_generation',
+                idempotencyKey: $requestKey,
+                promptVersion: $base === null && ! $checkSeparately ? 4 : null,
+            );
         } catch (InvalidModelOutput $exception) {
             $answers->fail($draft, __("The AI's answer was not usable (invalid structure), even after a repair attempt. Try again, or use a larger model."));
 
@@ -115,7 +129,7 @@ class GenerateAnswerDraft implements ShouldQueue
             array_push($claims, ...array_values((array) ($segment['claims'] ?? [])));
         }
 
-        $checked = $grounding->check(self::uniqueClaims($claims), array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack));
+        $checked = $grounding->check(ClaimGroundingValidator::distinct($claims), array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack));
         $clarifications = array_values(array_map(fn (mixed $item): array => [
             'question' => (string) ($item['question'] ?? ''),
             'why' => (string) ($item['why'] ?? ''),
@@ -135,34 +149,7 @@ class GenerateAnswerDraft implements ShouldQueue
             return;
         }
 
-        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checked, $clarifications, $requester, $instruction, $built['resume_version_id']);
-    }
-
-    /**
-     * The model's claims, each statement once (small models repeat claims across segments).
-     *
-     * @param  array<int, mixed>  $claims
-     * @return list<array{text: string, classification: string, evidence_ids: list<string>}>
-     */
-    private static function uniqueClaims(array $claims): array
-    {
-        $unique = [];
-
-        foreach ($claims as $claim) {
-            $key = mb_strtolower(trim((string) ($claim['text'] ?? '')));
-
-            if ($key === '' || isset($unique[$key])) {
-                continue;
-            }
-
-            $unique[$key] = [
-                'text' => (string) ($claim['text'] ?? ''),
-                'classification' => (string) ($claim['classification'] ?? ''),
-                'evidence_ids' => array_values(array_map(strval(...), (array) ($claim['evidence_ids'] ?? []))),
-            ];
-        }
-
-        return array_values($unique);
+        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id']);
     }
 
     /**

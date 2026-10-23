@@ -19,6 +19,34 @@ class ClaimGroundingValidator
     public const LABELS = ['verified', 'inferred', 'proposed', 'hypothetical'];
 
     /**
+     * The model's claims in the shape `check` takes, each statement once (small models repeat
+     * claims).
+     *
+     * @param  array<int, mixed>  $claims
+     * @return list<array{text: string, classification: string, evidence_ids: list<string>}>
+     */
+    public static function distinct(array $claims): array
+    {
+        $unique = [];
+
+        foreach ($claims as $claim) {
+            $key = mb_strtolower(trim((string) ($claim['text'] ?? '')));
+
+            if ($key === '' || isset($unique[$key])) {
+                continue;
+            }
+
+            $unique[$key] = [
+                'text' => (string) ($claim['text'] ?? ''),
+                'classification' => (string) ($claim['classification'] ?? ''),
+                'evidence_ids' => array_values(array_map(strval(...), (array) ($claim['evidence_ids'] ?? []))),
+            ];
+        }
+
+        return array_values($unique);
+    }
+
+    /**
      * @param  list<array{text: string, classification: string, evidence_ids: list<string>}>  $claims
      * @param  array<string, array{status: string, text: string}>  $evidence  by evidence id ("E1")
      * @return list<array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}>

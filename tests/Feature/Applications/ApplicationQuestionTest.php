@@ -220,6 +220,18 @@ test('answer versions cannot be edited once written', function () {
     inWorkspaceOf($candidate, fn () => AnswerDraftVersion::query()->update(['body' => 'Tampered']));
 })->throws(QueryException::class, 'append-only');
 
+test('claim labels are filled in once, and only together with nothing else', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = trackedApplicationOf($candidate);
+    answerTo($candidate, $application, questionOn($candidate, $application), 'Original');
+    $labels = json_encode([['text' => 'Original', 'classification' => 'hypothetical', 'model_classification' => 'hypothetical', 'evidence_ids' => [], 'flags' => []]]);
+
+    inWorkspaceOf($candidate, fn () => AnswerDraftVersion::query()->update(['grounding' => $labels]));
+
+    expect(fn () => inWorkspaceOf($candidate, fn () => AnswerDraftVersion::query()->update(['grounding' => '[]'])))
+        ->toThrow(QueryException::class, 'append-only');
+});
+
 test('the questions of another workspace\'s application respond 404', function () {
     $owner = candidateWithTwoFactor();
     $application = trackedApplicationOf($owner);

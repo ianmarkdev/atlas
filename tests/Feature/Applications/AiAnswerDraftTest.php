@@ -302,3 +302,84 @@ describe('redrafting one paragraph', function () {
             ->and($draft->generation_error)->toBe('The AI gave the paragraph back unchanged. Try again with an instruction, or with a larger model.');
     });
 });
+
+test('draft all writes every question without an answer, the cover letter last', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $first = questionToDraft($candidate, $application, 'Why us?');
+    $answered = questionToDraft($candidate, $application, 'Your notice period?');
+    $this->actingAs($candidate)->put(route('applications.questions.answer', [$application, $answered]), ['body' => 'One month.', 'lock_version' => 0]);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([
+        answerOutput('Because of the product.', []),
+        answerOutput('Dear hiring team, …', []),
+    ]));
+
+    $this->actingAs($candidate)
+        ->post(route('applications.questions.draft-all', $application))
+        ->assertInertiaFlash('toast.message', 'Writing 2 drafts, one after another. Each appears here when ready.');
+
+    expect($fake->requests)->toHaveCount(2)
+        ->and($fake->requests[0]->messages[0]['content'])->toContain('Question: Why us?')
+        ->and($fake->requests[1]->messages[0]['content'])->toContain('Write a cover letter')
+        ->and(draftOf($candidate, $first)->body())->toBe('Because of the product.')
+        ->and(draftOf($candidate, $answered)->body())->toBe('One month.');
+
+    $this->actingAs($candidate)
+        ->post(route('applications.questions.draft-all', $application))
+        ->assertInertiaFlash('toast.message', 'Every question already has an answer or a draft on the way.');
+});
+
+describe('claims labelled by a separate check', function () {
+    beforeEach(fn () => config(['ai.answer_claims' => 'separate']));
+
+    test('the writer writes only the text, and the claim check labels its claims afterwards', function () {
+        $candidate = candidateWithTwoFactor();
+        $application = draftedApplicationOf($candidate);
+        claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
+        $question = questionToDraft($candidate, $application);
+        $fake = app(LlmRouter::class)->fake(new FakeLlmClient([
+            ['answer' => 'I tuned PostgreSQL for a billing platform, cutting latency by 60%.', 'clarification_questions' => []],
+            ['claims' => [
+                ['text' => 'I tuned PostgreSQL for a billing platform', 'classification' => 'verified', 'evidence_ids' => ['E1'], 'issue' => ''],
+                ['text' => 'cutting latency by 60%', 'classification' => 'verified', 'evidence_ids' => ['E1'], 'issue' => 'number not in evidence'],
+            ]],
+        ]));
+
+        $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+        $draft = draftOf($candidate, $question);
+        expect($fake->requests[0]->schema['required'])->toBe(['answer', 'clarification_questions'])
+            ->and($fake->requests[1]->system)->toStartWith('You check a draft')
+            ->and($fake->requests[1]->messages[0]['content'])->toContain('I tuned PostgreSQL for a billing platform, cutting latency by 60%.')
+            ->and($draft->generation_status)->toBeNull()
+            ->and(array_column($draft->currentVersion->grounding, 'classification'))->toBe(['verified', 'proposed'])
+            ->and($draft->needsClaimReview())->toBeTrue();
+    });
+
+    test('an unlabelled draft cannot be approved until someone checks it as a whole', function () {
+        $candidate = candidateWithTwoFactor();
+        $application = draftedApplicationOf($candidate);
+        $question = questionToDraft($candidate, $application);
+        // The claim check answers with unusable output twice (with its repair attempt).
+        app(LlmRouter::class)->fake(new FakeLlmClient([
+            ['answer' => 'I would bring calm to Fabrikam.', 'clarification_questions' => []],
+            'not json', 'still not json',
+        ]));
+
+        $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+        $draft = draftOf($candidate, $question);
+        expect($draft->currentVersion->grounding)->toBeNull()
+            ->and($draft->generation_status)->toBe('failed')
+            ->and($draft->generation_error)->toContain('could not label');
+        $this->actingAs($candidate)
+            ->patch(route('applications.questions.approve', [$application, $question]))
+            ->assertSessionHasErrors('body');
+
+        $this->actingAs($candidate)->patch(route('applications.questions.claims-reviewed', [$application, $question]));
+        $this->actingAs($candidate)
+            ->patch(route('applications.questions.approve', [$application, $question]))
+            ->assertSessionHasNoErrors();
+    });
+});

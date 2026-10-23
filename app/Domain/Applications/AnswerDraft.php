@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $current_version_id
  * @property int|null $approved_version_id
  * @property string $status
- * @property string|null $generation_status queued|running|failed while/after an AI draft was requested
+ * @property string|null $generation_status queued|running|failed while/after an AI draft was requested; checking while its claims are labelled (CheckAnswerClaims)
  * @property string|null $generation_error
  * @property CarbonImmutable|null $generation_requested_at
  * @property int|null $generation_requested_by
@@ -69,7 +69,8 @@ class AnswerDraft extends Model
             return false;
         }
 
-        return $version->openClaims() !== [];
+        // Not labelled yet (CheckAnswerClaims still running, or it failed): nothing is known to be backed.
+        return $version->grounding === null || $version->openClaims() !== [];
     }
 
     public function body(): string

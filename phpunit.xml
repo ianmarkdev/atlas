@@ -36,6 +36,8 @@
         <env name="AI_ALLOW_EXTERNAL" value="false" force="true"/>
         <env name="AI_ANSWER_WRITING_OLLAMA_MODEL" value="qwen2.5:7b" force="true"/>
         <env name="AI_RESUME_TAILORING_OLLAMA_MODEL" value="qwen2.5:7b" force="true"/>
+        <!-- Most answer tests give the writer's claims inline; the separate check has its own tests. -->
+        <env name="AI_ANSWER_CLAIMS" value="inline" force="true"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

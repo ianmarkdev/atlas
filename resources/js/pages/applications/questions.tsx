@@ -70,7 +70,7 @@ type Answer = {
     approved_at: string | null;
     approved_by: string | null;
     generation: {
-        status: 'queued' | 'running' | 'failed';
+        status: 'queued' | 'running' | 'checking' | 'failed';
         error: string | null;
         requested_at: string | null;
         /** 1-based paragraph being redrafted; null for the whole answer. */
@@ -115,6 +115,8 @@ type AiCheck = {
     from_resume_version: number | null;
     to_check: number;
     needs_review: boolean;
+    /** False until the separate claim check has labelled this draft (or when it failed). */
+    labelled: boolean;
 };
 
 type Question = {
@@ -162,6 +164,10 @@ const isGenerating = (question: Question): boolean =>
     question.answer?.generation?.status === 'queued' ||
     question.answer?.generation?.status === 'running';
 
+/** An AI draft is written and its claims are being labelled. */
+const isChecking = (question: Question): boolean =>
+    question.answer?.generation?.status === 'checking';
+
 /** An edit of an AI draft is being turned into suggestions (M10). */
 const isLearning = (question: Question): boolean =>
     question.answer?.feedback?.status === 'pending_analysis';
@@ -186,6 +192,15 @@ export default function ApplicationQuestions({
     ).length;
     const generating = questions.some(isGenerating);
     const learning = questions.some(isLearning);
+    const checking = questions.some(isChecking);
+    // Same rule as the server: no text yet, not approved, no draft on the way.
+    const unanswered = questions.filter(
+        (q) =>
+            (q.answer?.body ?? '').trim() === '' &&
+            q.answer?.status !== 'approved' &&
+            !isGenerating(q),
+    ).length;
+    const [drafting, setDrafting] = useState(false);
     // The sidebar's suggestion count changes when learning finishes.
     const poll = usePoll(
         3000,
@@ -194,13 +209,13 @@ export default function ApplicationQuestions({
     );
 
     useEffect(() => {
-        if (generating || learning) {
+        if (generating || learning || checking) {
             poll.start();
         } else {
             poll.stop();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [generating, learning]);
+    }, [generating, learning, checking]);
 
     return (
         <>
@@ -233,6 +248,37 @@ export default function ApplicationQuestions({
                         />
                         {answered > 0 && (
                             <CopyAllButton questions={questions} />
+                        )}
+                        {canAdd && unanswered > 0 && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={drafting}
+                                onClick={() => {
+                                    if (
+                                        !window.confirm(
+                                            `Draft ${unanswered} ${unanswered === 1 ? 'answer' : 'answers'} with AI? A local model writes them one after another, about 2–3 minutes each. You can keep working meanwhile.`,
+                                        )
+                                    ) {
+                                        return;
+                                    }
+
+                                    router.post(
+                                        ApplicationQuestionController.draftAll.url(
+                                            application.ulid,
+                                        ),
+                                        {},
+                                        {
+                                            preserveScroll: true,
+                                            onStart: () => setDrafting(true),
+                                            onFinish: () => setDrafting(false),
+                                        },
+                                    );
+                                }}
+                            >
+                                <Sparkles /> Draft {unanswered} with AI
+                            </Button>
                         )}
                         {canAdd && !hasCoverLetter && (
                             <Form
@@ -847,6 +893,17 @@ function QuestionCard({
                               : 'Writing a draft from your evidence… with a local model this can take a minute or two.'}
                     </p>
                 )}
+                {generation?.status === 'checking' && (
+                    <p
+                        className="flex items-center gap-2 type-caption text-text-secondary"
+                        aria-live="polite"
+                    >
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                        Draft ready. Labelling its claims against your facts…
+                        you can read and edit it meanwhile; approving waits for
+                        the labels.
+                    </p>
+                )}
                 {generation?.status === 'failed' && (
                     <p role="alert" className="text-sm text-text-error">
                         The AI draft failed: {generation.error}
@@ -981,7 +1038,10 @@ function QuestionCard({
                                             : hasPlaceholders
                                               ? 'Fill in the [confirm: …] placeholders first'
                                               : needsReview
-                                                ? 'Review the AI draft’s unconfirmed claims first'
+                                                ? generation?.status ===
+                                                  'checking'
+                                                    ? 'The AI is still labelling this draft’s claims'
+                                                    : 'Review the AI draft’s unconfirmed claims first'
                                                 : undefined
                                     }
                                 >
@@ -1478,6 +1538,8 @@ function AiCheckSheet({
                             ` Written from version ${check.from_resume_version} of the tailored resume.`}
                         {check.instruction !== null &&
                             ` Instruction: “${check.instruction}”.`}
+                        {!check.labelled &&
+                            ' The claims of this draft are not labelled yet (or the check failed): read it carefully before keeping it as worded.'}
                     </SheetDescription>
                 </SheetHeader>
                 <div className="space-y-6 overflow-y-auto px-4 pb-4">

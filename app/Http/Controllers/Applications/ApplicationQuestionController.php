@@ -107,6 +107,8 @@ class ApplicationQuestionController extends Controller
                             'from_resume_version' => $answer->currentVersion->resumeVersion?->version_no,
                             'to_check' => count($answer->currentVersion->openClaims()),
                             'needs_review' => $answer->needsClaimReview(),
+                            // False while CheckAnswerClaims has not labelled this draft (or could not).
+                            'labelled' => $answer->currentVersion->grounding !== null,
                         ],
                         'feedback' => $learned === null ? null : [
                             'status' => $learned->status,
@@ -281,6 +283,23 @@ class ApplicationQuestionController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => $paragraph === null
             ? __('Writing a draft. It appears here when ready.')
             : __('Redrafting paragraph :n. It appears here when ready.', ['n' => $paragraph + 1])]);
+
+        return back();
+    }
+
+    /**
+     * Queue AI drafts for every question that has no answer yet. A local model writes them one
+     * after another, so this saves clicks, not time.
+     */
+    public function draftAll(Request $request, JobApplication $application): RedirectResponse
+    {
+        Gate::authorize('update', $application);
+
+        $count = count($this->aiAnswers->requestUnanswered($application, $request->user()));
+
+        Inertia::flash('toast', $count === 0
+            ? ['type' => 'error', 'message' => __('Every question already has an answer or a draft on the way.')]
+            : ['type' => 'success', 'message' => trans_choice('{1} Writing 1 draft. It appears here when ready.|[2,*] Writing :count drafts, one after another. Each appears here when ready.', $count, ['count' => $count])]);
 
         return back();
     }

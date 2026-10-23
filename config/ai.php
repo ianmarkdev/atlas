@@ -24,6 +24,15 @@ return [
     */
     'allow_external' => (bool) env('AI_ALLOW_EXTERNAL', false),
 
+    /*
+    | How an AI answer's claims are labelled. "separate": the writer writes only
+    | the text and the faster claim_check task labels its claims afterwards (on
+    | a 4 GB GPU the 7B writer runs at ~5 tokens/s, the 3B checker at ~70, so
+    | this roughly halves a draft). "inline": the writer lists and labels its
+    | claims itself (answer_writing v4).
+    */
+    'answer_claims' => env('AI_ANSWER_CLAIMS', 'separate'),
+
     'providers' => [
         'ollama' => [
             'url' => env('OLLAMA_URL', 'http://127.0.0.1:11434'),

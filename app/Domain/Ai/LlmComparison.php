@@ -16,7 +16,7 @@ class LlmComparison
     public function __construct(private AiGateway $gateway, private ClaimGroundingValidator $grounding) {}
 
     /**
-     * @param  array<string, array{title: string, task: string, prompt: string, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}>  $samples
+     * @param  array<string, array{title: string, task: string, prompt: string, prompt_version?: int, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}>  $samples
      * @param  list<string>  $providers
      * @param  (callable(string $sampleKey, string $provider, LlmComparisonResult $result): void)|null  $progress
      * @return string the batch id
@@ -59,7 +59,7 @@ class LlmComparison
     }
 
     /**
-     * @param  array{title: string, task: string, prompt: string, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}  $sample
+     * @param  array{title: string, task: string, prompt: string, prompt_version?: int, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}  $sample
      */
     private function runOne(string $batch, string $key, array $sample, string $provider, string $label, ?User $actor): LlmComparisonResult
     {
@@ -77,7 +77,7 @@ class LlmComparison
         $variables = [...$sample['variables'], 'evidence' => self::evidenceBlock($sample['evidence'])];
 
         try {
-            $generation = $this->gateway->run($sample['task'], $sample['prompt'], $variables, $actor, purpose: 'comparison', provider: $provider);
+            $generation = $this->gateway->run($sample['task'], $sample['prompt'], $variables, $actor, purpose: 'comparison', provider: $provider, promptVersion: $sample['prompt_version'] ?? null);
 
             $result->forceFill([
                 'status' => 'succeeded',

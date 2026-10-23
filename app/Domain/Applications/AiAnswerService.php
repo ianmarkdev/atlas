@@ -4,6 +4,7 @@ namespace App\Domain\Applications;
 
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Audit\AuditLogger;
+use App\Jobs\CheckAnswerClaims;
 use App\Jobs\GenerateAnswerDraft;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -65,13 +66,37 @@ class AiAnswerService
     }
 
     /**
+     * Queue AI drafts for every question of the application that has no answer yet, in form
+     * order with the cover letter last (it is written from the resume and the other answers'
+     * evidence). Questions with any text, an approved answer, or a draft on the way are skipped.
+     *
+     * @return list<ApplicationQuestion> the questions queued
+     */
+    public function requestUnanswered(JobApplication $application, User $actor): array
+    {
+        $questions = ApplicationQuestion::query()
+            ->where('job_application_id', $application->id)
+            ->with('answer.currentVersion')
+            ->orderBy('position')
+            ->get()
+            ->filter(fn (ApplicationQuestion $question): bool => $question->answer === null
+                || (! $question->answer->isApproved() && ! $question->answer->isGenerating() && trim($question->answer->body()) === ''))
+            ->sortBy(fn (ApplicationQuestion $question): int => $question->isCoverLetter() ? 1 : 0)
+            ->values();
+
+        return DB::transaction(fn (): array => $questions
+            ->each(fn (ApplicationQuestion $question) => $this->request($question, $actor))
+            ->all());
+    }
+
+    /**
      * Save the generated text as the answer's new current version.
      *
      * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
-     * @param  list<array<string, mixed>>  $grounding
+     * @param  list<array<string, mixed>>|null  $grounding  the checked claims; null when CheckAnswerClaims labels them afterwards
      * @param  list<array{question: string, why: string}>  $clarifications
      */
-    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null): void
+    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, ?array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null): void
     {
         DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
@@ -83,7 +108,7 @@ class AiAnswerService
                 return;
             }
 
-            $this->appendAiVersion($draft, [
+            $version = $this->appendAiVersion($draft, [
                 'body' => $body,
                 'author_user_id' => $requester?->id,
                 'generation_run_id' => $run->id,
@@ -93,7 +118,44 @@ class AiAnswerService
                 'grounding' => $grounding,
                 'clarification_questions' => $clarifications,
             ]);
+
+            if ($grounding === null) {
+                // The text is there to read and edit; approving waits for the labels.
+                $draft->forceFill(['generation_status' => 'checking'])->save();
+                CheckAnswerClaims::dispatch($draft->workspace_id, $version->id);
+            }
         });
+    }
+
+    /**
+     * Store the checked claims of an AI version (CheckAnswerClaims). The draft leaves `checking`
+     * when that version is still the current one.
+     *
+     * @param  list<array<string, mixed>>  $grounding
+     */
+    public function storeClaims(AnswerDraftVersion $version, array $grounding): void
+    {
+        DB::transaction(function () use ($version, $grounding): void {
+            $draft = AnswerDraft::query()->whereKey($version->answer_draft_id)->lockForUpdate()->firstOrFail();
+            $version->forceFill(['grounding' => $grounding])->save();
+
+            if ($draft->generation_status === 'checking') {
+                $draft->forceFill(['generation_status' => null, 'generation_error' => null])->save();
+            }
+        });
+    }
+
+    /**
+     * The claim check failed: the draft stays unlabelled, so it can only be approved after
+     * someone checks it as a whole ("Keep all as worded").
+     */
+    public function failClaimCheck(AnswerDraftVersion $version, string $message): void
+    {
+        $draft = AnswerDraft::query()->whereKey($version->answer_draft_id)->first();
+
+        if ($draft?->generation_status === 'checking') {
+            $this->fail($draft, __('The AI could not label this draft\'s claims (:reason). Read it carefully, then use "Keep all as worded" under AI check, or redraft.', ['reason' => $message]));
+        }
     }
 
     /**

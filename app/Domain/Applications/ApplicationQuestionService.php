@@ -187,6 +187,10 @@ class ApplicationQuestionService
             throw ValidationException::withMessages(['body' => __('Fill in or remove the [confirm: …] placeholders before approving.')]);
         }
 
+        if ($draft->generation_status === 'checking') {
+            throw ValidationException::withMessages(['body' => __('The AI is still labelling this draft\'s claims. Try again in a moment.')]);
+        }
+
         if ($draft->needsClaimReview()) {
             throw ValidationException::withMessages(['body' => __('Check the AI draft\'s unconfirmed claims first: edit them, or mark them as checked under "AI check".')]);
         }

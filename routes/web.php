@@ -102,6 +102,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::post('/', [ApplicationQuestionController::class, 'store'])->name('store');
         Route::post('bulk', [ApplicationQuestionController::class, 'bulkStore'])->name('bulk');
         Route::post('cover-letter', [ApplicationQuestionController::class, 'coverLetter'])->name('cover-letter');
+        Route::post('draft-all', [ApplicationQuestionController::class, 'draftAll'])->name('draft-all');
         Route::put('{question}', [ApplicationQuestionController::class, 'update'])->name('update');
         Route::delete('{question}', [ApplicationQuestionController::class, 'destroy'])->name('destroy');
         Route::patch('{question}/move', [ApplicationQuestionController::class, 'move'])->name('move');
