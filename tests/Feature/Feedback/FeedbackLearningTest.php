@@ -28,7 +28,7 @@ const FB_EDITED = 'I tuned PostgreSQL queries for the billing platform, cutting 
  */
 function fbAnalysis(array $items): array
 {
-    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'same_as' => null, 'drafts' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
+    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'same_as' => null, 'conflicts_with' => null, 'drafts' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
 
     return ['items' => array_map(fn (array $item): array => [...$defaults, ...$item], $items)];
 }
@@ -190,6 +190,63 @@ test('a rule added after the draft was written is not counted as missed, nor sug
     expect(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->sole())->analysis['items'][0]['outcome'])->toBe('skipped')
         ->and(fbProposals($candidate))->toBeEmpty()
         ->and(inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole()->missedIn()->count()))->toBe(0);
+});
+
+test('a learned rule that contradicts one in place is shown beside it, and replaces it only if the reviewer says so', function () {
+    $candidate = candidateWithTwoFactor();
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Keep answers short', 'kind' => 'format']);
+    $old = inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole());
+    ['application' => $application, 'question' => $question] = fbEditedDraft($candidate, $candidate, [fbAnalysis([
+        ['type' => 'writing_preference', 'rule' => 'Give a detailed example in every answer', 'rule_kind' => 'structure', 'personal' => false, 'conflicts_with' => "R{$old->id}"],
+    ])]);
+    fbApprove($candidate, $application, $question);
+    $proposal = fbProposals($candidate)->sole();
+
+    expect($proposal->payload['replaces'])->toBe($old->id);
+    // An edit the old rule was learned from carries over to the rule replacing it.
+    $other = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'one_off']])], claim: inWorkspaceOf($candidate, fn () => Claim::query()->sole()));
+    fbApprove($candidate, $other['application'], $other['question']);
+    $events = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->pluck('id')->all());
+    inWorkspaceOf($candidate, fn () => $old->supportingEdits()->attach($events[1], ['workspace_id' => $old->workspace_id]));
+    $this->actingAs($candidate)
+        ->get(route('knowledge.proposals.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('pending.0.related_rules.0.ulid', $old->ulid)
+            ->where('pending.0.related_rules.0.suggested', true)
+            ->where('pending.0.related_rules.0.can_replace', true));
+
+    $this->actingAs($candidate)
+        ->patch(route('knowledge.proposals.approve', $proposal), ['replaces' => $old->ulid])
+        ->assertSessionHasNoErrors();
+
+    expect(inWorkspaceOf($candidate, fn () => WritingPreference::query()->orderBy('id')->get()->map(fn (WritingPreference $rule): array => [$rule->rule, $rule->status])->all()))
+        ->toBe([['Keep answers short', 'archived'], ['Give a detailed example in every answer', 'active']])
+        ->and(inWorkspaceOf($candidate, fn () => WritingPreference::query()->where('status', 'active')->sole()->supportingEdits()->orderBy('feedback_events.id')->pluck('feedback_events.id')->all()))->toBe($events);
+});
+
+test('a reviewer cannot replace a rule they do not manage', function () {
+    $candidate = candidateWithTwoFactor();
+    $va = vaOf($candidate);
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Keep answers short', 'kind' => 'format']);
+    $shared = inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole());
+    ['application' => $application, 'question' => $question] = fbEditedDraft($candidate, $va, [fbAnalysis([
+        ['type' => 'writing_preference', 'rule' => 'Keep answers very short', 'rule_kind' => 'format', 'personal' => true],
+    ])]);
+    $this->actingAs($va)->post(route('applications.questions.learn', [$application, $question]));
+    $proposal = fbProposals($candidate)->sole();
+
+    $this->actingAs($va)
+        ->get(route('knowledge.proposals.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('pending.0.related_rules.0.ulid', $shared->ulid)
+            ->where('pending.0.related_rules.0.can_replace', false));
+
+    $this->actingAs($va)
+        ->patch(route('knowledge.proposals.approve', $proposal), ['replaces' => $shared->ulid])
+        ->assertSessionHasErrors(['replaces' => 'You cannot replace that rule.']);
+
+    expect(inWorkspaceOf($candidate, fn () => $proposal->fresh()->status))->toBe(ProposalStatus::Pending)
+        ->and(inWorkspaceOf($candidate, fn () => $shared->fresh()->status))->toBe('active');
 });
 
 test('a held rule is not promoted by an id that names no held rule', function () {

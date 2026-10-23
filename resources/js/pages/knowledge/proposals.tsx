@@ -280,6 +280,10 @@ function ProposalCard({
     const [value, setValue] = useState(editable?.value ?? '');
     const [subject, setSubject] = useState(editable?.subject ?? 'general');
     const [drafts, setDrafts] = useState(editable?.drafts ?? 'all');
+    const [replaces, setReplaces] = useState('');
+    const replaceable = proposal.related_rules.filter(
+        (rule) => rule.can_replace,
+    );
 
     return (
         <li className="space-y-3 rounded-lg border p-4">
@@ -381,6 +385,58 @@ function ProposalCard({
                 </p>
             )}
 
+            {proposal.can.decide && proposal.related_rules.length > 0 && (
+                <div className="space-y-2 text-sm">
+                    <p className="font-medium">
+                        Similar rules already in place
+                    </p>
+                    <ul className="space-y-1">
+                        {proposal.related_rules.map((rule) => (
+                            <li key={rule.ulid} className="flex flex-wrap gap-2">
+                                <Badge variant="outline">{rule.kind_label}</Badge>
+                                <span>{rule.rule}</span>
+                                {rule.drafts_label && (
+                                    <span className="type-caption text-text-secondary">
+                                        {rule.drafts_label.toLowerCase()}
+                                    </span>
+                                )}
+                                {rule.suggested && (
+                                    <span className="type-caption text-destructive">
+                                        the AI thinks the new rule contradicts
+                                        this one
+                                    </span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                    {replaceable.length > 0 && (
+                        <div className="grid gap-1 sm:max-w-md">
+                            <Label htmlFor={`replaces_${proposal.ulid}`}>
+                                When approving
+                            </Label>
+                            <NativeSelect
+                                id={`replaces_${proposal.ulid}`}
+                                options={[
+                                    { value: '', label: 'Keep all rules' },
+                                    ...replaceable.map((rule) => ({
+                                        value: rule.ulid,
+                                        label: `Replace “${rule.rule}”`,
+                                    })),
+                                ]}
+                                value={replaces}
+                                onChange={(event) =>
+                                    setReplaces(event.target.value)
+                                }
+                            />
+                            <p className="type-caption text-text-secondary">
+                                To merge two rules, edit the wording to cover
+                                both and replace the old one.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {proposal.can.decide && (
                 <div className="space-y-3 border-t pt-3">
                     {editable && editing && (
@@ -432,8 +488,8 @@ function ProposalCard({
                         <Form
                             {...ProposalController.approve.form(proposal.ulid)}
                             options={{ preserveScroll: true }}
-                            transform={(data) =>
-                                editable && editing
+                            transform={(data) => ({
+                                ...(editable && editing
                                     ? {
                                           ...data,
                                           [editable.field]: value,
@@ -444,8 +500,9 @@ function ProposalCard({
                                               ? { drafts }
                                               : {}),
                                       }
-                                    : data
-                            }
+                                    : data),
+                                ...(replaces !== '' ? { replaces } : {}),
+                            })}
                         >
                             {({ processing, errors }) => (
                                 <>
@@ -461,6 +518,7 @@ function ProposalCard({
                                             errors.body ??
                                             errors.rule ??
                                             errors.subject ??
+                                            errors.replaces ??
                                             errors.lock_version
                                         }
                                     />

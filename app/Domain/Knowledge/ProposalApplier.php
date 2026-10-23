@@ -56,8 +56,8 @@ class ProposalApplier
     }
 
     /**
-     * @param  array{statement?: string, body?: string, rule?: string, subject?: Employment|Project|null, drafts?: WritingPreferenceDrafts}  $edits
-     *                                                                                                                                               the reviewer's final wording (edit-then-approve)
+     * @param  array{statement?: string, body?: string, rule?: string, subject?: Employment|Project|null, drafts?: WritingPreferenceDrafts, replaces?: WritingPreference}  $edits
+     *                                                                                                                                                                             the reviewer's final wording (edit-then-approve)
      *
      * @throws ValidationException when applying fails (a duplicate, `[confirm: …]` placeholders left)
      */
@@ -101,6 +101,7 @@ class ProposalApplier
                 $via,
                 $edits['drafts'] ?? WritingPreferenceDrafts::tryFrom((string) ($payload['drafts'] ?? '')) ?? WritingPreferenceDrafts::All,
                 array_values(array_filter((array) ($payload['supported_by'] ?? []), is_int(...))),
+                $edits['replaces'] ?? null,
             ),
             'revise_resume_variant' => $this->resumes->save(
                 $target,

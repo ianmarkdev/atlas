@@ -177,6 +177,16 @@ export type KnowledgeProposal = {
         /** For a writing rule: which drafts it is used for. */
         drafts: string | null;
     } | null;
+    /** For a new writing rule: rules in place it may repeat or contradict. */
+    related_rules: {
+        ulid: string;
+        rule: string;
+        kind_label: string;
+        drafts_label: string | null;
+        /** The AI named it as contradicted by the new rule. */
+        suggested: boolean;
+        can_replace: boolean;
+    }[];
     personal: boolean;
     rationale: string | null;
     proposed_by: string | null;

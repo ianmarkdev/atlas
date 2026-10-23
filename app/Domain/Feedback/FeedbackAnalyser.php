@@ -35,6 +35,8 @@ use App\Domain\Shared\WordDiff;
  *   new rule repeats (`same_as`), however differently it is worded. The suggestion carries
  *   the edits it was seen in and the drafts it is for (only cover letters or only question
  *   answers when every one of those edits was of that kind);
+ *   A rule in place that the new one contradicts (`conflicts_with`) is named in the suggestion
+ *   (`replaces`) for the reviewer to replace on approval;
  * - a writing rule the AI draft was already written with is not suggested again: the edit is
  *   kept as a miss of that rule (outcome `missed`), for the candidate to see, and nothing changes;
  * - a reusable answer (not a cover letter, not already in the library) becomes a
@@ -223,12 +225,19 @@ class FeedbackAnalyser
             return ['held', 'waiting to see the same rule in another edit'];
         }
 
+        // A rule in place the AI says this one contradicts: offered to the reviewer to replace, never replaced by itself.
+        $conflictsWith = (string) ($item['conflicts_with'] ?? '');
+        $replaces = str_starts_with($conflictsWith, 'R')
+            ? WritingPreference::query()->appliesTo($owner)->whereKey((int) substr($conflictsWith, 1))->value('id')
+            : null;
+
         $this->proposals->suggest('create_writing_preference', null, [
             'rule' => $rule,
             'kind' => (WritingPreferenceKind::tryFrom((string) ($item['rule_kind'] ?? '')) ?? WritingPreferenceKind::Tone)->value,
             'scope' => $owner === null ? 'profile' : 'user',
             'drafts' => $this->draftsFor($event, $item, $earlierEventId)->value,
             'supported_by' => array_values(array_filter([$event->id, $earlierEventId])),
+            ...($replaces === null ? [] : ['replaces' => $replaces]),
         ], $this->rationale($item), [...$this->from($event, $run), 'reviewer' => $owner]);
 
         return ['proposed', null];

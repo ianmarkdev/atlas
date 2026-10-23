@@ -12,10 +12,12 @@ use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\ProposalStatus;
+use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Knowledge\WritingPreferenceKind;
 use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Shared\WordDiff;
+use App\Models\User;
 use BackedEnum;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
@@ -57,6 +59,12 @@ class KnowledgeProposalResource extends JsonResource
     /** Fields shown with a word diff. */
     private const TEXT_FIELDS = ['statement', 'body', 'summary', 'rule'];
 
+    /** At most this many rules in place are shown beside a new writing rule. */
+    private const RELATED_RULES = 5;
+
+    /** Words too common in writing rules to make two rules look related. */
+    private const COMMON_WORDS = ['always', 'never', 'with', 'your', 'that', 'this', 'when', 'from', 'about', 'every', 'each', 'answer', 'answers', 'draft', 'drafts', 'write', 'words'];
+
     /**
      * Transform the resource into an array.
      *
@@ -84,6 +92,7 @@ class KnowledgeProposalResource extends JsonResource
             'target_label' => $isMissing ? __('Deleted item') : $this->targetLabel($target),
             'changes' => $isMissing ? [] : $this->changes($target),
             'editable' => $isPending ? $this->editable() : null,
+            'related_rules' => $isPending && $this->proposal_type === 'create_writing_preference' ? $this->relatedRules($request->user()) : [],
             'personal' => $this->reviewer_user_id !== null,
             'rationale' => $this->rationale,
             'proposed_by' => $this->proposer?->name ?? ($this->proposed_by_run_id !== null ? __('AI') : null),
@@ -163,6 +172,51 @@ class KnowledgeProposalResource extends JsonResource
             'subject' => $this->proposal_type === 'create_claim' ? (string) ($this->payload['subject'] ?? 'general') : null,
             'drafts' => $this->proposal_type === 'create_writing_preference' ? (string) ($this->payload['drafts'] ?? WritingPreferenceDrafts::All->value) : null,
         ];
+    }
+
+    /**
+     * Rules in place that a new writing rule may repeat or contradict, for the reviewer to keep or
+     * replace: the one the AI named first, then those of the same kind or sharing a significant
+     * word, most words in common first.
+     *
+     * @return list<array{ulid: string, rule: string, kind_label: string, drafts_label: string|null, suggested: bool, can_replace: bool}>
+     */
+    private function relatedRules(?User $viewer): array
+    {
+        $owner = $this->reviewer_user_id === null ? null : User::query()->find($this->reviewer_user_id);
+        $words = self::significantWords((string) ($this->payload['rule'] ?? ''));
+        $suggestedId = (int) ($this->payload['replaces'] ?? 0);
+
+        return WritingPreference::query()->appliesTo($owner)->oldest()->get()
+            ->map(fn (WritingPreference $rule): array => [
+                'rule' => $rule,
+                'suggested' => $rule->id === $suggestedId,
+                'shared' => count(array_intersect($words, self::significantWords($rule->rule))),
+                'same_kind' => $rule->kind->value === ($this->payload['kind'] ?? null),
+            ])
+            ->filter(fn (array $match): bool => $match['suggested'] || $match['same_kind'] || $match['shared'] > 0)
+            ->sortBy([['suggested', 'desc'], ['shared', 'desc'], ['same_kind', 'desc']])
+            ->take(self::RELATED_RULES)
+            ->map(fn (array $match): array => [
+                'ulid' => $match['rule']->ulid,
+                'rule' => $match['rule']->rule,
+                'kind_label' => $match['rule']->kind->label(),
+                'drafts_label' => $match['rule']->drafts === WritingPreferenceDrafts::All ? null : $match['rule']->drafts->label(),
+                'suggested' => $match['suggested'],
+                'can_replace' => $viewer?->can('archive', $match['rule']) ?? false,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function significantWords(string $rule): array
+    {
+        $words = explode(' ', WritingPreference::normalizeRule($rule));
+
+        return array_values(array_unique(array_filter($words, fn (string $word): bool => mb_strlen($word) >= 4 && ! in_array($word, self::COMMON_WORDS, true))));
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Domain\Knowledge\ClaimSubject;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\ProposalService;
 use App\Domain\Knowledge\ProposalStatus;
+use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Shared\PlainText;
 use App\Domain\Tenancy\TenantContext;
@@ -98,7 +99,8 @@ class ProposalController extends Controller
     }
 
     /**
-     * Approve as suggested, or with the reviewer's own wording (edit-then-approve). Route
+     * Approve as suggested, or with the reviewer's own wording (edit-then-approve). A new writing
+     * rule may replace a rule in place the reviewer manages (`replaces`, its ulid). Route
      * middleware `can:decide,proposal`.
      */
     public function approve(Request $request, KnowledgeProposal $proposal): RedirectResponse
@@ -109,6 +111,7 @@ class ProposalController extends Controller
             'rule' => ['nullable', 'string', 'max:200'],
             'subject' => ['nullable', 'string', 'max:100'],
             'drafts' => ['nullable', Rule::enum(WritingPreferenceDrafts::class)],
+            'replaces' => ['nullable', 'string', 'max:26'],
         ]);
 
         $edits = [];
@@ -133,6 +136,16 @@ class ProposalController extends Controller
 
         if ($proposal->proposal_type === 'create_writing_preference' && isset($validated['drafts'])) {
             $edits['drafts'] = WritingPreferenceDrafts::from($validated['drafts']);
+        }
+
+        if ($proposal->proposal_type === 'create_writing_preference' && isset($validated['replaces'])) {
+            $replaced = WritingPreference::query()->where('ulid', $validated['replaces'])->first();
+
+            if ($replaced === null || ! $request->user()->can('archive', $replaced)) {
+                throw ValidationException::withMessages(['replaces' => __('You cannot replace that rule.')]);
+            }
+
+            $edits['replaces'] = $replaced;
         }
 
         $applied = $this->proposals->approve($proposal, $request->user(), $edits);
