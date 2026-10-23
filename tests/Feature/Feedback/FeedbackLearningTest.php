@@ -174,7 +174,7 @@ test('an edit that applies a rule the draft was written with is kept as a miss o
         ->assertInertia(fn (Assert $page) => $page->where('shared.0.missed_in', 1));
 });
 
-test('a rule added after the draft was written is not counted as missed, nor suggested again', function () {
+test('a rule added after the draft was written is not counted as missed, nor suggested again, but counts the edit as one it was seen in', function () {
     $candidate = candidateWithTwoFactor();
     $ruleId = null;
     ['application' => $application, 'question' => $question] = fbEditedDraft($candidate, $candidate, [
@@ -187,9 +187,27 @@ test('a rule added after the draft was written is not counted as missed, nor sug
 
     fbApprove($candidate, $application, $question);
 
-    expect(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->sole())->analysis['items'][0]['outcome'])->toBe('skipped')
+    $event = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->sole());
+    $rule = inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole());
+    expect($event->analysis['items'][0]['outcome'])->toBe('supported')
         ->and(fbProposals($candidate))->toBeEmpty()
-        ->and(inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole()->missedIn()->count()))->toBe(0);
+        ->and(inWorkspaceOf($candidate, fn () => $rule->missedIn()->count()))->toBe(0)
+        ->and(inWorkspaceOf($candidate, fn () => $rule->supportingEdits()->pluck('feedback_events.id')->all()))->toBe([$event->id]);
+});
+
+test('a rule only like a held one stays apart from it: both wait for their own second sighting', function () {
+    $candidate = candidateWithTwoFactor();
+    $first = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false, 'confidence' => 0.5]])]);
+    fbApprove($candidate, $first['application'], $first['question']);
+
+    $second = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Write in a British tone', 'rule_kind' => 'tone', 'personal' => false, 'confidence' => 0.5]])], claim: $first['claim']);
+    fbApprove($candidate, $second['application'], $second['question']);
+    $third = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'one_off']])], claim: $first['claim']);
+    fbApprove($candidate, $third['application'], $third['question']);
+
+    [$firstEvent, $secondEvent] = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->limit(2)->pluck('id')->all());
+    expect(fbProposals($candidate))->toBeEmpty()
+        ->and($third['fake']->requests[1]->messages[0]['content'])->toContain("<rule id=\"H{$secondEvent}.0\">Write in a British tone</rule>\n<rule id=\"H{$firstEvent}.0\">Use British spelling</rule>");
 });
 
 test('a learned rule that contradicts one in place is shown beside it, and replaces it only if the reviewer says so', function () {

@@ -18,9 +18,9 @@ use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Knowledge\WritingPreferenceKind;
-use App\Domain\Knowledge\WritingPreferenceService;
 use App\Domain\Shared\PlainText;
 use App\Domain\Shared\WordDiff;
+use App\Models\User;
 
 /**
  * Turns the AI's reading of an edit into proposals (M10, docs/04 §4.7), checking each item on
@@ -39,6 +39,8 @@ use App\Domain\Shared\WordDiff;
  *   (`replaces`) for the reviewer to replace on approval;
  * - a writing rule the AI draft was already written with is not suggested again: the edit is
  *   kept as a miss of that rule (outcome `missed`), for the candidate to see, and nothing changes;
+ * - a writing rule already in place that the draft was not written with (added since) is not
+ *   suggested again either: the edit is kept as one more it was seen in (outcome `supported`);
  * - a reusable answer (not a cover letter, not already in the library) becomes a
  *   `create_library_answer`;
  * - a one-off is recorded and nothing else.
@@ -58,7 +60,6 @@ class FeedbackAnalyser
 
     public function __construct(
         private ProposalService $proposals,
-        private WritingPreferenceService $preferences,
         private DuplicateClaimDetector $duplicates,
     ) {}
 
@@ -106,7 +107,7 @@ class FeedbackAnalyser
 
     /**
      * @param  array<string, mixed>  $output  the model's validated output
-     * @return list<array<string, mixed>> the items with their outcome (`proposed`, `held`, `missed`, `skipped`, `recorded`) and reason
+     * @return list<array<string, mixed>> the items with their outcome (`proposed`, `held`, `missed`, `supported`, `skipped`, `recorded`) and reason
      */
     public function route(FeedbackEvent $event, array $output, GenerationRun $run): array
     {
@@ -208,11 +209,15 @@ class FeedbackAnalyser
             return ['missed', 'the draft was written with this rule and did not follow it'];
         }
 
-        $namesActiveRule = str_starts_with($sameAs, 'R') && WritingPreference::query()->appliesTo($owner)->whereKey((int) substr($sameAs, 1))->exists();
+        $inPlace = $this->ruleInPlace($sameAs, $normalized, $owner);
 
-        if ($namesActiveRule
-            || $this->preferences->exists($rule, $owner)
-            || $this->pendingCreation('create_writing_preference', 'rule', $rule)
+        if ($inPlace !== null) {
+            $inPlace->supportingEdits()->syncWithoutDetaching([$event->id => ['workspace_id' => $inPlace->workspace_id]]);
+
+            return ['supported', 'another edit shows a rule already in place'];
+        }
+
+        if ($this->pendingCreation('create_writing_preference', 'rule', $rule)
             || collect($earlier)->contains(fn (array $seen): bool => WritingPreference::normalizeRule((string) ($seen['rule'] ?? '')) === $normalized)) {
             return ['skipped', 'already a rule or suggested'];
         }
@@ -241,6 +246,18 @@ class FeedbackAnalyser
         ], $this->rationale($item), [...$this->from($event, $run), 'reviewer' => $owner]);
 
         return ['proposed', null];
+    }
+
+    /**
+     * The active rule this one repeats: named by the AI (`R{id}`) or worded the same. Never
+     * one that is only similar; telling those apart is the AI's job, and a person approves.
+     */
+    private function ruleInPlace(string $sameAs, string $normalizedRule, ?User $owner): ?WritingPreference
+    {
+        return WritingPreference::query()
+            ->appliesTo($owner)
+            ->get()
+            ->first(fn (WritingPreference $preference): bool => $sameAs === "R{$preference->id}" || WritingPreference::normalizeRule($preference->rule) === $normalizedRule);
     }
 
     /**
