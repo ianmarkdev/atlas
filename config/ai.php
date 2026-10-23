@@ -152,4 +152,7 @@ return [
     // generation_payloads (encrypted prompt + response bodies, for debugging) are kept this long.
     'payload_retention_days' => 14,
 
+    // …except those behind an application once it is sent (SubmittedWorkRetention).
+    'submitted_payload_retention_days' => 365,
+
 ];

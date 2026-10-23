@@ -10,10 +10,12 @@ final readonly class SearchResult
 {
     /**
      * @param  list<SearchHit>  $hits
+     * @param  EmbeddingModel|null  $embeddingModel  the model the semantic half searched with, when it ran
      */
     public function __construct(
         public array $hits,
         public bool $semantic,
         public ?string $semanticUnavailableReason = null,
+        public ?EmbeddingModel $embeddingModel = null,
     ) {}
 }

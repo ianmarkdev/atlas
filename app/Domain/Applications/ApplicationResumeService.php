@@ -236,10 +236,11 @@ class ApplicationResumeService
      * @param  array<string, mixed>  $document  validated
      * @param  array<string, mixed>  $snapshot
      * @param  array{refused: list<array{item: string, what: string, reason: string, kept: ?string}>, notes: list<string>}  $report
+     * @param  array{job_posting_id?: int|null, job_analysis_id?: int|null}  $inputs  the job description and analysis the AI was given
      */
-    public function storeTailored(ApplicationResume $resume, int $fromVersionId, array $document, array $snapshot, GenerationRun $run, array $report, ?User $requester): void
+    public function storeTailored(ApplicationResume $resume, int $fromVersionId, array $document, array $snapshot, GenerationRun $run, array $report, ?User $requester, array $inputs = []): void
     {
-        DB::transaction(function () use ($resume, $fromVersionId, $document, $snapshot, $run, $report, $requester): void {
+        DB::transaction(function () use ($resume, $fromVersionId, $document, $snapshot, $run, $report, $requester, $inputs): void {
             $current = ApplicationResume::query()->whereKey($resume->id)->lockForUpdate()->firstOrFail();
 
             if ($current->isApproved() || $current->current_version_id !== $fromVersionId) {
@@ -248,7 +249,7 @@ class ApplicationResumeService
                 return;
             }
 
-            $this->appendVersion($current, $document, $snapshot, $requester, 'ai', authorType: 'ai', runId: $run->id, report: $report);
+            $this->appendVersion($current, $document, $snapshot, $requester, 'ai', authorType: 'ai', runId: $run->id, report: $report, inputs: $inputs);
             $current->forceFill([
                 'lock_version' => $current->lock_version + 1,
                 'generation_status' => null,
@@ -281,8 +282,9 @@ class ApplicationResumeService
      * @param  array<string, mixed>  $document
      * @param  array<string, mixed>  $snapshot
      * @param  array<string, mixed>|null  $report
+     * @param  array{job_posting_id?: int|null, job_analysis_id?: int|null}  $inputs
      */
-    private function appendVersion(ApplicationResume $resume, array $document, array $snapshot, ?User $actor, string $via, string $authorType = 'user', ?int $runId = null, ?array $report = null): void
+    private function appendVersion(ApplicationResume $resume, array $document, array $snapshot, ?User $actor, string $via, string $authorType = 'user', ?int $runId = null, ?array $report = null, array $inputs = []): void
     {
         $nextNumber = (int) ApplicationResumeVersion::query()->where('application_resume_id', $resume->id)->max('version_no') + 1;
 
@@ -297,6 +299,7 @@ class ApplicationResumeService
             'parent_version_id' => $resume->current_version_id,
             'generation_run_id' => $runId,
             'ai_report' => $report,
+            ...$inputs,
         ]);
 
         $resume->current_version_id = $version->id;

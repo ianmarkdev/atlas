@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
  */
 class JobApplicationService
 {
-    public function __construct(private AuditLogger $audit, private DuplicateApplicationDetector $duplicates) {}
+    public function __construct(private AuditLogger $audit, private DuplicateApplicationDetector $duplicates, private SubmittedWorkRetention $retention) {}
 
     /**
      * @param  ApplicationDetails  $details
@@ -111,6 +111,11 @@ class JobApplicationService
             $this->applyStage($application, $stage);
             $application->lock_version++;
             $application->save();
+
+            // What was sent is kept for as long as the application may need explaining.
+            if ($stage->isSubmitted()) {
+                $this->retention->retain($application);
+            }
 
             $this->audit->record('application.stage_changed', $application, ['from' => $from->value, 'to' => $stage->value], $actor);
         });

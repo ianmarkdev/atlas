@@ -63,13 +63,14 @@ class TailorApplicationResume implements ShouldQueue
         $library = ResumeController::editorLibrary();
         $document = $resume->document();
         $presented = $tailor->present($document, $library);
+        $analysis = $application->analyses()->where('status', 'succeeded')->first();
 
         try {
             $result = $gateway->run('resume_tailoring', 'resume_tailoring', [
                 'company_name' => $application->companyLabel(),
                 'role_title' => $application->role_title,
                 'job_description' => $application->jobDescription() ?? '(no job description pasted)',
-                'brief' => self::briefOf($application->analyses()->where('status', 'succeeded')->first()),
+                'brief' => self::briefOf($analysis),
                 'resume' => $presented['text'],
             ], $requester, purpose: 'resume_tailoring', idempotencyKey: "resume:{$resume->id}:".$resume->generation_requested_at?->getTimestamp());
         } catch (InvalidModelOutput) {
@@ -94,7 +95,10 @@ class TailorApplicationResume implements ShouldQueue
 
         $snapshot = ResumeFacts::snapshot($library, ContactController::contactOf(CandidateProfile::current()), $tailored);
 
-        $resumes->storeTailored($resume, $resume->current_version_id, $tailored, $snapshot, $result->run, $applied['report'], $requester);
+        $resumes->storeTailored($resume, $resume->current_version_id, $tailored, $snapshot, $result->run, $applied['report'], $requester, [
+            'job_posting_id' => $application->posting?->id,
+            'job_analysis_id' => $analysis?->id,
+        ]);
     }
 
     /**

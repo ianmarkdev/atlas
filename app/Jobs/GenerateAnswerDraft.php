@@ -114,7 +114,7 @@ class GenerateAnswerDraft implements ShouldQueue
             // A paragraph of an AI draft is rewritten from that draft's evidence, so the claims kept
             // from the other paragraphs still point at the same items.
             $built = $base !== null && $base->author_type === 'ai' && ($base->evidence_pack ?? []) !== []
-                ? ['pack' => $base->evidence_pack, 'storyline' => '(none)', 'resume_version_id' => $base->resume_version_id]
+                ? ['pack' => $base->evidence_pack, 'storyline' => '(none)', 'resume_version_id' => $base->resume_version_id, 'job_analysis_id' => $base->job_analysis_id, 'retrieval' => $base->retrieval]
                 : $evidence->build($application, $question, $room - min(mb_strlen($jobDescription), intdiv($room, 3)));
             $pack = $built['pack'];
             $variables['evidence'] = EvidencePackBuilder::render($pack);
@@ -150,6 +150,13 @@ class GenerateAnswerDraft implements ShouldQueue
 
         $data = $result->data ?? [];
         $claims = (array) ($data['claims'] ?? []);
+        $inputs = [
+            'writing_rule_ids' => array_values($rules->map(fn (WritingPreference $rule): int => $rule->id)->all()),
+            'writing_rules' => WritingPreference::snapshot($rules),
+            'retrieval' => $built['retrieval'],
+            'job_posting_id' => $application->posting?->id,
+            'job_analysis_id' => $built['job_analysis_id'],
+        ];
 
         foreach ((array) ($data['segments'] ?? []) as $segment) {
             array_push($claims, ...array_values((array) ($segment['claims'] ?? [])));
@@ -170,12 +177,12 @@ class GenerateAnswerDraft implements ShouldQueue
                 return;
             }
 
-            $answers->storeParagraph($draft, $base->id, $paragraph, $text, $result->run, $pack, $checked, $clarifications, $requester, $instruction, $rules->modelKeys());
+            $answers->storeParagraph($draft, $base->id, $paragraph, $text, $result->run, $pack, $checked, $clarifications, $requester, $instruction, $inputs);
 
             return;
         }
 
-        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id'], $rules->modelKeys());
+        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id'], $inputs);
     }
 
     /**

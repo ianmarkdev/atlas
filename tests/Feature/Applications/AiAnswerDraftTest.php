@@ -82,6 +82,48 @@ test('an AI draft is written from the evidence pack and saved as a checked new v
             ->where('hasAnalysis', false));
 });
 
+test('an AI version records what it was written from, unchanged by later edits of the library', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $claim = claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
+    $revisionId = $claim->current_revision_id;
+    $analysis = inWorkspaceOf($candidate, fn () => tap((new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => ['summary' => 'Senior engineer'],
+        'matches' => ['requirements' => [['kind' => 'must', 'evidence' => [['ref' => null, 'status' => 'verified', 'text' => 'Ran the on-call rota']]]]],
+    ]))->save());
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Use British spelling', 'kind' => 'spelling']);
+    $question = questionToDraft($candidate, $application);
+    app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $this->actingAs($candidate)->put(route('knowledge.claims.update', $claim), [
+        'kind' => 'achievement',
+        'statement' => 'Tuned PostgreSQL for the billing and payouts platforms',
+        'change_reason' => 'Broader',
+        'lock_version' => 0,
+    ]);
+
+    $version = draftOf($candidate, $question)->currentVersion;
+    $searched = array_search('Tuned PostgreSQL indexes and queries for the billing platform', array_column($version->evidence_pack, 'text'), true);
+    $searchedId = array_keys($version->evidence_pack)[$searched];
+    expect($version->job_posting_id)->toBe($application->posting->id)
+        ->and($version->job_analysis_id)->toBe($analysis->id)
+        ->and($version->writing_rules)->toBe([['id' => $version->writing_rule_ids[0], 'line' => '(Spelling) Use British spelling']])
+        ->and($version->evidence_pack[$searchedId]['text'])->toBe('Tuned PostgreSQL indexes and queries for the billing platform')
+        ->and($version->retrieval['semantic'])->toBeTrue()
+        ->and($version->retrieval['embedding_model']['provider'])->toBe('fake')
+        ->and($version->retrieval['settings']['limit'])->toBe(6)
+        // Only search hits that went into the pack have a source; the matched evidence has none.
+        ->and(array_keys($version->retrieval['sources']))->toBe([$searchedId])
+        ->and($version->retrieval['sources'][$searchedId]['source_type'])->toBe('claim')
+        ->and($version->retrieval['sources'][$searchedId]['source_id'])->toBe($claim->id)
+        ->and($version->retrieval['sources'][$searchedId]['source_revision_id'])->toBe($revisionId)
+        ->and($claim->refresh()->current_revision_id)->not->toBe($revisionId);
+});
+
 test('a cover letter draft asks for a letter of the default length', function () {
     $candidate = candidateWithTwoFactor();
     $application = draftedApplicationOf($candidate);

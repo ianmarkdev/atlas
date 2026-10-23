@@ -14,6 +14,10 @@ use Illuminate\Validation\ValidationException;
  * AI-drafted answers and cover letters (M8). A request queues GenerateAnswerDraft; its result is
  * stored as a new version of the answer (author `ai`) — a draft the candidate edits and approves
  * like any other, never sent anywhere by itself.
+ *
+ * @phpstan-import-type Retrieval from EvidencePackBuilder
+ *
+ * @phpstan-type GenerationInputs array{writing_rule_ids: list<int>, writing_rules: list<array{id: int, line: string}>, retrieval: Retrieval|null, job_posting_id: int|null, job_analysis_id: int|null}
  */
 class AiAnswerService
 {
@@ -95,11 +99,11 @@ class AiAnswerService
      * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
      * @param  list<array<string, mixed>>|null  $grounding  the checked claims; null when CheckAnswerClaims labels them afterwards
      * @param  list<array{question: string, why: string}>  $clarifications
-     * @param  list<int>  $writingRuleIds  the writing preferences the writer was given
+     * @param  GenerationInputs|array{}  $inputs  what else the writer was given
      */
-    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, ?array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null, array $writingRuleIds = []): void
+    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, ?array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null, array $inputs = []): void
     {
-        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId, $writingRuleIds): void {
+        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId, $inputs): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
 
             if ($draft->isApproved()) {
@@ -116,7 +120,7 @@ class AiAnswerService
                 'instruction' => $instruction,
                 'resume_version_id' => $resumeVersionId,
                 'evidence_pack' => $evidencePack,
-                'writing_rule_ids' => $writingRuleIds,
+                ...$inputs,
                 'grounding' => $grounding,
                 'clarification_questions' => $clarifications,
             ]);
@@ -168,11 +172,11 @@ class AiAnswerService
      * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
      * @param  list<array<string, mixed>>  $grounding  the new paragraph's claims, already checked
      * @param  list<array{question: string, why: string}>  $clarifications
-     * @param  list<int>  $writingRuleIds  the writing preferences the writer was given
+     * @param  GenerationInputs|array{}  $inputs  what else the writer was given
      */
-    public function storeParagraph(AnswerDraft $draft, int $baseVersionId, int $paragraph, string $text, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, array $writingRuleIds = []): void
+    public function storeParagraph(AnswerDraft $draft, int $baseVersionId, int $paragraph, string $text, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, array $inputs = []): void
     {
-        DB::transaction(function () use ($draft, $baseVersionId, $paragraph, $text, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $writingRuleIds): void {
+        DB::transaction(function () use ($draft, $baseVersionId, $paragraph, $text, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $inputs): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
             $base = AnswerDraftVersion::query()->with('reviews')->find($baseVersionId);
 
@@ -193,7 +197,7 @@ class AiAnswerService
                 'paragraph' => $paragraph,
                 'resume_version_id' => $base->resume_version_id,
                 'evidence_pack' => $evidencePack,
-                'writing_rule_ids' => $writingRuleIds,
+                ...$inputs,
                 'grounding' => $merged['grounding'],
                 'clarification_questions' => $merged['questions'],
             ]);

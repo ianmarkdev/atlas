@@ -113,6 +113,24 @@ class WritingPreference extends Model
     }
 
     /**
+     * The rules as the writer was given them (render()), kept on the version so a later edit of
+     * a rule does not change what an earlier draft was written with.
+     *
+     * @param  iterable<self>  $preferences
+     * @return list<array{id: int, line: string}>
+     */
+    public static function snapshot(iterable $preferences): array
+    {
+        $rules = [];
+
+        foreach ($preferences as $preference) {
+            $rules[] = ['id' => $preference->id, 'line' => $preference->line()];
+        }
+
+        return $rules;
+    }
+
+    /**
      * The rules as tagged lines with an id (`R{id}`) the AI can name, for the feedback analysis.
      *
      * @param  iterable<self>  $preferences

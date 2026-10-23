@@ -8,6 +8,7 @@ use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\Project;
 use App\Domain\Retrieval\HybridSearch;
 use App\Domain\Retrieval\RetrievalQuery;
+use App\Domain\Retrieval\RetrievalUnit;
 
 /**
  * The facts an AI answer may use (M8): the best evidence the latest analysis matched to each
@@ -21,6 +22,9 @@ use App\Domain\Retrieval\RetrievalQuery;
  * For a question, the best hits of the search on the question itself keep their place even when
  * a job with many requirements would fill the pack. Items that do not fit `$maxCharacters`
  * (as rendered for the prompt) are left out, lowest priority first.
+ *
+ * @phpstan-type EvidenceSource array{unit_id: int, source_type: string, source_id: int, source_revision_id: ?int, content_hash: string}
+ * @phpstan-type Retrieval array{semantic: bool, semantic_unavailable_reason: ?string, embedding_model: ?array{id: int, provider: string, model: string}, settings: array<string, int|float>, sources: array<string, EvidenceSource>}
  */
 class EvidencePackBuilder
 {
@@ -29,10 +33,13 @@ class EvidencePackBuilder
     /** Places kept for the search on a question (not a cover letter) itself. */
     public const QUESTION_SLOTS = 5;
 
+    /** Hits taken from the search on the question (or, for a cover letter, the role). */
+    public const SEARCH_LIMIT = 6;
+
     public function __construct(private HybridSearch $search) {}
 
     /**
-     * @return array{pack: array<string, array{ref: ?string, status: string, text: string}>, storyline: string, resume_version_id: ?int}
+     * @return array{pack: array<string, array{ref: ?string, status: string, text: string}>, storyline: string, resume_version_id: ?int, job_analysis_id: ?int, retrieval: Retrieval}
      */
     public function build(JobApplication $application, ApplicationQuestion $question, int $maxCharacters = PHP_INT_MAX): array
     {
@@ -56,7 +63,7 @@ class EvidencePackBuilder
         $query = $question->isCoverLetter()
             ? trim($application->role_title.'. '.((string) ($analysis->brief['summary'] ?? '')))
             : $question->prompt_text;
-        $result = $this->search->search(new RetrievalQuery($query, $application->candidate_profile_id, 6));
+        $result = $this->search->search(new RetrievalQuery($query, $application->candidate_profile_id, self::SEARCH_LIMIT));
 
         // Bullet points keep their ref, so a correction learned from an edit can find them (M10).
         $claimUlids = Claim::query()
@@ -65,7 +72,7 @@ class EvidencePackBuilder
 
         foreach ($result->hits as $hit) {
             $ulid = $hit->unit->source_type === 'claim' ? $claimUlids->get($hit->unit->source_id) : null;
-            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter()];
+            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter(), 'source' => self::sourceOf($hit->unit)];
         }
 
         // Distinct usable items in order, each with the storyline groups it appeared under.
@@ -80,7 +87,8 @@ class EvidencePackBuilder
                 continue;
             }
 
-            $candidates[$key] ??= ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text, 'from_question' => $item['from_question'] ?? false, 'groups' => []];
+            $candidates[$key] ??= ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text, 'from_question' => $item['from_question'] ?? false, 'source' => null, 'groups' => []];
+            $candidates[$key]['source'] ??= $item['source'] ?? null;
 
             if (isset($item['group'])) {
                 $candidates[$key]['groups'][] = $item['group'];
@@ -89,6 +97,7 @@ class EvidencePackBuilder
 
         $chosen = $this->choose($candidates, $maxCharacters);
         $pack = [];
+        $sources = [];
         $groups = [];
         $number = 0;
 
@@ -100,6 +109,10 @@ class EvidencePackBuilder
             $number++;
             $id = "E{$number}";
             $pack[$id] = ['ref' => $candidate['ref'], 'status' => $candidate['status'], 'text' => $candidate['text']];
+
+            if ($candidate['source'] !== null) {
+                $sources[$id] = $candidate['source'];
+            }
 
             foreach ($candidate['groups'] as $group) {
                 $groups[$group][] = $id;
@@ -116,6 +129,40 @@ class EvidencePackBuilder
             'pack' => $pack,
             'storyline' => $storyline === [] ? '(no tailored resume: choose the strongest evidence for this job)' : implode("\n", $storyline),
             'resume_version_id' => $resumeVersion,
+            'job_analysis_id' => $analysis?->id,
+            'retrieval' => [
+                'semantic' => $result->semantic,
+                'semantic_unavailable_reason' => $result->semanticUnavailableReason,
+                'embedding_model' => $result->embeddingModel === null ? null : [
+                    'id' => $result->embeddingModel->id,
+                    'provider' => $result->embeddingModel->provider,
+                    'model' => $result->embeddingModel->model,
+                ],
+                'settings' => [
+                    'limit' => self::SEARCH_LIMIT,
+                    'candidates_per_signal' => (int) config('retrieval.candidates_per_signal'),
+                    'rrf_k' => (int) config('retrieval.rrf_k'),
+                    'min_similarity' => (float) config('retrieval.min_similarity'),
+                    'fused_limit' => (int) config('retrieval.fused_limit'),
+                ],
+                'sources' => $sources,
+            ],
+        ];
+    }
+
+    /**
+     * The indexed text a search hit was, so a later edit of the record can be told apart.
+     *
+     * @return EvidenceSource
+     */
+    private static function sourceOf(RetrievalUnit $unit): array
+    {
+        return [
+            'unit_id' => $unit->id,
+            'source_type' => $unit->source_type,
+            'source_id' => $unit->source_id,
+            'source_revision_id' => $unit->source_revision_id,
+            'content_hash' => $unit->content_hash,
         ];
     }
 

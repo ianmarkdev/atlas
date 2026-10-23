@@ -5,6 +5,7 @@ use App\Domain\Ai\GenerationRun;
 use App\Domain\Ai\LlmRouter;
 use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\ApplicationResumeService;
+use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Employment;
@@ -100,6 +101,24 @@ test('AI tailoring stores a checked new version: rewordings, library bullets and
     $this->actingAs($candidate)
         ->get(route('applications.resume.show', $application))
         ->assertInertia(fn (Assert $page) => $page->where('resume.ai_report.refused.0.reason', 'adds_number'));
+});
+
+test('a tailored version records the job description and analysis it was tailored to', function () {
+    ['candidate' => $candidate, 'application' => $application] = aiTailoringSetup();
+    $analysis = inWorkspaceOf($candidate, fn () => tap((new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => ['summary' => 'Payments engineer', 'must_haves' => [['requirement' => 'PostgreSQL']]],
+    ]))->save());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput()]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    $version = aiTailoredResumeOf($candidate)->currentVersion;
+    expect($fake->requests[0]->messages[0]['content'])->toContain('- Must have: PostgreSQL')
+        ->and($version->job_posting_id)->toBe($application->posting->id)
+        ->and($version->job_analysis_id)->toBe($analysis->id);
 });
 
 test('the AI cannot drop a job, invent a display title or a summary number, or cite another item\'s bullets', function () {

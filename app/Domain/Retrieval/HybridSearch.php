@@ -97,7 +97,7 @@ class HybridSearch
             );
         }
 
-        return new SearchResult($this->ranker->rank($hits, $query->limit), $vector !== null, $reason);
+        return new SearchResult($this->ranker->rank($hits, $query->limit), $vector !== null, $reason, $vector === null ? null : $model);
     }
 
     /**
