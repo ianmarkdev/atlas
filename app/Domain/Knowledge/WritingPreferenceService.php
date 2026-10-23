@@ -3,6 +3,7 @@
 namespace App\Domain\Knowledge;
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Feedback\FeedbackEvent;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,12 +19,13 @@ class WritingPreferenceService
     /**
      * @param  User|null  $owner  the user a personal rule belongs to; null for a rule for everyone
      * @param  string  $via  `manual` or `proposal:{id}`
+     * @param  list<int>  $supportedBy  ids of the feedback events the rule was seen in
      *
      * @throws ValidationException when the same rule is already active in that scope
      */
-    public function create(string $rule, WritingPreferenceKind $kind, ?User $owner, User $actor, string $via = 'manual'): WritingPreference
+    public function create(string $rule, WritingPreferenceKind $kind, ?User $owner, User $actor, string $via = 'manual', WritingPreferenceDrafts $drafts = WritingPreferenceDrafts::All, array $supportedBy = []): WritingPreference
     {
-        return DB::transaction(function () use ($rule, $kind, $owner, $actor, $via): WritingPreference {
+        return DB::transaction(function () use ($rule, $kind, $owner, $actor, $via, $drafts, $supportedBy): WritingPreference {
             if ($this->exists($rule, $owner)) {
                 throw ValidationException::withMessages(['rule' => __('This rule is already in the list.')]);
             }
@@ -35,12 +37,17 @@ class WritingPreferenceService
                 'user_id' => $owner?->id,
                 'rule' => $rule,
                 'kind' => $kind,
+                'drafts' => $drafts,
                 'status' => 'active',
                 'created_via' => $via,
                 'created_by' => $actor->id,
             ])->save();
 
-            $this->audit->record('writing_preference.created', $preference, ['scope' => $preference->scope, 'via' => $via], $actor);
+            // Only events of this workspace that still exist.
+            $events = FeedbackEvent::query()->whereKey($supportedBy)->pluck('id');
+            $preference->supportingEdits()->attach($events->mapWithKeys(fn (int $id): array => [$id => ['workspace_id' => $preference->workspace_id]])->all());
+
+            $this->audit->record('writing_preference.created', $preference, ['scope' => $preference->scope, 'drafts' => $drafts->value, 'via' => $via], $actor);
 
             return $preference;
         });

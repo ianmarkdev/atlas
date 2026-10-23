@@ -6,6 +6,7 @@ use App\Domain\Knowledge\ClaimSubject;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\ProposalService;
 use App\Domain\Knowledge\ProposalStatus;
+use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Shared\PlainText;
 use App\Domain\Tenancy\TenantContext;
 use App\Http\Controllers\Controller;
@@ -14,6 +15,7 @@ use App\Jobs\SuggestAchievements;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -69,6 +71,7 @@ class ProposalController extends Controller
             'decided' => KnowledgeProposalResource::collection($decided)->resolve(),
             'isReviewer' => $isReviewer,
             'subjects' => $isReviewer ? ClaimSubject::options() : [],
+            'draftTypes' => WritingPreferenceDrafts::options(),
             'suggesting' => $isReviewer ? Cache::get(SuggestAchievements::statusKey($tenant->workspaceId())) : null,
         ]);
     }
@@ -105,6 +108,7 @@ class ProposalController extends Controller
             'body' => ['nullable', 'string', 'max:10000'],
             'rule' => ['nullable', 'string', 'max:200'],
             'subject' => ['nullable', 'string', 'max:100'],
+            'drafts' => ['nullable', Rule::enum(WritingPreferenceDrafts::class)],
         ]);
 
         $edits = [];
@@ -125,6 +129,10 @@ class ProposalController extends Controller
             }
 
             $edits['subject'] = $subject;
+        }
+
+        if ($proposal->proposal_type === 'create_writing_preference' && isset($validated['drafts'])) {
+            $edits['drafts'] = WritingPreferenceDrafts::from($validated['drafts']);
         }
 
         $applied = $this->proposals->approve($proposal, $request->user(), $edits);

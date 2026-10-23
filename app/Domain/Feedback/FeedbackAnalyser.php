@@ -16,6 +16,7 @@ use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\ProposalService;
 use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Knowledge\WritingPreference;
+use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Knowledge\WritingPreferenceKind;
 use App\Domain\Knowledge\WritingPreferenceService;
 use App\Domain\Shared\PlainText;
@@ -31,7 +32,9 @@ use App\Domain\Shared\WordDiff;
  * - a writing rule not already in place becomes a `create_writing_preference`: for the
  *   candidate, or for a VA alone when it is their personal habit. A rule the AI is unsure of is
  *   held until a second edit shows it again: the AI is shown the held rules and names the one a
- *   new rule repeats (`same_as`), however differently it is worded;
+ *   new rule repeats (`same_as`), however differently it is worded. The suggestion carries
+ *   the edits it was seen in and the drafts it is for (only cover letters or only question
+ *   answers when every one of those edits was of that kind);
  * - a reusable answer (not a cover letter, not already in the library) becomes a
  *   `create_library_answer`;
  * - a one-off is recorded and nothing else.
@@ -199,9 +202,12 @@ class FeedbackAnalyser
             return ['skipped', 'already a rule or suggested'];
         }
 
-        $repeatsHeldRule = array_key_exists((string) ($item['same_as'] ?? ''), $this->heldRules($event));
+        $sameAs = (string) ($item['same_as'] ?? '');
+        $earlierEventId = array_key_exists($sameAs, $this->heldRules($event))
+            ? (int) substr($sameAs, 1, (int) strpos($sameAs, '.') - 1)
+            : $this->earlierSighting($event, $normalized);
 
-        if ((float) ($item['confidence'] ?? 0) < self::CONFIDENT && ! $repeatsHeldRule && ! $this->seenBefore($event, $normalized)) {
+        if ((float) ($item['confidence'] ?? 0) < self::CONFIDENT && $earlierEventId === null) {
             return ['held', 'waiting to see the same rule in another edit'];
         }
 
@@ -209,9 +215,36 @@ class FeedbackAnalyser
             'rule' => $rule,
             'kind' => (WritingPreferenceKind::tryFrom((string) ($item['rule_kind'] ?? '')) ?? WritingPreferenceKind::Tone)->value,
             'scope' => $owner === null ? 'profile' : 'user',
+            'drafts' => $this->draftsFor($event, $item, $earlierEventId)->value,
+            'supported_by' => array_values(array_filter([$event->id, $earlierEventId])),
         ], $this->rationale($item), [...$this->from($event, $run), 'reviewer' => $owner]);
 
         return ['proposed', null];
+    }
+
+    /**
+     * The drafts a learned rule is for: only cover letters or only question answers when the AI
+     * says so and every edit it was seen in was of that kind; otherwise all.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    private function draftsFor(FeedbackEvent $event, array $item, ?int $earlierEventId): WritingPreferenceDrafts
+    {
+        $here = WritingPreferenceDrafts::of($event->answerDraft->question);
+
+        if (WritingPreferenceDrafts::tryFrom((string) ($item['drafts'] ?? '')) !== $here) {
+            return WritingPreferenceDrafts::All;
+        }
+
+        if ($earlierEventId !== null) {
+            $earlier = FeedbackEvent::query()->with('answerDraft.question')->find($earlierEventId)?->answerDraft?->question;
+
+            if ($earlier === null || WritingPreferenceDrafts::of($earlier) !== $here) {
+                return WritingPreferenceDrafts::All;
+            }
+        }
+
+        return $here;
     }
 
     /**
@@ -278,19 +311,20 @@ class FeedbackAnalyser
     }
 
     /**
-     * Whether an earlier edit already showed this rule.
+     * The latest earlier edit that showed this rule in the same words, if any.
      */
-    private function seenBefore(FeedbackEvent $event, string $normalizedRule): bool
+    private function earlierSighting(FeedbackEvent $event, string $normalizedRule): ?int
     {
         return FeedbackEvent::query()
             ->whereKeyNot($event->id)
             ->where('status', 'analysed')
             ->latest('id')
             ->limit(50)
-            ->get(['analysis'])
-            ->contains(fn (FeedbackEvent $earlier): bool => collect($earlier->analysis['items'] ?? [])
+            ->get(['id', 'analysis'])
+            ->first(fn (FeedbackEvent $earlier): bool => collect($earlier->analysis['items'] ?? [])
                 ->contains(fn (array $item): bool => ($item['type'] ?? null) === 'writing_preference'
-                    && WritingPreference::normalizeRule((string) ($item['rule'] ?? '')) === $normalizedRule));
+                    && WritingPreference::normalizeRule((string) ($item['rule'] ?? '')) === $normalizedRule))
+            ?->id;
     }
 
     /**

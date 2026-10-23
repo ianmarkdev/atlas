@@ -174,6 +174,8 @@ export type KnowledgeProposal = {
         field: 'statement' | 'body' | 'rule';
         value: string;
         subject: string | null;
+        /** For a writing rule: which drafts it is used for. */
+        drafts: string | null;
     } | null;
     personal: boolean;
     rationale: string | null;

@@ -34,12 +34,14 @@ export default function Proposals({
     isReviewer,
     suggesting,
     subjects,
+    draftTypes,
 }: {
     pending: KnowledgeProposal[];
     decided: KnowledgeProposal[];
     isReviewer: boolean;
     suggesting: SuggestingStatus;
     subjects: SelectOption[];
+    draftTypes: SelectOption[];
 }) {
     const searching = suggesting?.status === 'queued';
     const poll = usePoll(
@@ -159,6 +161,7 @@ export default function Proposals({
                                     key={proposal.ulid}
                                     proposal={proposal}
                                     subjects={subjects}
+                                    draftTypes={draftTypes}
                                 />
                             ))}
                         </ul>
@@ -174,6 +177,7 @@ export default function Proposals({
                                     key={proposal.ulid}
                                     proposal={proposal}
                                     subjects={subjects}
+                                    draftTypes={draftTypes}
                                 />
                             ))}
                         </ul>
@@ -265,14 +269,17 @@ function SuggestionCard({ proposal }: { proposal: KnowledgeProposal }) {
 function ProposalCard({
     proposal,
     subjects,
+    draftTypes,
 }: {
     proposal: KnowledgeProposal;
     subjects: SelectOption[];
+    draftTypes: SelectOption[];
 }) {
     const editable = proposal.editable;
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(editable?.value ?? '');
     const [subject, setSubject] = useState(editable?.subject ?? 'general');
+    const [drafts, setDrafts] = useState(editable?.drafts ?? 'all');
 
     return (
         <li className="space-y-3 rounded-lg border p-4">
@@ -404,6 +411,21 @@ function ProposalCard({
                                     />
                                 </>
                             )}
+                            {editable.drafts !== null && (
+                                <>
+                                    <Label htmlFor={`drafts_${proposal.ulid}`}>
+                                        Used for
+                                    </Label>
+                                    <NativeSelect
+                                        id={`drafts_${proposal.ulid}`}
+                                        options={draftTypes}
+                                        value={drafts}
+                                        onChange={(event) =>
+                                            setDrafts(event.target.value)
+                                        }
+                                    />
+                                </>
+                            )}
                         </div>
                     )}
                     <div className="flex flex-wrap items-start gap-2">
@@ -417,6 +439,9 @@ function ProposalCard({
                                           [editable.field]: value,
                                           ...(editable.subject !== null
                                               ? { subject }
+                                              : {}),
+                                          ...(editable.drafts !== null
+                                              ? { drafts }
                                               : {}),
                                       }
                                     : data

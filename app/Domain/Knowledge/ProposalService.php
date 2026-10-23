@@ -158,8 +158,8 @@ class ProposalService
     }
 
     /**
-     * @param  array{statement?: string, body?: string, rule?: string, subject?: Employment|Project|null}  $edits
-     *                                                                                                             the reviewer's final wording (edit-then-approve); a statement is required for achievement suggestions
+     * @param  array{statement?: string, body?: string, rule?: string, subject?: Employment|Project|null, drafts?: WritingPreferenceDrafts}  $edits
+     *                                                                                                                                               the reviewer's final wording (edit-then-approve); a statement is required for achievement suggestions
      * @return bool true when the change was applied; false when the item changed after the
      *              suggestion was made (the proposal is then marked as a conflict)
      *

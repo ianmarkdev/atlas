@@ -12,6 +12,7 @@ use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\ProposalStatus;
+use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Knowledge\WritingPreferenceKind;
 use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Shared\WordDiff;
@@ -49,7 +50,7 @@ class KnowledgeProposalResource extends JsonResource
             'start_date' => 'Start', 'end_date' => 'End / awarded', 'expires_on' => 'Expires',
             'credential_url' => 'Link', 'summary' => 'Short description',
         ],
-        'writing_preference' => ['rule' => 'Rule', 'kind' => 'Kind', 'scope' => 'Applies to'],
+        'writing_preference' => ['rule' => 'Rule', 'kind' => 'Kind', 'scope' => 'Applies to', 'drafts' => 'Used for', 'supported_by' => 'Seen in'],
         'resume_variant' => ['title' => 'Title', 'summary' => 'Summary'],
     ];
 
@@ -145,7 +146,7 @@ class KnowledgeProposalResource extends JsonResource
     /**
      * What the reviewer may reword before approving, with the suggested value.
      *
-     * @return array{field: string, value: string, subject: string|null}|null
+     * @return array{field: string, value: string, subject: string|null, drafts: string|null}|null
      */
     private function editable(): ?array
     {
@@ -160,6 +161,7 @@ class KnowledgeProposalResource extends JsonResource
             'field' => $field,
             'value' => (string) ($this->payload[$field] ?? ''),
             'subject' => $this->proposal_type === 'create_claim' ? (string) ($this->payload['subject'] ?? 'general') : null,
+            'drafts' => $this->proposal_type === 'create_writing_preference' ? (string) ($this->payload['drafts'] ?? WritingPreferenceDrafts::All->value) : null,
         ];
     }
 
@@ -192,6 +194,8 @@ class KnowledgeProposalResource extends JsonResource
             $field === 'subject' => $this->subjectLabel((string) $value),
             $field === 'scope' => $value === 'user' ? __('Only your drafts') : __('Every draft'),
             $field === 'kind' && $this->target_type === 'writing_preference' => WritingPreferenceKind::tryFrom((string) $value)?->label(),
+            $field === 'drafts' => WritingPreferenceDrafts::tryFrom((string) $value)?->label(),
+            $field === 'supported_by' => is_array($value) ? trans_choice(':count edit|:count edits', count($value)) : null,
             $field === 'category' => AnswerCategory::tryFrom((string) $value)?->label() ?? (string) $value,
             $value instanceof CarbonInterface => $value->format('Y-m'),
             $value instanceof BackedEnum => (string) $value->value,

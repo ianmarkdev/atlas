@@ -6,6 +6,7 @@ use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\ProposalService;
 use App\Domain\Knowledge\ProposalStatus;
 use App\Domain\Knowledge\WritingPreference;
+use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Domain\Knowledge\WritingPreferenceKind;
 use App\Domain\Knowledge\WritingPreferenceService;
 use App\Domain\Shared\PlainText;
@@ -34,10 +35,12 @@ class WritingPreferenceController extends Controller
             'rule' => $preference->rule,
             'kind' => $preference->kind->value,
             'kind_label' => $preference->kind->label(),
+            'drafts_label' => $preference->drafts === WritingPreferenceDrafts::All ? null : $preference->drafts->label(),
             'learned' => str_starts_with($preference->created_via, 'proposal:'),
+            'seen_in' => $preference->supporting_edits_count,
             'can' => ['archive' => $user->can('archive', $preference)],
         ];
-        $active = WritingPreference::query()->appliesTo($user)->oldest()->get();
+        $active = WritingPreference::query()->appliesTo($user)->withCount('supportingEdits')->oldest()->get();
 
         return Inertia::render('knowledge/writing-style', [
             'shared' => $active->where('scope', 'profile')->map($present)->values()->all(),
@@ -50,6 +53,7 @@ class WritingPreferenceController extends Controller
                     : $query->where('reviewer_user_id', $user->id)->orWhere('proposed_by_user_id', $user->id))
                 ->count(),
             'kinds' => WritingPreferenceKind::options(),
+            'draftTypes' => WritingPreferenceDrafts::options(),
             'isCandidate' => $user->isCandidate(),
         ]);
     }
@@ -59,10 +63,12 @@ class WritingPreferenceController extends Controller
         $validated = $request->validate([
             'rule' => ['required', 'string', 'max:200'],
             'kind' => ['required', Rule::enum(WritingPreferenceKind::class)],
+            'drafts' => ['nullable', Rule::enum(WritingPreferenceDrafts::class)],
             'personal' => ['boolean'],
         ]);
         $rule = PlainText::normalize($validated['rule']);
         $kind = WritingPreferenceKind::from($validated['kind']);
+        $drafts = WritingPreferenceDrafts::tryFrom((string) ($validated['drafts'] ?? '')) ?? WritingPreferenceDrafts::All;
         $user = $request->user();
         $isPersonal = (bool) ($validated['personal'] ?? false);
 
@@ -71,7 +77,7 @@ class WritingPreferenceController extends Controller
         }
 
         if ($isPersonal || $user->isCandidate()) {
-            $this->preferences->create($rule, $kind, $isPersonal ? $user : null, $user);
+            $this->preferences->create($rule, $kind, $isPersonal ? $user : null, $user, drafts: $drafts);
 
             Inertia::flash('toast', ['type' => 'success', 'message' => __('Rule added. New drafts follow it.')]);
 
@@ -82,7 +88,7 @@ class WritingPreferenceController extends Controller
             throw ValidationException::withMessages(['rule' => __('This rule is already in the list.')]);
         }
 
-        $this->proposals->suggest('create_writing_preference', null, ['rule' => $rule, 'kind' => $kind->value, 'scope' => 'profile'], null, ['origin' => 'manual', 'proposer' => $user]);
+        $this->proposals->suggest('create_writing_preference', null, ['rule' => $rule, 'kind' => $kind->value, 'scope' => 'profile', 'drafts' => $drafts->value], null, ['origin' => 'manual', 'proposer' => $user]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Rule suggested. It applies to every draft once the candidate approves it.')]);
 

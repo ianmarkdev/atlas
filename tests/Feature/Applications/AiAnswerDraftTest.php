@@ -244,6 +244,25 @@ test("a job description too long for the model's window is shortened, and the ev
         ->and(mb_strlen($request->system) + mb_strlen($prompt))->toBeLessThanOrEqual((int) ((5000 - 2500) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN);
 });
 
+test('a rule only for cover letters shapes cover letters, not answers to questions', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Sign off with my first name', 'kind' => 'format', 'drafts' => 'cover_letter']);
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Use British spelling', 'kind' => 'spelling']);
+    $question = questionToDraft($candidate, $application);
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $letter = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('origin', 'cover_letter')->sole());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', []), answerOutput('Dear hiring team, …', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
+
+    expect($fake->requests[0]->messages[0]['content'])->toContain('- (Spelling) Use British spelling')
+        ->and($fake->requests[0]->messages[0]['content'])->not->toContain('Sign off with my first name')
+        ->and($fake->requests[1]->messages[0]['content'])->toContain('- (Format, cover letters only) Sign off with my first name')
+        ->and($fake->requests[1]->messages[0]['content'])->toContain('- (Spelling) Use British spelling');
+});
+
 test('an answer with AI placeholders left in cannot be approved', function () {
     $candidate = candidateWithTwoFactor();
     $application = draftedApplicationOf($candidate);

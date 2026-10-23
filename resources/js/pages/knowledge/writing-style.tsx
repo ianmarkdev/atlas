@@ -19,7 +19,9 @@ type Preference = {
     rule: string;
     kind: string;
     kind_label: string;
+    drafts_label: string | null;
     learned: boolean;
+    seen_in: number;
     can: { archive: boolean };
 };
 
@@ -28,12 +30,14 @@ export default function WritingStyle({
     personal,
     suggested,
     kinds,
+    draftTypes,
     isCandidate,
 }: {
     shared: Preference[];
     personal: Preference[];
     suggested: number;
     kinds: SelectOption[];
+    draftTypes: SelectOption[];
     isCandidate: boolean;
 }) {
     return (
@@ -70,7 +74,7 @@ export default function WritingStyle({
                 >
                     {({ processing, errors }) => (
                         <>
-                            <div className="grid gap-2 sm:grid-cols-[1fr_12rem]">
+                            <div className="grid gap-2 sm:grid-cols-[1fr_10rem_12rem]">
                                 <div className="grid gap-2">
                                     <Label htmlFor="rule">New rule</Label>
                                     <Input
@@ -90,8 +94,21 @@ export default function WritingStyle({
                                         defaultValue="tone"
                                     />
                                 </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="drafts">Used for</Label>
+                                    <NativeSelect
+                                        id="drafts"
+                                        name="drafts"
+                                        options={draftTypes}
+                                        defaultValue="all"
+                                    />
+                                </div>
                             </div>
-                            <InputError message={errors.rule ?? errors.kind} />
+                            <InputError
+                                message={
+                                    errors.rule ?? errors.kind ?? errors.drafts
+                                }
+                            />
                             <div className="flex items-center gap-2">
                                 <Checkbox
                                     id="personal"
@@ -161,9 +178,16 @@ function RuleList({
                             </Badge>
                             <span className="flex-1 text-sm">
                                 {preference.rule}
+                                {preference.drafts_label && (
+                                    <span className="ml-2 type-caption text-text-secondary">
+                                        {preference.drafts_label.toLowerCase()}
+                                    </span>
+                                )}
                                 {preference.learned && (
                                     <span className="ml-2 type-caption text-text-secondary">
-                                        learned from edits
+                                        {preference.seen_in > 1
+                                            ? `learned from ${preference.seen_in} edits`
+                                            : 'learned from edits'}
                                     </span>
                                 )}
                             </span>

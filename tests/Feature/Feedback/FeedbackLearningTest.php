@@ -28,7 +28,7 @@ const FB_EDITED = 'I tuned PostgreSQL queries for the billing platform, cutting 
  */
 function fbAnalysis(array $items): array
 {
-    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'same_as' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
+    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'same_as' => null, 'drafts' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
 
     return ['items' => array_map(fn (array $item): array => [...$defaults, ...$item], $items)];
 }
@@ -129,7 +129,8 @@ test('a writing rule the AI is unsure of waits until a second edit shows it', fu
     $second = fbEditedDraft($candidate, $candidate, [$unsure], claim: $first['claim']);
     fbApprove($candidate, $second['application'], $second['question']);
 
-    expect(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Use British spelling', 'kind' => 'spelling', 'scope' => 'profile']);
+    [$firstEvent, $secondEvent] = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->pluck('id')->all());
+    expect(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Use British spelling', 'kind' => 'spelling', 'scope' => 'profile', 'drafts' => 'all', 'supported_by' => [$secondEvent, $firstEvent]]);
 });
 
 test('a held rule is proposed when a later edit repeats it in other words, and is not offered again', function () {
@@ -141,8 +142,9 @@ test('a held rule is proposed when a later edit repeats it in other words, and i
     $second = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Spell words the UK way', 'rule_kind' => 'spelling', 'personal' => false, 'same_as' => $heldId, 'confidence' => 0.5]])], claim: $first['claim']);
     fbApprove($candidate, $second['application'], $second['question']);
 
+    [$firstEvent, $secondEvent] = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->pluck('id')->all());
     expect($second['fake']->requests[1]->messages[0]['content'])->toContain("<rule id=\"{$heldId}\">Use British spelling</rule>")
-        ->and(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Spell words the UK way', 'kind' => 'spelling', 'scope' => 'profile']);
+        ->and(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Spell words the UK way', 'kind' => 'spelling', 'scope' => 'profile', 'drafts' => 'all', 'supported_by' => [$secondEvent, $firstEvent]]);
 
     $third = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'one_off']])], claim: $first['claim']);
     fbApprove($candidate, $third['application'], $third['question']);
@@ -160,6 +162,41 @@ test('a held rule is not promoted by an id that names no held rule', function ()
 
     expect(fbProposals($candidate))->toBeEmpty()
         ->and(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->latest('id')->first())->analysis['items'][0]['outcome'])->toBe('held');
+});
+
+test('a learned rule is narrowed to one kind of draft only when its edits were of that kind', function () {
+    $candidate = candidateWithTwoFactor();
+    ['application' => $application, 'question' => $question] = fbEditedDraft($candidate, $candidate, [fbAnalysis([
+        ['type' => 'writing_preference', 'rule' => 'Keep answers under 150 words', 'rule_kind' => 'format', 'personal' => false, 'drafts' => 'question'],
+        ['type' => 'writing_preference', 'rule' => 'Open with Dear hiring team', 'rule_kind' => 'structure', 'personal' => false, 'drafts' => 'cover_letter'],
+    ])]);
+
+    fbApprove($candidate, $application, $question);
+
+    expect(fbProposals($candidate)->pluck('payload.drafts')->all())->toBe(['question', 'all']);
+});
+
+test('approving a learned rule keeps the edits it was seen in, with the drafts the reviewer chose', function () {
+    $candidate = candidateWithTwoFactor();
+    $unsure = fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false, 'confidence' => 0.5]]);
+    $first = fbEditedDraft($candidate, $candidate, [$unsure]);
+    fbApprove($candidate, $first['application'], $first['question']);
+    $second = fbEditedDraft($candidate, $candidate, [$unsure], claim: $first['claim']);
+    fbApprove($candidate, $second['application'], $second['question']);
+
+    $this->actingAs($candidate)
+        ->patch(route('knowledge.proposals.approve', fbProposals($candidate)->sole()), ['drafts' => 'question'])
+        ->assertSessionHasNoErrors();
+
+    $rule = inWorkspaceOf($candidate, fn () => WritingPreference::query()->with('supportingEdits')->sole());
+    expect($rule->drafts->value)->toBe('question')
+        ->and($rule->supportingEdits->pluck('id')->sort()->values()->all())->toBe(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->pluck('id')->all()));
+
+    $this->actingAs($candidate)
+        ->get(route('knowledge.preferences.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('shared.0.seen_in', 2)
+            ->where('shared.0.drafts_label', 'Question answers only'));
 });
 
 test('nothing is learned from an AI draft approved as written', function () {

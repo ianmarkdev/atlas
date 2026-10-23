@@ -19,6 +19,7 @@ use App\Domain\Applications\EvidencePackBuilder;
 use App\Domain\Applications\ParagraphRedraft;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\WritingPreference;
+use App\Domain\Knowledge\WritingPreferenceDrafts;
 use App\Jobs\Middleware\WithWorkspaceContext;
 use App\Models\User;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -26,8 +27,9 @@ use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Write an answer or cover letter with AI (M8): build the evidence pack, run the answer_writing
- * prompt (with the writing preferences that apply to the requester, M10) through AiGateway,
- * have the server check every claim label against that evidence, and store the result as a new
+ * prompt (with the writing preferences that apply to the requester and to this kind of draft,
+ * M10) through AiGateway, have the server check every claim label against that evidence, and
+ * store the result as a new
  * version of the answer. Failures are stored on the draft. The prompt is kept within the
  * model's window (PromptBudget): evidence is chosen to fit, then the job description is shortened.
  *
@@ -87,7 +89,7 @@ class GenerateAnswerDraft implements ShouldQueue
             'role_title' => $application->role_title,
             'job_description' => '',
             'evidence' => '',
-            'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->oldest()->get()),
+            'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->forDrafts(WritingPreferenceDrafts::of($question))->oldest()->get()),
             'instruction' => $instruction ?? '(none)',
             'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
             'limit' => self::limitOf($question),
