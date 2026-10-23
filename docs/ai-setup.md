@@ -62,6 +62,13 @@ output). Ollama's own default is 4096, and a longer prompt (a cover letter with 
 cut from the start without an error. One size for all tasks keeps Ollama from reloading a model to
 resize it. Measured with `qwen2.5:7b` on the RTX 3050 laptop (58% CPU): one 150-word answer ≈ 60 s.
 
+`AI_ANSWER_CLAIMS=separate` (default): the 7B writer writes only the text, and the `claim_check` task
+(3B, fully on the GPU: ~70 tokens/s against ~5) labels its claims in a second job. "Draft all" queues
+the writes first, so the checks run together at the end and the models swap only twice. Measured on
+a real application, 2 answers + a cover letter: 267 s instead of 380 s with `inline` (the writer
+labels its own claims, answer_writing v4). The 3B checker is more cautious: it flags more claims to
+check.
+
 ### Working without Ollama
 
 Set `EMBEDDINGS_PROVIDER=fake` to keep keyword search working without embeddings. AI generation
