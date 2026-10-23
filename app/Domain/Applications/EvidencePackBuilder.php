@@ -17,17 +17,24 @@ use App\Domain\Retrieval\RetrievalQuery;
  * A cover letter is written from the tailored resume's storyline (docs/04 §4.10): the resume's
  * bullet points come first, in resume order, and the storyline lists each experience with the
  * evidence ids of its bullets.
+ *
+ * For a question, the best hits of the search on the question itself keep their place even when
+ * a job with many requirements would fill the pack. Items that do not fit `$maxCharacters`
+ * (as rendered for the prompt) are left out, lowest priority first.
  */
 class EvidencePackBuilder
 {
     public const MAX_ITEMS = 15;
+
+    /** Places kept for the search on a question (not a cover letter) itself. */
+    public const QUESTION_SLOTS = 5;
 
     public function __construct(private HybridSearch $search) {}
 
     /**
      * @return array{pack: array<string, array{ref: ?string, status: string, text: string}>, storyline: string, resume_version_id: ?int}
      */
-    public function build(JobApplication $application, ApplicationQuestion $question): array
+    public function build(JobApplication $application, ApplicationQuestion $question, int $maxCharacters = PHP_INT_MAX): array
     {
         $items = [];
         $resumeVersion = null;
@@ -58,13 +65,11 @@ class EvidencePackBuilder
 
         foreach ($result->hits as $hit) {
             $ulid = $hit->unit->source_type === 'claim' ? $claimUlids->get($hit->unit->source_id) : null;
-            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type];
+            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter()];
         }
 
-        $pack = [];
-        $seen = [];
-        $groups = [];
-        $number = 0;
+        // Distinct usable items in order, each with the storyline groups it appeared under.
+        $candidates = [];
 
         foreach ($items as $item) {
             $text = trim((string) ($item['text'] ?? ''));
@@ -75,25 +80,29 @@ class EvidencePackBuilder
                 continue;
             }
 
-            if (isset($seen[$key])) {
-                if (isset($item['group'])) {
-                    $groups[$item['group']][] = $seen[$key];
-                }
+            $candidates[$key] ??= ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text, 'from_question' => $item['from_question'] ?? false, 'groups' => []];
 
+            if (isset($item['group'])) {
+                $candidates[$key]['groups'][] = $item['group'];
+            }
+        }
+
+        $chosen = $this->choose($candidates, $maxCharacters);
+        $pack = [];
+        $groups = [];
+        $number = 0;
+
+        foreach ($candidates as $key => $candidate) {
+            if (! isset($chosen[$key])) {
                 continue;
             }
 
             $number++;
             $id = "E{$number}";
-            $seen[$key] = $id;
-            $pack[$id] = ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text];
+            $pack[$id] = ['ref' => $candidate['ref'], 'status' => $candidate['status'], 'text' => $candidate['text']];
 
-            if (isset($item['group'])) {
-                $groups[$item['group']][] = $id;
-            }
-
-            if ($number >= self::MAX_ITEMS) {
-                break;
+            foreach ($candidate['groups'] as $group) {
+                $groups[$group][] = $id;
             }
         }
 
@@ -124,10 +133,49 @@ class EvidencePackBuilder
         $lines = [];
 
         foreach ($pack as $id => $item) {
-            $lines[] = sprintf('<item id="%s" status="%s">%s</item>', $id, $item['status'], htmlspecialchars($item['text'], ENT_NOQUOTES));
+            $lines[] = self::renderItem($id, $item['status'], $item['text']);
         }
 
         return implode("\n", $lines);
+    }
+
+    private static function renderItem(string $id, string $status, string $text): string
+    {
+        return sprintf('<item id="%s" status="%s">%s</item>', $id, $status, htmlspecialchars($text, ENT_NOQUOTES));
+    }
+
+    /**
+     * Which candidates go into the pack: the first QUESTION_SLOTS hits of the question's own
+     * search, then the rest in order, up to MAX_ITEMS and `$maxCharacters`. An item too long for
+     * what is left is passed over for shorter ones after it.
+     *
+     * @param  array<string, array{ref: ?string, status: string, text: string, from_question: bool, groups: list<string>}>  $candidates
+     * @return array<string, true>
+     */
+    private function choose(array $candidates, int $maxCharacters): array
+    {
+        $questionKeys = array_keys(array_filter($candidates, fn (array $candidate): bool => $candidate['from_question']));
+        $priority = array_unique([...array_slice($questionKeys, 0, self::QUESTION_SLOTS), ...array_keys($candidates)]);
+        $chosen = [];
+        $characters = 0;
+
+        foreach ($priority as $key) {
+            // Measured with the widest id, so renumbering never makes the pack longer than counted.
+            $length = mb_strlen(self::renderItem('E'.self::MAX_ITEMS, $candidates[$key]['status'], $candidates[$key]['text'])) + 1;
+
+            if ($characters + $length > $maxCharacters) {
+                continue;
+            }
+
+            $chosen[$key] = true;
+            $characters += $length;
+
+            if (count($chosen) >= self::MAX_ITEMS) {
+                break;
+            }
+        }
+
+        return $chosen;
     }
 
     /**

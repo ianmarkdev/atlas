@@ -7,7 +7,10 @@ use App\Domain\Ai\AiGateway;
 use App\Domain\Ai\ClaimGroundingValidator;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
+use App\Domain\Ai\LlmRouter;
 use App\Domain\Ai\LlmUnavailable;
+use App\Domain\Ai\PromptBudget;
+use App\Domain\Ai\PromptRegistry;
 use App\Domain\Applications\AiAnswerService;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\AnswerDraftVersion;
@@ -25,7 +28,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * Write an answer or cover letter with AI (M8): build the evidence pack, run the answer_writing
  * prompt (with the writing preferences that apply to the requester, M10) through AiGateway,
  * have the server check every claim label against that evidence, and store the result as a new
- * version of the answer. Failures are stored on the draft.
+ * version of the answer. Failures are stored on the draft. The prompt is kept within the
+ * model's window (PromptBudget): evidence is chosen to fit, then the job description is shortened.
  *
  * With `ai.answer_claims = separate` (the default) the writer writes only the text and
  * CheckAnswerClaims labels its claims afterwards; until then the draft cannot be approved.
@@ -55,7 +59,7 @@ class GenerateAnswerDraft implements ShouldQueue
         return [new WithWorkspaceContext($this->workspaceId)];
     }
 
-    public function handle(AiGateway $gateway, EvidencePackBuilder $evidence, ClaimGroundingValidator $grounding, AiAnswerService $answers): void
+    public function handle(AiGateway $gateway, EvidencePackBuilder $evidence, ClaimGroundingValidator $grounding, AiAnswerService $answers, LlmRouter $router, PromptRegistry $prompts, PromptBudget $budget): void
     {
         $question = ApplicationQuestion::query()->with('application.posting')->find($this->questionId);
         $draft = $question === null ? null : AnswerDraft::query()->where('application_question_id', $question->id)->first();
@@ -77,40 +81,59 @@ class GenerateAnswerDraft implements ShouldQueue
             return;
         }
 
-        // A paragraph of an AI draft is rewritten from that draft's evidence, so the claims kept
-        // from the other paragraphs still point at the same items.
-        $built = $base !== null && $base->author_type === 'ai' && ($base->evidence_pack ?? []) !== []
-            ? ['pack' => $base->evidence_pack, 'storyline' => '(none)', 'resume_version_id' => $base->resume_version_id]
-            : $evidence->build($application, $question);
-        $pack = $built['pack'];
         $variables = [
             'candidate_name' => CandidateProfile::current()->display_name,
             'company_name' => $application->companyLabel(),
             'role_title' => $application->role_title,
-            'job_description' => $application->jobDescription() ?? '(no job description pasted)',
-            'evidence' => EvidencePackBuilder::render($pack),
+            'job_description' => '',
+            'evidence' => '',
             'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->oldest()->get()),
             'instruction' => $instruction ?? '(none)',
             'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
             'limit' => self::limitOf($question),
         ];
         $variables += $base === null
-            ? ['storyline' => $built['storyline']]
+            ? ['storyline' => '']
             : ParagraphRedraft::context($base->body, $paragraph);
         $requestKey = "answer:{$question->id}:".$draft->generation_requested_at?->getTimestamp().($paragraph === null ? '' : ":p{$paragraph}");
         // A whole draft's claims are labelled afterwards by CheckAnswerClaims (faster on a small GPU),
         // unless configured to have the writer label them (answer_writing v4).
         $checkSeparately = $base === null && config('ai.answer_claims') === 'separate';
+        $promptKey = $base === null ? 'answer_writing' : 'answer_paragraph';
+        $promptVersion = $base === null && ! $checkSeparately ? 4 : null;
 
         try {
+            // The evidence and the job description share what the rest of the prompt leaves of the
+            // model's window; the job description is sure of a third of it and is shortened last.
+            $room = $budget->remaining($router->route('answer_writing'), $prompts->get($promptKey, $promptVersion), $variables);
+            $jobDescription = $application->jobDescription() ?? '(no job description pasted)';
+
+            // A paragraph of an AI draft is rewritten from that draft's evidence, so the claims kept
+            // from the other paragraphs still point at the same items.
+            $built = $base !== null && $base->author_type === 'ai' && ($base->evidence_pack ?? []) !== []
+                ? ['pack' => $base->evidence_pack, 'storyline' => '(none)', 'resume_version_id' => $base->resume_version_id]
+                : $evidence->build($application, $question, $room - min(mb_strlen($jobDescription), intdiv($room, 3)));
+            $pack = $built['pack'];
+            $variables['evidence'] = EvidencePackBuilder::render($pack);
+
+            if ($base === null) {
+                $variables['storyline'] = $built['storyline'];
+            }
+
+            $variables['job_description'] = PromptBudget::shorten(
+                $jobDescription,
+                $room - mb_strlen($variables['evidence']) - mb_strlen($base === null ? $variables['storyline'] : ''),
+                __('[… the rest of the job description was left out to fit the model\'s window]'),
+            );
+
             $result = $gateway->run(
                 'answer_writing',
-                $base === null ? 'answer_writing' : 'answer_paragraph',
+                $promptKey,
                 $variables,
                 $requester,
                 purpose: 'answer_generation',
                 idempotencyKey: $requestKey,
-                promptVersion: $base === null && ! $checkSeparately ? 4 : null,
+                promptVersion: $promptVersion,
             );
         } catch (InvalidModelOutput $exception) {
             $answers->fail($draft, __("The AI's answer was not usable (invalid structure), even after a repair attempt. Try again, or use a larger model."));

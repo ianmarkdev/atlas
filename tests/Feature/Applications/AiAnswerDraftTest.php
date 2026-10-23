@@ -3,9 +3,11 @@
 use App\Domain\Ai\Clients\FakeLlmClient;
 use App\Domain\Ai\LlmRequest;
 use App\Domain\Ai\LlmRouter;
+use App\Domain\Ai\PromptBudget;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
+use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
@@ -193,6 +195,53 @@ test('a cover letter is written from the tailored resume: its bullets lead the e
     expect($prompt)->toContain('<item id="E1" status="verified">Led the migration of card payments to a new processor</item>')
         ->and($prompt)->toContain("1. {$employment->title} at {$employment->employer_name}: E1")
         ->and(draftOf($candidate, $letter)->currentVersion->resume_version_id)->not->toBeNull();
+});
+
+test("a question's own evidence keeps its place when the job's requirements would fill the pack", function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    claimOf($candidate, 'Settled a schema conflict between two teams sharing one database');
+    $requirements = array_map(fn (int $n): array => ['kind' => 'must', 'evidence' => [
+        ['ref' => null, 'status' => 'verified', 'text' => "Requirement {$n} evidence A"],
+        ['ref' => null, 'status' => 'verified', 'text' => "Requirement {$n} evidence B"],
+    ]], range(1, 8));
+    inWorkspaceOf($candidate, fn () => (new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => ['summary' => 'Senior engineer'],
+        'matches' => ['requirements' => $requirements],
+    ])->save());
+    $question = questionToDraft($candidate, $application, 'Tell us about a time you settled a conflict.');
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    expect(draftOf($candidate, $question)->currentVersion->evidence_pack)->toHaveCount(15)
+        ->and($prompt)->toContain('<item id="E15" status="verified">Settled a schema conflict between two teams sharing one database</item>')
+        ->and($prompt)->toContain('Requirement 7 evidence B')
+        ->and($prompt)->not->toContain('Requirement 8 evidence A');
+});
+
+test("a job description too long for the model's window is shortened, and the evidence still goes in", function () {
+    config(['ai.tasks.answer_writing.context' => 5000]);
+    $candidate = candidateWithTwoFactor();
+    $jobDescription = implode("\n", array_map(fn (int $n): string => "Line {$n} of a very long job description.", range(1, 300)));
+    $application = JobApplication::factory()->forProfile(profileOf($candidate))->withJobDescription($jobDescription)->create(['company_name' => 'Fabrikam', 'role_title' => 'Senior Engineer']);
+    claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $request = $fake->requests[0];
+    $prompt = $request->messages[0]['content'];
+    expect($prompt)->toContain('Line 1 of a very long job description.')
+        ->and($prompt)->not->toContain('Line 300 of')
+        ->and($prompt)->toContain("[… the rest of the job description was left out to fit the model's window]")
+        ->and($prompt)->toContain('<item id="E1" status="verified">Tuned PostgreSQL indexes and queries for the billing platform</item>')
+        ->and(mb_strlen($request->system) + mb_strlen($prompt))->toBeLessThanOrEqual((int) ((5000 - 2500) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN);
 });
 
 test('an answer with AI placeholders left in cannot be approved', function () {

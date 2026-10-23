@@ -125,6 +125,13 @@ return [
         ],
     ],
 
+    /*
+    | Prompt size (PromptBudget). A local model's prompt is limited by its
+    | window (`context` minus `max_tokens`); an external model's window is far
+    | larger, so this caps the input of one request instead (cost).
+    */
+    'external_input_tokens' => (int) env('AI_EXTERNAL_INPUT_TOKENS', 16000),
+
     'retries' => [
         // Attempts per call, including the first (429 / 5xx / overloaded / connection errors).
         'max_attempts' => (int) env('AI_MAX_ATTEMPTS', 3),
