@@ -30,7 +30,8 @@ use App\Domain\Shared\WordDiff;
  *   `create_claim` — for the candidate to approve;
  * - a writing rule not already in place becomes a `create_writing_preference`: for the
  *   candidate, or for a VA alone when it is their personal habit. A rule the AI is unsure of is
- *   held until a second edit shows it again;
+ *   held until a second edit shows it again: the AI is shown the held rules and names the one a
+ *   new rule repeats (`same_as`), however differently it is worded;
  * - a reusable answer (not a cover letter, not already in the library) becomes a
  *   `create_library_answer`;
  * - a one-off is recorded and nothing else.
@@ -44,6 +45,9 @@ class FeedbackAnalyser
 
     /** Below this, a reusable answer is not offered. */
     public const REUSABLE = 0.5;
+
+    /** At most this many held rules are shown to the AI, newest first. */
+    public const HELD_RULES = 20;
 
     public function __construct(
         private ProposalService $proposals,
@@ -69,7 +73,28 @@ class FeedbackAnalyser
             'changes' => WordDiff::render($event->diff),
             'evidence' => EvidencePackBuilder::render($event->fromVersion->evidence_pack ?? []),
             'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($editor)->get()),
+            'held_rules' => self::renderHeldRules($this->heldRules($event)),
         ];
+    }
+
+    /**
+     * The held rules as tagged lines for the prompt.
+     *
+     * @param  array<string, string>  $heldRules
+     */
+    public static function renderHeldRules(array $heldRules): string
+    {
+        if ($heldRules === []) {
+            return '(none)';
+        }
+
+        $lines = [];
+
+        foreach ($heldRules as $id => $rule) {
+            $lines[] = sprintf('<rule id="%s">%s</rule>', $id, htmlspecialchars($rule, ENT_NOQUOTES));
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -174,7 +199,9 @@ class FeedbackAnalyser
             return ['skipped', 'already a rule or suggested'];
         }
 
-        if ((float) ($item['confidence'] ?? 0) < self::CONFIDENT && ! $this->seenBefore($event, $normalized)) {
+        $repeatsHeldRule = array_key_exists((string) ($item['same_as'] ?? ''), $this->heldRules($event));
+
+        if ((float) ($item['confidence'] ?? 0) < self::CONFIDENT && ! $repeatsHeldRule && ! $this->seenBefore($event, $normalized)) {
             return ['held', 'waiting to see the same rule in another edit'];
         }
 
@@ -264,6 +291,43 @@ class FeedbackAnalyser
             ->contains(fn (FeedbackEvent $earlier): bool => collect($earlier->analysis['items'] ?? [])
                 ->contains(fn (array $item): bool => ($item['type'] ?? null) === 'writing_preference'
                     && WritingPreference::normalizeRule((string) ($item['rule'] ?? '')) === $normalizedRule));
+    }
+
+    /**
+     * Rules held in earlier edits that no later edit has repeated yet, newest first, keyed by the
+     * id the AI names in `same_as`: `H{event id}.{item index}`.
+     *
+     * @return array<string, string>
+     */
+    private function heldRules(FeedbackEvent $event): array
+    {
+        $earlierEvents = FeedbackEvent::query()
+            ->whereKeyNot($event->id)
+            ->where('status', 'analysed')
+            ->latest('id')
+            ->limit(50)
+            ->get(['id', 'analysis']);
+
+        $repeated = $earlierEvents
+            ->flatMap(fn (FeedbackEvent $earlier): array => $earlier->analysis['items'] ?? [])
+            ->filter(fn (array $item): bool => ($item['outcome'] ?? null) !== 'held')
+            ->pluck('same_as')
+            ->filter()
+            ->flip();
+
+        $held = [];
+
+        foreach ($earlierEvents as $earlier) {
+            foreach ($earlier->analysis['items'] ?? [] as $index => $item) {
+                $id = "H{$earlier->id}.{$index}";
+
+                if (($item['type'] ?? null) === 'writing_preference' && ($item['outcome'] ?? null) === 'held' && ! $repeated->has($id)) {
+                    $held[$id] = (string) ($item['rule'] ?? '');
+                }
+            }
+        }
+
+        return array_slice($held, 0, self::HELD_RULES, true);
     }
 
     /**

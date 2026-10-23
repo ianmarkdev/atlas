@@ -28,7 +28,7 @@ const FB_EDITED = 'I tuned PostgreSQL queries for the billing platform, cutting 
  */
 function fbAnalysis(array $items): array
 {
-    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
+    $defaults = ['evidence_id' => null, 'statement' => null, 'rule' => null, 'rule_kind' => null, 'personal' => null, 'same_as' => null, 'category' => null, 'confidence' => 0.9, 'rationale' => 'The edit shows it.'];
 
     return ['items' => array_map(fn (array $item): array => [...$defaults, ...$item], $items)];
 }
@@ -130,6 +130,36 @@ test('a writing rule the AI is unsure of waits until a second edit shows it', fu
     fbApprove($candidate, $second['application'], $second['question']);
 
     expect(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Use British spelling', 'kind' => 'spelling', 'scope' => 'profile']);
+});
+
+test('a held rule is proposed when a later edit repeats it in other words, and is not offered again', function () {
+    $candidate = candidateWithTwoFactor();
+    $first = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false, 'confidence' => 0.5]])]);
+    fbApprove($candidate, $first['application'], $first['question']);
+    $heldId = 'H'.inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->sole())->id.'.0';
+
+    $second = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Spell words the UK way', 'rule_kind' => 'spelling', 'personal' => false, 'same_as' => $heldId, 'confidence' => 0.5]])], claim: $first['claim']);
+    fbApprove($candidate, $second['application'], $second['question']);
+
+    expect($second['fake']->requests[1]->messages[0]['content'])->toContain("<rule id=\"{$heldId}\">Use British spelling</rule>")
+        ->and(fbProposals($candidate)->sole()->payload)->toEqual(['rule' => 'Spell words the UK way', 'kind' => 'spelling', 'scope' => 'profile']);
+
+    $third = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'one_off']])], claim: $first['claim']);
+    fbApprove($candidate, $third['application'], $third['question']);
+
+    expect($third['fake']->requests[1]->messages[0]['content'])->toContain("<held_rules>\n(none)\n</held_rules>");
+});
+
+test('a held rule is not promoted by an id that names no held rule', function () {
+    $candidate = candidateWithTwoFactor();
+    $first = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false, 'confidence' => 0.5]])]);
+    fbApprove($candidate, $first['application'], $first['question']);
+
+    $second = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Write in a British tone', 'rule_kind' => 'tone', 'personal' => false, 'same_as' => 'H999.0', 'confidence' => 0.5]])], claim: $first['claim']);
+    fbApprove($candidate, $second['application'], $second['question']);
+
+    expect(fbProposals($candidate))->toBeEmpty()
+        ->and(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->latest('id')->first())->analysis['items'][0]['outcome'])->toBe('held');
 });
 
 test('nothing is learned from an AI draft approved as written', function () {
