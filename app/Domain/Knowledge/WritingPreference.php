@@ -20,7 +20,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * Profile rules apply to every draft written for the candidate; a user's personal rules only to
  * the drafts that user asks for. A rule may be only for cover letters or only for answers to
  * application questions (`drafts`). Always given to the writer in full, never retrieved or embedded.
- * A learned rule keeps links to the edits it was seen in (`supportingEdits`).
+ * A learned rule keeps links to the edits it was seen in (`supportingEdits`); an edit that fixed
+ * what a rule the writer had already asks for is kept as a miss (`missedIn`), a sign the rule is
+ * unclear or not followed.
  *
  * @property int $id
  * @property string $ulid
@@ -39,6 +41,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property CarbonImmutable|null $updated_at
  * @property-read User|null $user
  * @property-read Collection<int, FeedbackEvent> $supportingEdits
+ * @property-read Collection<int, FeedbackEvent> $missedIn
  */
 #[UsePolicy(WritingPreferencePolicy::class)]
 class WritingPreference extends Model
@@ -103,11 +106,36 @@ class WritingPreference extends Model
         $lines = [];
 
         foreach ($preferences as $preference) {
-            $where = $preference->drafts === WritingPreferenceDrafts::All ? '' : ', '.mb_strtolower($preference->drafts->label());
-            $lines[] = "- ({$preference->kind->label()}{$where}) {$preference->rule}";
+            $lines[] = "- {$preference->line()}";
         }
 
         return $lines === [] ? '(none)' : implode("\n", $lines);
+    }
+
+    /**
+     * The rules as tagged lines with an id (`R{id}`) the AI can name, for the feedback analysis.
+     *
+     * @param  iterable<self>  $preferences
+     */
+    public static function renderWithIds(iterable $preferences): string
+    {
+        $lines = [];
+
+        foreach ($preferences as $preference) {
+            $lines[] = sprintf('<rule id="R%d">%s</rule>', $preference->id, htmlspecialchars($preference->line(), ENT_NOQUOTES));
+        }
+
+        return $lines === [] ? '(none)' : implode("\n", $lines);
+    }
+
+    /**
+     * "(Kind, where) rule".
+     */
+    private function line(): string
+    {
+        $where = $this->drafts === WritingPreferenceDrafts::All ? '' : ', '.mb_strtolower($this->drafts->label());
+
+        return "({$this->kind->label()}{$where}) {$this->rule}";
     }
 
     /**
@@ -132,6 +160,17 @@ class WritingPreference extends Model
     public function supportingEdits(): BelongsToMany
     {
         return $this->belongsToMany(FeedbackEvent::class, 'writing_preference_sources')
+            ->withPivot(['workspace_id', 'created_at']);
+    }
+
+    /**
+     * Edits that fixed by hand what this rule asks for, in drafts written with it.
+     *
+     * @return BelongsToMany<FeedbackEvent, $this>
+     */
+    public function missedIn(): BelongsToMany
+    {
+        return $this->belongsToMany(FeedbackEvent::class, 'writing_preference_misses')
             ->withPivot(['workspace_id', 'created_at']);
     }
 

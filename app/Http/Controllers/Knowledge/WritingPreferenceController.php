@@ -38,9 +38,11 @@ class WritingPreferenceController extends Controller
             'drafts_label' => $preference->drafts === WritingPreferenceDrafts::All ? null : $preference->drafts->label(),
             'learned' => str_starts_with($preference->created_via, 'proposal:'),
             'seen_in' => $preference->supporting_edits_count,
+            // Drafts written with this rule that still needed it applied by hand.
+            'missed_in' => $preference->missed_in_count,
             'can' => ['archive' => $user->can('archive', $preference)],
         ];
-        $active = WritingPreference::query()->appliesTo($user)->withCount('supportingEdits')->oldest()->get();
+        $active = WritingPreference::query()->appliesTo($user)->withCount(['supportingEdits', 'missedIn'])->oldest()->get();
 
         return Inertia::render('knowledge/writing-style', [
             'shared' => $active->where('scope', 'profile')->map($present)->values()->all(),

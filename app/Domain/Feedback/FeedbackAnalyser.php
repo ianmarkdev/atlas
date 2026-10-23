@@ -35,6 +35,8 @@ use App\Domain\Shared\WordDiff;
  *   new rule repeats (`same_as`), however differently it is worded. The suggestion carries
  *   the edits it was seen in and the drafts it is for (only cover letters or only question
  *   answers when every one of those edits was of that kind);
+ * - a writing rule the AI draft was already written with is not suggested again: the edit is
+ *   kept as a miss of that rule (outcome `missed`), for the candidate to see, and nothing changes;
  * - a reusable answer (not a cover letter, not already in the library) becomes a
  *   `create_library_answer`;
  * - a one-off is recorded and nothing else.
@@ -75,7 +77,7 @@ class FeedbackAnalyser
             'edited' => $event->toVersion->body,
             'changes' => WordDiff::render($event->diff),
             'evidence' => EvidencePackBuilder::render($event->fromVersion->evidence_pack ?? []),
-            'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($editor)->get()),
+            'writing_rules' => WritingPreference::renderWithIds(WritingPreference::query()->appliesTo($editor)->get()),
             'held_rules' => self::renderHeldRules($this->heldRules($event)),
         ];
     }
@@ -102,7 +104,7 @@ class FeedbackAnalyser
 
     /**
      * @param  array<string, mixed>  $output  the model's validated output
-     * @return list<array<string, mixed>> the items with their outcome (`proposed`, `held`, `skipped`, `recorded`) and reason
+     * @return list<array<string, mixed>> the items with their outcome (`proposed`, `held`, `missed`, `skipped`, `recorded`) and reason
      */
     public function route(FeedbackEvent $event, array $output, GenerationRun $run): array
     {
@@ -195,14 +197,24 @@ class FeedbackAnalyser
         $editor = $event->user;
         $owner = $editor !== null && ! $editor->isCandidate() && ($item['personal'] ?? false) === true ? $editor : null;
         $normalized = WritingPreference::normalizeRule($rule);
+        $sameAs = (string) ($item['same_as'] ?? '');
+        $missed = $this->missedRule($event, $sameAs, $normalized);
 
-        if ($this->preferences->exists($rule, $owner)
+        if ($missed !== null) {
+            $missed->missedIn()->syncWithoutDetaching([$event->id => ['workspace_id' => $missed->workspace_id]]);
+
+            return ['missed', 'the draft was written with this rule and did not follow it'];
+        }
+
+        $namesActiveRule = str_starts_with($sameAs, 'R') && WritingPreference::query()->appliesTo($owner)->whereKey((int) substr($sameAs, 1))->exists();
+
+        if ($namesActiveRule
+            || $this->preferences->exists($rule, $owner)
             || $this->pendingCreation('create_writing_preference', 'rule', $rule)
             || collect($earlier)->contains(fn (array $seen): bool => WritingPreference::normalizeRule((string) ($seen['rule'] ?? '')) === $normalized)) {
             return ['skipped', 'already a rule or suggested'];
         }
 
-        $sameAs = (string) ($item['same_as'] ?? '');
         $earlierEventId = array_key_exists($sameAs, $this->heldRules($event))
             ? (int) substr($sameAs, 1, (int) strpos($sameAs, '.') - 1)
             : $this->earlierSighting($event, $normalized);
@@ -220,6 +232,19 @@ class FeedbackAnalyser
         ], $this->rationale($item), [...$this->from($event, $run), 'reviewer' => $owner]);
 
         return ['proposed', null];
+    }
+
+    /**
+     * The active rule the AI draft was written with that this edit only applied by hand: named by
+     * the AI (`R{id}`) or worded the same.
+     */
+    private function missedRule(FeedbackEvent $event, string $sameAs, string $normalizedRule): ?WritingPreference
+    {
+        return WritingPreference::query()
+            ->whereKey($event->fromVersion->writing_rule_ids ?? [])
+            ->where('status', 'active')
+            ->get()
+            ->first(fn (WritingPreference $preference): bool => $sameAs === "R{$preference->id}" || WritingPreference::normalizeRule($preference->rule) === $normalizedRule);
     }
 
     /**

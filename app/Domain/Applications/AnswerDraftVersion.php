@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $paragraph the paragraph (0-based) this AI version redrafted; null for a whole draft
  * @property int|null $resume_version_id the tailored resume version a cover letter was written from
  * @property array<string, array{ref: ?string, status: string, text: string}>|null $evidence_pack
+ * @property list<int>|null $writing_rule_ids the writing preferences an AI version was written with
  * @property list<array{text: string, classification: string, model_classification: string, evidence_ids: list<string>, flags: list<string>}>|null $grounding
  * @property list<array{question: string, why: string}>|null $clarification_questions
  * @property CarbonImmutable $created_at
@@ -37,7 +38,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Collection<int, AnswerClaimReview> $reviews
  * @property-read AnswerLibraryEntry|null $libraryEntry
  */
-#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'instruction', 'paragraph', 'resume_version_id', 'evidence_pack', 'grounding', 'clarification_questions'])]
+#[Fillable(['workspace_id', 'answer_draft_id', 'version_no', 'body', 'library_entry_id', 'author_type', 'author_user_id', 'created_via', 'generation_run_id', 'instruction', 'paragraph', 'resume_version_id', 'evidence_pack', 'writing_rule_ids', 'grounding', 'clarification_questions'])]
 class AnswerDraftVersion extends Model
 {
     use BelongsToWorkspace;
@@ -116,6 +117,7 @@ class AnswerDraftVersion extends Model
         return [
             'created_at' => 'datetime',
             'evidence_pack' => 'array',
+            'writing_rule_ids' => 'array',
             'grounding' => 'array',
             'clarification_questions' => 'array',
         ];

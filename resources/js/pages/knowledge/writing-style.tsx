@@ -22,6 +22,7 @@ type Preference = {
     drafts_label: string | null;
     learned: boolean;
     seen_in: number;
+    missed_in: number;
     can: { archive: boolean };
 };
 
@@ -188,6 +189,14 @@ function RuleList({
                                         {preference.seen_in > 1
                                             ? `learned from ${preference.seen_in} edits`
                                             : 'learned from edits'}
+                                    </span>
+                                )}
+                                {preference.missed_in > 0 && (
+                                    <span className="mt-1 block type-caption text-destructive">
+                                        {preference.missed_in === 1
+                                            ? 'Not followed in 1 draft: the fix was made by hand.'
+                                            : `Not followed in ${preference.missed_in} drafts: the fix was made by hand.`}{' '}
+                                        Try rewording it more plainly.
                                     </span>
                                 )}
                             </span>

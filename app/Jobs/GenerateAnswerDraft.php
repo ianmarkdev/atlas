@@ -83,13 +83,14 @@ class GenerateAnswerDraft implements ShouldQueue
             return;
         }
 
+        $rules = WritingPreference::query()->appliesTo($requester)->forDrafts(WritingPreferenceDrafts::of($question))->oldest()->get();
         $variables = [
             'candidate_name' => CandidateProfile::current()->display_name,
             'company_name' => $application->companyLabel(),
             'role_title' => $application->role_title,
             'job_description' => '',
             'evidence' => '',
-            'writing_rules' => WritingPreference::render(WritingPreference::query()->appliesTo($requester)->forDrafts(WritingPreferenceDrafts::of($question))->oldest()->get()),
+            'writing_rules' => WritingPreference::render($rules),
             'instruction' => $instruction ?? '(none)',
             'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
             'limit' => self::limitOf($question),
@@ -169,12 +170,12 @@ class GenerateAnswerDraft implements ShouldQueue
                 return;
             }
 
-            $answers->storeParagraph($draft, $base->id, $paragraph, $text, $result->run, $pack, $checked, $clarifications, $requester, $instruction);
+            $answers->storeParagraph($draft, $base->id, $paragraph, $text, $result->run, $pack, $checked, $clarifications, $requester, $instruction, $rules->modelKeys());
 
             return;
         }
 
-        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id']);
+        $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id'], $rules->modelKeys());
     }
 
     /**

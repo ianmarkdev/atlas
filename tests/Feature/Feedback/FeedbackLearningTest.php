@@ -152,6 +152,46 @@ test('a held rule is proposed when a later edit repeats it in other words, and i
     expect($third['fake']->requests[1]->messages[0]['content'])->toContain("<held_rules>\n(none)\n</held_rules>");
 });
 
+test('an edit that applies a rule the draft was written with is kept as a miss of that rule, not suggested again', function () {
+    $candidate = candidateWithTwoFactor();
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Never use the word passionate', 'kind' => 'banned_phrase']);
+    $rule = inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole());
+    ['application' => $application, 'question' => $question, 'fake' => $fake] = fbEditedDraft($candidate, $candidate, [fbAnalysis([
+        ['type' => 'writing_preference', 'rule' => 'Do not call yourself passionate', 'rule_kind' => 'banned_phrase', 'personal' => false, 'same_as' => "R{$rule->id}"],
+    ])]);
+
+    fbApprove($candidate, $application, $question);
+
+    $event = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->with('fromVersion')->sole());
+    expect($event->fromVersion->writing_rule_ids)->toBe([$rule->id])
+        ->and($fake->requests[1]->messages[0]['content'])->toContain("<rule id=\"R{$rule->id}\">(Words to avoid) Never use the word passionate</rule>")
+        ->and($event->analysis['items'][0]['outcome'])->toBe('missed')
+        ->and(fbProposals($candidate))->toBeEmpty()
+        ->and(inWorkspaceOf($candidate, fn () => $rule->missedIn()->pluck('feedback_events.id')->all()))->toBe([$event->id]);
+
+    $this->actingAs($candidate)
+        ->get(route('knowledge.preferences.index'))
+        ->assertInertia(fn (Assert $page) => $page->where('shared.0.missed_in', 1));
+});
+
+test('a rule added after the draft was written is not counted as missed, nor suggested again', function () {
+    $candidate = candidateWithTwoFactor();
+    $ruleId = null;
+    ['application' => $application, 'question' => $question] = fbEditedDraft($candidate, $candidate, [
+        function () use (&$ruleId): array {
+            return fbAnalysis([['type' => 'writing_preference', 'rule' => 'Do not call yourself passionate', 'rule_kind' => 'banned_phrase', 'personal' => false, 'same_as' => "R{$ruleId}"]]);
+        },
+    ]);
+    $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => 'Never use the word passionate', 'kind' => 'banned_phrase']);
+    $ruleId = inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole())->id;
+
+    fbApprove($candidate, $application, $question);
+
+    expect(inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->sole())->analysis['items'][0]['outcome'])->toBe('skipped')
+        ->and(fbProposals($candidate))->toBeEmpty()
+        ->and(inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole()->missedIn()->count()))->toBe(0);
+});
+
 test('a held rule is not promoted by an id that names no held rule', function () {
     $candidate = candidateWithTwoFactor();
     $first = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false, 'confidence' => 0.5]])]);

@@ -16,7 +16,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * A human edit of an AI draft (M10, docs/04 §4.7): the AI version, the edited version, the
  * server's word diff, and what the AI learned from it (`analysis.items`, each with the outcome:
- * proposed, held until seen again, or skipped with a reason).
+ * proposed, held until seen again, missed — a rule the draft was written with —, or skipped
+ * with a reason).
  *
  * @property int $id
  * @property int $workspace_id

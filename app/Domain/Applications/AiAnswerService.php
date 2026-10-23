@@ -95,10 +95,11 @@ class AiAnswerService
      * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
      * @param  list<array<string, mixed>>|null  $grounding  the checked claims; null when CheckAnswerClaims labels them afterwards
      * @param  list<array{question: string, why: string}>  $clarifications
+     * @param  list<int>  $writingRuleIds  the writing preferences the writer was given
      */
-    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, ?array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null): void
+    public function storeDraft(AnswerDraft $draft, string $body, GenerationRun $run, array $evidencePack, ?array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, ?int $resumeVersionId = null, array $writingRuleIds = []): void
     {
-        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId): void {
+        DB::transaction(function () use ($draft, $body, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $resumeVersionId, $writingRuleIds): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
 
             if ($draft->isApproved()) {
@@ -115,6 +116,7 @@ class AiAnswerService
                 'instruction' => $instruction,
                 'resume_version_id' => $resumeVersionId,
                 'evidence_pack' => $evidencePack,
+                'writing_rule_ids' => $writingRuleIds,
                 'grounding' => $grounding,
                 'clarification_questions' => $clarifications,
             ]);
@@ -166,10 +168,11 @@ class AiAnswerService
      * @param  array<string, array{ref: ?string, status: string, text: string}>  $evidencePack
      * @param  list<array<string, mixed>>  $grounding  the new paragraph's claims, already checked
      * @param  list<array{question: string, why: string}>  $clarifications
+     * @param  list<int>  $writingRuleIds  the writing preferences the writer was given
      */
-    public function storeParagraph(AnswerDraft $draft, int $baseVersionId, int $paragraph, string $text, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null): void
+    public function storeParagraph(AnswerDraft $draft, int $baseVersionId, int $paragraph, string $text, GenerationRun $run, array $evidencePack, array $grounding, array $clarifications, ?User $requester, ?string $instruction = null, array $writingRuleIds = []): void
     {
-        DB::transaction(function () use ($draft, $baseVersionId, $paragraph, $text, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction): void {
+        DB::transaction(function () use ($draft, $baseVersionId, $paragraph, $text, $run, $evidencePack, $grounding, $clarifications, $requester, $instruction, $writingRuleIds): void {
             $draft = AnswerDraft::query()->whereKey($draft->id)->lockForUpdate()->firstOrFail();
             $base = AnswerDraftVersion::query()->with('reviews')->find($baseVersionId);
 
@@ -190,6 +193,7 @@ class AiAnswerService
                 'paragraph' => $paragraph,
                 'resume_version_id' => $base->resume_version_id,
                 'evidence_pack' => $evidencePack,
+                'writing_rule_ids' => $writingRuleIds,
                 'grounding' => $merged['grounding'],
                 'clarification_questions' => $merged['questions'],
             ]);
