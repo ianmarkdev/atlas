@@ -33,7 +33,12 @@ class OllamaLlmClient implements LlmClient
                     'stream' => false,
                     'format' => $request->schema,
                     'keep_alive' => $this->keepAlive,
-                    'options' => ['temperature' => $request->temperature, 'num_predict' => $request->maxTokens],
+                    // Without num_ctx Ollama uses its default window and silently drops the start
+                    // of a longer prompt (the instructions first).
+                    'options' => array_filter(
+                        ['temperature' => $request->temperature, 'num_predict' => $request->maxTokens, 'num_ctx' => $request->contextTokens],
+                        fn (mixed $value): bool => $value !== null,
+                    ),
                 ], fn (mixed $value): bool => $value !== null)));
         } catch (ConnectionException $exception) {
             throw new LlmUnavailable("Ollama is not reachable at {$this->url}. Is it running? (ollama serve)", previous: $exception);

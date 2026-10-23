@@ -48,7 +48,7 @@ function fbEditedDraft(User $candidate, User $editor, array $responses, string $
     $question = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('job_application_id', $application->id)->sole());
 
     $fake = app(LlmRouter::class)->fake(new FakeLlmClient([
-        ['answer' => FB_AI_TEXT, 'segments' => [['text' => FB_AI_TEXT, 'claims' => [['text' => 'I tuned PostgreSQL queries for the billing platform', 'classification' => 'verified', 'evidence_ids' => ['E1']]]]], 'clarification_questions' => []],
+        ['answer' => FB_AI_TEXT, 'claims' => [['text' => 'I tuned PostgreSQL queries for the billing platform', 'classification' => 'verified', 'evidence_ids' => ['E1']]], 'clarification_questions' => []],
         ...$responses,
     ]));
     test()->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
@@ -140,7 +140,7 @@ test('nothing is learned from an AI draft approved as written', function () {
     $question = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->sole());
     // Only the draft is queued: a feedback analysis would find no response and fail the test.
     app(LlmRouter::class)->fake(new FakeLlmClient([
-        ['answer' => 'I like Fabrikam.', 'segments' => [['text' => 'I like Fabrikam.', 'claims' => [['text' => 'I like Fabrikam', 'classification' => 'hypothetical', 'evidence_ids' => []]]]], 'clarification_questions' => []],
+        ['answer' => 'I like Fabrikam.', 'claims' => [['text' => 'I like Fabrikam', 'classification' => 'hypothetical', 'evidence_ids' => []]], 'clarification_questions' => []],
     ]));
     $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
 
@@ -229,7 +229,7 @@ test('approved lessons become new revisions, are found by the next search and sh
 
     $this->actingAs($candidate)->post(route('applications.questions.store', $application), ['prompt_text' => 'Another question?']);
     $next = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('prompt_text', 'Another question?')->sole());
-    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([['answer' => 'Fine.', 'segments' => [], 'clarification_questions' => []]]));
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([['answer' => 'Fine.', 'claims' => [], 'clarification_questions' => []]]));
     $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $next]));
 
     expect($fake->requests[0]->messages[0]['content'])->toContain("<writing_rules>\n- (Spelling) Use British spelling\n</writing_rules>");

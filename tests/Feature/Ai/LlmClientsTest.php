@@ -39,6 +39,17 @@ describe('ollama', function () {
             && $request['options'] === ['temperature' => 0.2, 'num_predict' => 200]);
     });
 
+    test("sends the task's context window, so a long prompt is not silently cut", function () {
+        Http::fake(['127.0.0.1:11434/api/chat' => Http::response(['message' => ['content' => '{}'], 'prompt_eval_count' => 1, 'eval_count' => 1])]);
+        config(['ai.tasks.answer_writing.context' => 8192]);
+        $route = app(LlmRouter::class)->route('answer_writing');
+        $request = new LlmRequest('test-model', 'You are a test.', [['role' => 'user', 'content' => 'Hello']], 200, contextTokens: $route->contextTokens);
+
+        (new OllamaLlmClient('http://127.0.0.1:11434'))->complete($request);
+
+        Http::assertSent(fn (Request $request) => $request['options']['num_ctx'] === 8192);
+    });
+
     test('a missing model says how to pull it', function () {
         Http::fake(['*' => Http::response(['error' => 'model "x" not found'], 404)]);
 

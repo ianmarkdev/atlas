@@ -154,6 +154,26 @@ test('questions found are added to the application once', function () {
             ->where('analysis.model', 'fake/qwen2.5:3b'));
 });
 
+test('the questions page offers the questions found that are not on the list yet', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = analysedApplicationOf($candidate);
+    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => ['Why do you want to join us?', 'What is your notice period?']])]));
+    $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
+    $analysis = latestAnalysisOf($candidate);
+    $this->actingAs($candidate)->post(route('applications.questions.store', $application), ['prompt_text' => 'why do you want to  join us?']);
+
+    $this->actingAs($candidate)->get(route('applications.questions.index', $application))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('found.analysis', $analysis->ulid)
+            ->where('found.questions', [['index' => 1, 'text' => 'What is your notice period?']]));
+
+    $this->actingAs($candidate)->post(route('applications.analysis.questions', [$application, $analysis]), ['questions' => [1]]);
+
+    expect(inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('prompt_text', 'What is your notice period?')->sole())->origin)->toBe('extracted');
+    $this->actingAs($candidate)->get(route('applications.questions.index', $application))
+        ->assertInertia(fn (Assert $page) => $page->where('found.questions', []));
+});
+
 test('the application page summarises the latest analysis', function () {
     $candidate = candidateWithTwoFactor();
     $application = analysedApplicationOf($candidate);

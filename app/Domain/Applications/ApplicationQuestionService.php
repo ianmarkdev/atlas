@@ -47,10 +47,10 @@ class ApplicationQuestionService
      * @param  list<array{prompt: string, word_limit: ?int, char_limit: ?int}>  $questions
      * @return list<ApplicationQuestion>
      */
-    public function addMany(JobApplication $application, array $questions, User $actor): array
+    public function addMany(JobApplication $application, array $questions, User $actor, string $origin = 'manual'): array
     {
         return DB::transaction(fn (): array => array_map(
-            fn (array $question): ApplicationQuestion => $this->add($application, $question['prompt'], $question['word_limit'], $question['char_limit'], $actor),
+            fn (array $question): ApplicationQuestion => $this->add($application, $question['prompt'], $question['word_limit'], $question['char_limit'], $actor, $origin),
             $questions,
         ));
     }

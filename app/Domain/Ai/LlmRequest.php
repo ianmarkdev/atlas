@@ -11,6 +11,7 @@ final readonly class LlmRequest
     /**
      * @param  list<array{role: 'user'|'assistant', content: string}>  $messages
      * @param  array<string, mixed>|null  $schema  JSON Schema of the expected output
+     * @param  int|null  $contextTokens  the local model's context window (prompt + output); null = the server's default
      */
     public function __construct(
         public string $model,
@@ -20,6 +21,7 @@ final readonly class LlmRequest
         public float $temperature = 0.0,
         public int $timeoutSeconds = 120,
         public ?array $schema = null,
+        public ?int $contextTokens = null,
     ) {}
 
     /**
@@ -29,6 +31,6 @@ final readonly class LlmRequest
      */
     public function withTurns(array ...$turns): self
     {
-        return new self($this->model, $this->system, [...$this->messages, ...array_values($turns)], $this->maxTokens, $this->temperature, $this->timeoutSeconds, $this->schema);
+        return new self($this->model, $this->system, [...$this->messages, ...array_values($turns)], $this->maxTokens, $this->temperature, $this->timeoutSeconds, $this->schema, $this->contextTokens);
     }
 }

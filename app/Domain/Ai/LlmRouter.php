@@ -61,6 +61,7 @@ class LlmRouter
             temperature: (float) $settings['temperature'],
             timeoutSeconds: (int) $settings['timeout'],
             external: $this->fake === null && $external,
+            contextTokens: isset($settings['context']) ? (int) $settings['context'] : null,
         );
     }
 

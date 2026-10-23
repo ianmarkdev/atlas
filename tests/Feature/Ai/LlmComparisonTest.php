@@ -23,10 +23,10 @@ function fakeOllamaForComparisons(): void
             ]],
             default => [
                 'answer' => 'I cut the nightly invoice run from 4 hours to 20 minutes and led a team of 12.',
-                'segments' => [['text' => 'I cut the nightly invoice run from 4 hours to 20 minutes and led a team of 12.', 'claims' => [
+                'claims' => [
                     ['text' => 'I cut the nightly invoice run from 4 hours to 20 minutes', 'classification' => 'verified', 'evidence_ids' => ['E1']],
                     ['text' => 'led a team of 12', 'classification' => 'verified', 'evidence_ids' => ['E1']],
-                ]]],
+                ],
                 'clarification_questions' => [],
             ],
         };

@@ -57,6 +57,11 @@ Measured with `qwen2.5:3b` on that laptop: tailoring a two-job resume ≈ 20 s, 
 
 Ollama keeps a model loaded for `OLLAMA_KEEP_ALIVE` (default `10m`) after the last call.
 
+Every task asks Ollama for a context window of `AI_OLLAMA_CONTEXT` tokens (default `8192`, prompt +
+output). Ollama's own default is 4096, and a longer prompt (a cover letter with its storyline) would be
+cut from the start without an error. One size for all tasks keeps Ollama from reloading a model to
+resize it. Measured with `qwen2.5:7b` on the RTX 3050 laptop (58% CPU): one 150-word answer ≈ 60 s.
+
 ### Working without Ollama
 
 Set `EMBEDDINGS_PROVIDER=fake` to keep keyword search working without embeddings. AI generation

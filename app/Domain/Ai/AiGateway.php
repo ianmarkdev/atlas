@@ -56,6 +56,7 @@ class AiGateway
             temperature: $route->temperature,
             timeoutSeconds: $route->timeoutSeconds,
             schema: $prompt->schema,
+            contextTokens: $route->contextTokens,
         );
 
         if ($idempotencyKey !== null && ($previous = $this->previousResult($idempotencyKey)) !== null) {

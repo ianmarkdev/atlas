@@ -82,22 +82,52 @@ class JobAnalysisService
      */
     public function addQuestions(JobAnalysis $analysis, array $indexes, User $actor): int
     {
-        $found = array_values((array) ($analysis->brief['questions'] ?? []));
-        $normalise = fn (string $text): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $text)));
-        $existing = array_map($normalise, $analysis->application->questions()->pluck('prompt_text')->all());
+        $notAdded = $this->questionsNotAdded($analysis);
         $new = [];
+        $seen = [];
 
         foreach (array_unique($indexes) as $index) {
-            $prompt = trim((string) ($found[$index] ?? ''));
+            $prompt = $notAdded[$index] ?? null;
 
-            if ($prompt !== '' && ! in_array($normalise($prompt), $existing, true)) {
+            if ($prompt !== null && ! isset($seen[self::normaliseQuestion($prompt)])) {
                 $new[] = ['prompt' => mb_substr($prompt, 0, 2000), 'word_limit' => null, 'char_limit' => null];
-                $existing[] = $normalise($prompt);
+                $seen[self::normaliseQuestion($prompt)] = true;
             }
         }
 
-        $this->questions->addMany($analysis->application, $new, $actor);
+        $this->questions->addMany($analysis->application, $new, $actor, origin: 'extracted');
 
         return count($new);
+    }
+
+    /**
+     * The questions the analysis found that are not on the application yet, keyed by their index
+     * in the brief. They are added only when someone confirms them: a job description may hold
+     * text aimed at the AI (docs/04 §4.8).
+     *
+     * @return array<int, string>
+     */
+    public function questionsNotAdded(JobAnalysis $analysis): array
+    {
+        $existing = array_flip(array_map(self::normaliseQuestion(...), $analysis->application->questions()->pluck('prompt_text')->all()));
+        $notAdded = [];
+
+        foreach (array_values((array) ($analysis->brief['questions'] ?? [])) as $index => $question) {
+            $prompt = trim((string) $question);
+
+            if ($prompt !== '' && ! isset($existing[self::normaliseQuestion($prompt)])) {
+                $notAdded[$index] = $prompt;
+            }
+        }
+
+        return $notAdded;
+    }
+
+    /**
+     * A question's text for spotting the same question twice (case and spacing ignored).
+     */
+    public static function normaliseQuestion(string $text): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $text)));
     }
 }

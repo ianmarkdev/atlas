@@ -32,10 +32,7 @@ class JobAnalysisController extends Controller
             ? $history->firstWhere('ulid', $request->string('analysis')->toString())
             : $history->first();
 
-        $existingQuestions = array_map(
-            fn (string $text): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $text))),
-            $application->questions()->pluck('prompt_text')->all(),
-        );
+        $existingQuestions = array_map(JobAnalysisService::normaliseQuestion(...), $application->questions()->pluck('prompt_text')->all());
 
         return Inertia::render('applications/analysis', [
             'application' => [
@@ -58,7 +55,7 @@ class JobAnalysisController extends Controller
                 'latency_ms' => $selected->generationRun?->latency_ms,
                 'is_latest_posting' => $selected->job_posting_id === $application->posting?->id,
                 'question_already_added' => array_map(
-                    fn (mixed $question): bool => in_array(mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', (string) $question))), $existingQuestions, true),
+                    fn (mixed $question): bool => in_array(JobAnalysisService::normaliseQuestion((string) $question), $existingQuestions, true),
                     array_values((array) ($selected->brief['questions'] ?? [])),
                 ),
             ],

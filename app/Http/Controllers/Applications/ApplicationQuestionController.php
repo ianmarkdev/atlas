@@ -6,6 +6,7 @@ use App\Domain\Applications\AiAnswerService;
 use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
+use App\Domain\Applications\JobAnalysisService;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Feedback\FeedbackEvent;
 use App\Domain\Feedback\FeedbackService;
@@ -33,10 +34,11 @@ class ApplicationQuestionController extends Controller
 {
     public function __construct(private ApplicationQuestionService $questions, private AiAnswerService $aiAnswers, private FeedbackService $feedback) {}
 
-    public function index(Request $request, JobApplication $application): Response
+    public function index(Request $request, JobApplication $application, JobAnalysisService $analyses): Response
     {
         $application->load(['posting', 'questions.answer.currentVersion.libraryEntry', 'questions.answer.currentVersion.resumeVersion:id,version_no', 'questions.answer.currentVersion.reviews.claim:id,status', 'questions.answer.approver:id,name', 'questions.application']);
         $user = $request->user();
+        $analysis = $application->analyses()->where('status', 'succeeded')->first()?->setRelation('application', $application);
 
         $histories = AnswerDraftVersion::query()
             ->whereIn('answer_draft_id', $application->questions->pluck('answer.id')->filter())
@@ -151,7 +153,14 @@ class ApplicationQuestionController extends Controller
             ),
             'hasCoverLetter' => $application->questions->contains(fn (ApplicationQuestion $question): bool => $question->isCoverLetter()),
             'canAdd' => $user->can('update', $application),
-            'hasAnalysis' => $application->analyses()->where('status', 'succeeded')->exists(),
+            'hasAnalysis' => $analysis !== null,
+            // Questions the job analysis found, offered here for confirmation before they are added.
+            'found' => $analysis === null || ! $user->can('update', $application) ? null : [
+                'analysis' => $analysis->ulid,
+                'questions' => collect($analyses->questionsNotAdded($analysis))
+                    ->map(fn (string $text, int $index): array => ['index' => $index, 'text' => $text])
+                    ->values()->all(),
+            ],
             'subjects' => ClaimSubject::options(),
             'maxQuestions' => BulkStoreQuestionsRequest::MAX_QUESTIONS,
         ]);

@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
 import ClaimReviewController from '@/actions/App/Http/Controllers/Applications/ClaimReviewController';
+import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
 import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
 import { JobDescriptionSheet } from '@/components/applications/job-description-sheet';
 import Heading from '@/components/heading';
@@ -31,6 +32,7 @@ import { NativeSelect } from '@/components/native-select';
 import { VersionHistory } from '@/components/version-history';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogContent,
@@ -147,6 +149,11 @@ type PageProps = {
     hasCoverLetter: boolean;
     canAdd: boolean;
     hasAnalysis: boolean;
+    /** Questions the job analysis found that are not on the list yet. */
+    found: {
+        analysis: string;
+        questions: { index: number; text: string }[];
+    } | null;
     subjects: SelectOption[];
     maxQuestions: number;
 };
@@ -167,6 +174,7 @@ export default function ApplicationQuestions({
     hasCoverLetter,
     canAdd,
     hasAnalysis,
+    found,
     subjects,
     maxQuestions,
 }: PageProps) {
@@ -269,6 +277,14 @@ export default function ApplicationQuestions({
                     </p>
                 )}
 
+                {found && found.questions.length > 0 && (
+                    <FoundQuestions
+                        application={application.ulid}
+                        analysis={found.analysis}
+                        questions={found.questions}
+                    />
+                )}
+
                 {questions.length > 0 && (
                     <ol className="space-y-4">
                         {questions.map((question, index) => (
@@ -300,6 +316,93 @@ export default function ApplicationQuestions({
 /**
  * Every question with its saved answer, as plain text for pasting into a form or an email.
  */
+/**
+ * Questions the job analysis found, offered for confirmation: a job description can hold text
+ * aimed at the AI, so nothing it "asks" becomes a question without a person adding it.
+ */
+function FoundQuestions({
+    application,
+    analysis,
+    questions,
+}: {
+    application: string;
+    analysis: string;
+    questions: { index: number; text: string }[];
+}) {
+    const [selected, setSelected] = useState<number[]>(() =>
+        questions.map((question) => question.index),
+    );
+    const [processing, setProcessing] = useState(false);
+
+    return (
+        <section className="space-y-3 rounded-lg border border-border-subtle bg-surface-tile p-4">
+            <div>
+                <h2 className="type-card-title text-text-primary">
+                    The job description asks{' '}
+                    {questions.length === 1
+                        ? '1 question'
+                        : `${questions.length} questions`}{' '}
+                    not on this list yet
+                </h2>
+                <p className="type-caption text-text-secondary">
+                    Found by the job analysis. Untick any that are not real
+                    application questions, then add the rest.
+                </p>
+            </div>
+            <ul className="space-y-2">
+                {questions.map((question) => (
+                    <li
+                        key={question.index}
+                        className="flex items-start gap-2 text-sm"
+                    >
+                        <Checkbox
+                            id={`found_${question.index}`}
+                            className="mt-0.5"
+                            checked={selected.includes(question.index)}
+                            onCheckedChange={() =>
+                                setSelected((current) =>
+                                    current.includes(question.index)
+                                        ? current.filter(
+                                              (n) => n !== question.index,
+                                          )
+                                        : [...current, question.index],
+                                )
+                            }
+                        />
+                        <Label
+                            htmlFor={`found_${question.index}`}
+                            className="font-normal"
+                        >
+                            {question.text}
+                        </Label>
+                    </li>
+                ))}
+            </ul>
+            <Button
+                size="sm"
+                disabled={selected.length === 0 || processing}
+                onClick={() =>
+                    router.post(
+                        JobAnalysisController.addQuestions.url([
+                            application,
+                            analysis,
+                        ]),
+                        { questions: selected },
+                        {
+                            preserveScroll: true,
+                            onStart: () => setProcessing(true),
+                            onFinish: () => setProcessing(false),
+                        },
+                    )
+                }
+            >
+                <ListPlus /> Add {selected.length}{' '}
+                {selected.length === 1 ? 'question' : 'questions'}
+            </Button>
+        </section>
+    );
+}
+
 function CopyAllButton({ questions }: { questions: Question[] }) {
     const [copied, setCopied] = useState(false);
 

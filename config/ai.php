@@ -1,5 +1,7 @@
 <?php
 
+$context = (int) env('AI_OLLAMA_CONTEXT', 8192);
+
 return [
 
     /*
@@ -38,9 +40,12 @@ return [
     ],
 
     /*
-    | Per task: provider (null = default), model, output limit, temperature and
-    | timeout. Defaults suit an RTX 3050 laptop GPU (4 GB VRAM): 3B models fit
-    | entirely; the 7B writer partly runs on the CPU.
+    | Per task: provider (null = default), model, output limit, temperature,
+    | timeout and the local model's context window (prompt + output; Ollama's
+    | own default of 4096 silently cuts longer prompts). Defaults suit an RTX
+    | 3050 laptop GPU (4 GB VRAM): 3B models fit entirely; the 7B writer partly
+    | runs on the CPU. One window size for all tasks keeps Ollama from reloading
+    | a model to resize it.
     */
     'tasks' => [
         'jd_analysis' => [
@@ -52,6 +57,7 @@ return [
             'max_tokens' => 2000,
             'temperature' => 0.0,
             'timeout' => 180,
+            'context' => $context,
         ],
         'answer_writing' => [
             'provider' => env('AI_ANSWER_WRITING_PROVIDER'),
@@ -62,6 +68,7 @@ return [
             'max_tokens' => 2500,
             'temperature' => 0.4,
             'timeout' => 300,
+            'context' => $context,
         ],
         'resume_tailoring' => [
             'provider' => env('AI_RESUME_TAILORING_PROVIDER'),
@@ -72,6 +79,7 @@ return [
             'max_tokens' => 4000,
             'temperature' => 0.2,
             'timeout' => 420,
+            'context' => $context,
         ],
         'achievement_suggestions' => [
             'provider' => env('AI_ACHIEVEMENT_SUGGESTIONS_PROVIDER'),
@@ -82,6 +90,7 @@ return [
             'max_tokens' => 2000,
             'temperature' => 0.2,
             'timeout' => 180,
+            'context' => $context,
         ],
         'feedback_analysis' => [
             'provider' => env('AI_FEEDBACK_ANALYSIS_PROVIDER'),
@@ -92,6 +101,7 @@ return [
             'max_tokens' => 1500,
             'temperature' => 0.0,
             'timeout' => 180,
+            'context' => $context,
         ],
         'claim_check' => [
             'provider' => env('AI_CLAIM_CHECK_PROVIDER'),
@@ -102,6 +112,7 @@ return [
             'max_tokens' => 1500,
             'temperature' => 0.0,
             'timeout' => 180,
+            'context' => $context,
         ],
     ],
 

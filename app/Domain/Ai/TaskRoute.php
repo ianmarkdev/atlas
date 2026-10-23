@@ -16,5 +16,6 @@ final readonly class TaskRoute
         public float $temperature,
         public int $timeoutSeconds,
         public bool $external,
+        public ?int $contextTokens = null,
     ) {}
 }

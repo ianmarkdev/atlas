@@ -36,7 +36,7 @@ function draftOf(User $candidate, ApplicationQuestion $question): AnswerDraft
  */
 function answerOutput(string $answer, array $claims, array $questions = []): array
 {
-    return ['answer' => $answer, 'segments' => [['text' => $answer, 'claims' => $claims]], 'clarification_questions' => $questions];
+    return ['answer' => $answer, 'claims' => $claims, 'clarification_questions' => $questions];
 }
 
 test('an AI draft is written from the evidence pack and saved as a checked new version', function () {

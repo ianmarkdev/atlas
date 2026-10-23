@@ -24,11 +24,11 @@ function reviewedDraftSetup(): array
     $question = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->sole());
     app(LlmRouter::class)->fake(new FakeLlmClient([[
         'answer' => 'I led a payments migration. I would bring calm to incidents.',
-        'segments' => [['text' => 'I led a payments migration. I would bring calm to incidents.', 'claims' => [
+        'claims' => [
             ['text' => 'I led a payments migration', 'classification' => 'proposed', 'evidence_ids' => []],
             ['text' => 'I kept incidents calm', 'classification' => 'verified', 'evidence_ids' => []],
             ['text' => 'I would bring calm to incidents', 'classification' => 'hypothetical', 'evidence_ids' => []],
-        ]]],
+        ],
         'clarification_questions' => [['question' => 'How many merchants moved?', 'why' => 'Scale matters.']],
     ]]));
     test()->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
