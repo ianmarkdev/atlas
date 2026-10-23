@@ -43,6 +43,7 @@ class AiComparisonController extends Controller
             'samples' => $results->groupBy('sample_key')->map(fn (Collection $group, string $key): array => [
                 'key' => $key,
                 'title' => $samples[$key]['title'] ?? $key,
+                'expectations' => $samples[$key]['expectations'] ?? [],
                 'task' => $group->first()?->task,
                 'results' => $group->map(fn (LlmComparisonResult $result): array => $this->present($result))->values()->all(),
             ])->values()->all(),
@@ -58,10 +59,9 @@ class AiComparisonController extends Controller
         ]);
 
         $result->forceFill([
-            'score_accuracy' => $validated['accuracy'],
-            'score_specificity' => $validated['specificity'],
-            'score_writing' => $validated['writing'],
-            'score_compliance' => $validated['compliance'],
+            ...collect(LlmComparisonResult::SCORES)->mapWithKeys(fn (string $score): array => ["score_{$score}" => $validated[$score]])->all(),
+            // Scored on every dimension of the current rubric, whatever it was run under.
+            'rubric_version' => LlmComparisonResult::RUBRIC_VERSION,
             'notes' => $validated['notes'] ?? null,
             'rated_by' => $request->user()->id,
             'rated_at' => now(),
@@ -87,15 +87,14 @@ class AiComparisonController extends Controller
             'output' => $result->output,
             'validation_errors' => $result->validation_errors,
             'grounding' => $result->grounding_flags,
+            'checks' => $result->checks,
+            'prompt_version' => $rated ? $result->prompt_version : null,
             'error_message' => $result->error_message,
             'latency_ms' => $result->latency_ms,
             'tokens' => $result->input_tokens === null ? null : ['input' => $result->input_tokens, 'output' => $result->output_tokens],
-            'scores' => $rated ? [
-                'accuracy' => $result->score_accuracy,
-                'specificity' => $result->score_specificity,
-                'writing' => $result->score_writing,
-                'compliance' => $result->score_compliance,
-            ] : null,
+            'scores' => $rated
+                ? collect(LlmComparisonResult::SCORES)->mapWithKeys(fn (string $score): array => [$score => $result->getAttribute("score_{$score}")])->all()
+                : null,
             'notes' => $result->notes,
         ];
     }
@@ -104,7 +103,7 @@ class AiComparisonController extends Controller
      * Average scores and median latency per provider, over scored results only.
      *
      * @param  Collection<int, LlmComparisonResult>  $results
-     * @return list<array{provider: string, rated: int, accuracy: ?float, specificity: ?float, writing: ?float, compliance: ?float, median_latency_ms: ?int, downgraded_claims: int}>
+     * @return list<array<string, string|int|float|null>> provider, rated, an average per score, median_latency_ms, downgraded_claims
      */
     private function summary(Collection $results): array
     {
@@ -117,10 +116,7 @@ class AiComparisonController extends Controller
             return [
                 'provider' => $provider,
                 'rated' => $group->count(),
-                'accuracy' => $average('accuracy'),
-                'specificity' => $average('specificity'),
-                'writing' => $average('writing'),
-                'compliance' => $average('compliance'),
+                ...collect(LlmComparisonResult::SCORES)->mapWithKeys(fn (string $score): array => [$score => $average($score)])->all(),
                 'median_latency_ms' => $latencies->isEmpty() ? null : (int) $latencies[intdiv($latencies->count(), 2)],
                 'downgraded_claims' => $group->sum(fn (LlmComparisonResult $result): int => collect($result->grounding_flags)
                     ->filter(fn (array $claim): bool => ($claim['flags'] ?? []) !== [])->count()),
@@ -129,7 +125,7 @@ class AiComparisonController extends Controller
     }
 
     /**
-     * @return array<string, array{title: string}>
+     * @return array<string, array{title: string, expectations?: list<string>}>
      */
     private function samples(): array
     {

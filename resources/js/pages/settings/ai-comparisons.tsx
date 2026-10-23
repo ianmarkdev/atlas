@@ -1,13 +1,13 @@
-import { Form, Head, router } from '@inertiajs/react';
-import AiComparisonController from '@/actions/App/Http/Controllers/Settings/AiComparisonController';
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { NativeSelect } from '@/components/native-select';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { index } from '@/routes/ai-comparisons';
+import { Form, Head, router } from "@inertiajs/react";
+import AiComparisonController from "@/actions/App/Http/Controllers/Settings/AiComparisonController";
+import Heading from "@/components/heading";
+import InputError from "@/components/input-error";
+import { NativeSelect } from "@/components/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { index } from "@/routes/ai-comparisons";
 
 type GroundedClaim = {
     text: string;
@@ -17,23 +17,41 @@ type GroundedClaim = {
     flags: string[];
 };
 
+type Checks = {
+    word_count?: number;
+    word_limit?: number | null;
+    over_limit?: boolean;
+    placeholders?: number;
+    banned_found?: string[];
+    missing?: string[];
+    corrected_claims?: number;
+};
+
 type Result = {
     ulid: string;
     label: string;
     provider: string | null;
     model: string | null;
-    status: 'succeeded' | 'invalid_output' | 'failed' | 'skipped';
+    status: "succeeded" | "invalid_output" | "failed" | "skipped";
     output: Record<string, unknown> | null;
     validation_errors: string[];
     grounding: GroundedClaim[];
+    checks: Checks;
+    prompt_version: number | null;
     error_message: string | null;
     latency_ms: number | null;
     tokens: { input: number; output: number } | null;
-    scores: Record<Score, number> | null;
+    scores: Record<Score, number | null> | null;
     notes: string | null;
 };
 
-type Sample = { key: string; title: string; task: string; results: Result[] };
+type Sample = {
+    key: string;
+    title: string;
+    expectations: string[];
+    task: string;
+    results: Result[];
+};
 
 type Batch = {
     batch: string;
@@ -42,25 +60,31 @@ type Batch = {
     rated: number;
 };
 
+type Score =
+    | "accuracy"
+    | "relevance"
+    | "evidence"
+    | "specificity"
+    | "writing"
+    | "compliance";
+
 type Summary = {
     provider: string;
     rated: number;
-    accuracy: number | null;
-    specificity: number | null;
-    writing: number | null;
-    compliance: number | null;
     median_latency_ms: number | null;
     downgraded_claims: number;
-};
-
-type Score = 'accuracy' | 'specificity' | 'writing' | 'compliance';
+} & Record<Score, number | null>;
 
 const scoreLabels: Record<Score, string> = {
-    accuracy: 'Factual accuracy',
-    specificity: 'Specificity',
-    writing: 'Writing quality',
-    compliance: 'Instruction compliance',
+    accuracy: "Factual accuracy",
+    relevance: "Relevance to the job",
+    evidence: "Evidence used",
+    specificity: "Specificity",
+    writing: "Clarity and concision",
+    compliance: "Instructions and writing rules",
 };
+
+const scores = Object.keys(scoreLabels) as Score[];
 
 const scoreOptions = [1, 2, 3, 4, 5].map((n) => ({
     value: String(n),
@@ -91,10 +115,10 @@ export default function AiComparisons({
 
                 {batches.length === 0 ? (
                     <p className="rounded-kraken-sm border border-dashed border-border-input p-6 type-body text-text-muted">
-                        No comparisons yet. Run{' '}
+                        No comparisons yet. Run{" "}
                         <code>
                             php artisan app:compare-llm --providers=ollama
-                        </code>{' '}
+                        </code>{" "}
                         (add <code>claude</code> once it is configured).
                     </p>
                 ) : (
@@ -103,7 +127,7 @@ export default function AiComparisons({
                             <Label htmlFor="batch">Batch</Label>
                             <NativeSelect
                                 id="batch"
-                                value={batch ?? ''}
+                                value={batch ?? ""}
                                 options={batches.map((b) => ({
                                     value: b.batch,
                                     label: `${new Date(b.started_at).toLocaleString()} · ${b.rated}/${b.results} scored`,
@@ -123,6 +147,13 @@ export default function AiComparisons({
                                 <h2 className="type-card-title text-text-primary">
                                     {sample.title}
                                 </h2>
+                                {sample.expectations.length > 0 && (
+                                    <ul className="list-disc pl-5 type-caption text-text-secondary">
+                                        {sample.expectations.map((line) => (
+                                            <li key={line}>{line}</li>
+                                        ))}
+                                    </ul>
+                                )}
                                 <div className="grid gap-4 xl:grid-cols-2">
                                     {sample.results.map((result) => (
                                         <ResultCard
@@ -143,18 +174,15 @@ export default function AiComparisons({
 function SummaryTable({ rows }: { rows: Summary[] }) {
     return (
         <div className="overflow-x-auto rounded-kraken-md border border-border-subtle">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[720px] text-sm">
                 <thead>
                     <tr className="border-b border-border-subtle text-left">
                         {[
-                            'Provider',
-                            'Scored',
-                            'Accuracy',
-                            'Specificity',
-                            'Writing',
-                            'Compliance',
-                            'Median latency',
-                            'Claims corrected',
+                            "Provider",
+                            "Scored",
+                            ...scores.map((score) => scoreLabels[score]),
+                            "Median latency",
+                            "Claims corrected",
                         ].map((heading) => (
                             <th
                                 key={heading}
@@ -176,17 +204,14 @@ function SummaryTable({ rows }: { rows: Summary[] }) {
                                 {row.provider}
                             </td>
                             <td className="px-3 py-2">{row.rated}</td>
-                            <td className="px-3 py-2">{row.accuracy ?? '—'}</td>
-                            <td className="px-3 py-2">
-                                {row.specificity ?? '—'}
-                            </td>
-                            <td className="px-3 py-2">{row.writing ?? '—'}</td>
-                            <td className="px-3 py-2">
-                                {row.compliance ?? '—'}
-                            </td>
+                            {scores.map((score) => (
+                                <td key={score} className="px-3 py-2">
+                                    {row[score] ?? "—"}
+                                </td>
+                            ))}
                             <td className="px-3 py-2">
                                 {row.median_latency_ms === null
-                                    ? '—'
+                                    ? "—"
                                     : `${(row.median_latency_ms / 1000).toFixed(1)} s`}
                             </td>
                             <td className="px-3 py-2">
@@ -202,7 +227,7 @@ function SummaryTable({ rows }: { rows: Summary[] }) {
 
 function ResultCard({ result }: { result: Result }) {
     const answer =
-        typeof result.output?.answer === 'string' ? result.output.answer : null;
+        typeof result.output?.answer === "string" ? result.output.answer : null;
     const corrected = result.grounding.filter((c) => c.flags.length > 0);
 
     return (
@@ -214,11 +239,13 @@ function ResultCard({ result }: { result: Result }) {
                 {result.provider ? (
                     <Badge variant="outline">
                         {result.provider} · {result.model}
+                        {result.prompt_version !== null &&
+                            ` · v${result.prompt_version}`}
                     </Badge>
                 ) : (
                     <Badge variant="secondary">Hidden until scored</Badge>
                 )}
-                {result.status !== 'succeeded' && (
+                {result.status !== "succeeded" && (
                     <Badge variant="destructive">{result.status}</Badge>
                 )}
                 {result.latency_ms !== null && (
@@ -255,10 +282,12 @@ function ResultCard({ result }: { result: Result }) {
                 )
             )}
 
+            <CheckList checks={result.checks} />
+
             {result.grounding.length > 0 && (
                 <details className="rounded-kraken-sm border border-border-subtle p-2">
                     <summary className="cursor-pointer type-caption text-text-secondary">
-                        {result.grounding.length} claims · {corrected.length}{' '}
+                        {result.grounding.length} claims · {corrected.length}{" "}
                         corrected by the server
                     </summary>
                     <ul className="mt-2 space-y-1 text-xs">
@@ -267,18 +296,18 @@ function ResultCard({ result }: { result: Result }) {
                                 <Badge
                                     variant={
                                         claim.flags.length > 0
-                                            ? 'destructive'
-                                            : 'outline'
+                                            ? "destructive"
+                                            : "outline"
                                     }
                                 >
                                     {claim.classification}
-                                </Badge>{' '}
+                                </Badge>{" "}
                                 {claim.text}
                                 {claim.flags.length > 0 && (
                                     <span className="text-text-error">
-                                        {' '}
+                                        {" "}
                                         (model said {claim.model_classification}
-                                        : {claim.flags.join(', ')})
+                                        : {claim.flags.join(", ")})
                                     </span>
                                 )}
                             </li>
@@ -287,8 +316,42 @@ function ResultCard({ result }: { result: Result }) {
                 </details>
             )}
 
-            {result.status === 'succeeded' && <RatingForm result={result} />}
+            {result.status === "succeeded" && <RatingForm result={result} />}
         </article>
+    );
+}
+
+function CheckList({ checks }: { checks: Checks }) {
+    const problems = [
+        checks.over_limit &&
+            `${checks.word_count} words, over the limit of ${checks.word_limit}`,
+        (checks.banned_found ?? []).length > 0 &&
+            `Uses banned phrases: ${checks.banned_found?.join(", ")}`,
+        (checks.missing ?? []).length > 0 &&
+            `Does not mention: ${checks.missing?.join(", ")}`,
+    ].filter((problem): problem is string => typeof problem === "string");
+
+    if (checks.word_count === undefined && problems.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="space-y-1 type-caption">
+            {checks.word_count !== undefined && (
+                <p className="text-text-muted tabular-nums">
+                    {checks.word_count} words
+                    {checks.word_limit ? ` of ${checks.word_limit}` : ""}
+                    {checks.placeholders
+                        ? ` · ${checks.placeholders} [confirm: …] placeholders`
+                        : ""}
+                </p>
+            )}
+            {problems.map((problem) => (
+                <p key={problem} className="text-text-error">
+                    {problem}
+                </p>
+            ))}
+        </div>
     );
 }
 
@@ -301,8 +364,8 @@ function RatingForm({ result }: { result: Result }) {
         >
             {({ processing, errors, recentlySuccessful }) => (
                 <>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                        {(Object.keys(scoreLabels) as Score[]).map((score) => (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        {scores.map((score) => (
                             <div key={score} className="grid gap-1">
                                 <Label htmlFor={`${result.ulid}_${score}`}>
                                     {scoreLabels[score]}
@@ -313,9 +376,9 @@ function RatingForm({ result }: { result: Result }) {
                                     options={scoreOptions}
                                     placeholder="–"
                                     defaultValue={
-                                        result.scores
+                                        result.scores?.[score]
                                             ? String(result.scores[score])
-                                            : ''
+                                            : ""
                                     }
                                     className="h-10"
                                     required
@@ -327,14 +390,14 @@ function RatingForm({ result }: { result: Result }) {
                     <Textarea
                         name="notes"
                         rows={2}
-                        defaultValue={result.notes ?? ''}
+                        defaultValue={result.notes ?? ""}
                         placeholder="Notes: invented facts, generic phrases, missed instructions…"
                         aria-label={`Notes on output ${result.label}`}
                         maxLength={2000}
                     />
                     <div className="flex items-center gap-3">
                         <Button size="sm" disabled={processing}>
-                            {result.scores ? 'Update scores' : 'Save scores'}
+                            {result.scores ? "Update scores" : "Save scores"}
                         </Button>
                         {recentlySuccessful && (
                             <span className="type-caption text-text-muted">
@@ -349,5 +412,5 @@ function RatingForm({ result }: { result: Result }) {
 }
 
 AiComparisons.layout = {
-    breadcrumbs: [{ title: 'Model comparison', href: index() }],
+    breadcrumbs: [{ title: "Model comparison", href: index() }],
 };

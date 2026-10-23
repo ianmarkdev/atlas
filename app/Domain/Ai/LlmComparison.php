@@ -10,18 +10,21 @@ use Illuminate\Support\Str;
  * external-data guard, budget, schema validation) and stores each output with its latency,
  * validation and grounding results for blind human scoring. Only the synthetic samples given
  * are sent; real applications are never used.
+ *
+ * @phpstan-type Sample array{title: string, task: string, prompt: string, prompt_version?: int, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>, expectations?: list<string>, checks?: array{banned?: list<string>, mentions?: list<string>}}
  */
 class LlmComparison
 {
     public function __construct(private AiGateway $gateway, private ClaimGroundingValidator $grounding) {}
 
     /**
-     * @param  array<string, array{title: string, task: string, prompt: string, prompt_version?: int, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}>  $samples
+     * @param  array<string, Sample>  $samples
      * @param  list<string>  $providers
      * @param  (callable(string $sampleKey, string $provider, LlmComparisonResult $result): void)|null  $progress
+     * @param  array<string, int>  $promptVersions  prompt key → version to run instead of each sample's own
      * @return string the batch id
      */
-    public function run(array $samples, array $providers, ?User $actor = null, ?callable $progress = null): string
+    public function run(array $samples, array $providers, ?User $actor = null, ?callable $progress = null, array $promptVersions = []): string
     {
         $batch = (string) Str::ulid();
 
@@ -31,7 +34,7 @@ class LlmComparison
             shuffle($order);
 
             foreach ($order as $i => $provider) {
-                $result = $this->runOne($batch, $key, $sample, $provider, range('A', 'Z')[$i] ?? 'Z', $actor);
+                $result = $this->runOne($batch, $key, $sample, $provider, range('A', 'Z')[$i] ?? 'Z', $actor, $promptVersions[$sample['prompt']] ?? $sample['prompt_version'] ?? null);
 
                 if ($progress !== null) {
                     $progress($key, $provider, $result);
@@ -59,31 +62,39 @@ class LlmComparison
     }
 
     /**
-     * @param  array{title: string, task: string, prompt: string, prompt_version?: int, variables: array<string, string>, evidence: array<string, array{status: string, text: string}>}  $sample
+     * @param  Sample  $sample
      */
-    private function runOne(string $batch, string $key, array $sample, string $provider, string $label, ?User $actor): LlmComparisonResult
+    private function runOne(string $batch, string $key, array $sample, string $provider, string $label, ?User $actor, ?int $promptVersion): LlmComparisonResult
     {
         $result = new LlmComparisonResult;
         $result->forceFill([
             'batch' => $batch,
             'sample_key' => $key,
             'task' => $sample['task'],
+            'prompt_key' => $sample['prompt'],
+            'prompt_version' => $promptVersion,
+            'input_hash' => self::inputHash($sample),
             'provider' => $provider,
             'blind_label' => $label,
             'validation_errors' => [],
             'grounding_flags' => [],
+            'checks' => [],
+            'rubric_version' => LlmComparisonResult::RUBRIC_VERSION,
         ]);
 
         $variables = [...$sample['variables'], 'evidence' => self::evidenceBlock($sample['evidence'])];
 
         try {
-            $generation = $this->gateway->run($sample['task'], $sample['prompt'], $variables, $actor, purpose: 'comparison', provider: $provider, promptVersion: $sample['prompt_version'] ?? null);
+            $generation = $this->gateway->run($sample['task'], $sample['prompt'], $variables, $actor, purpose: 'comparison', provider: $provider, promptVersion: $promptVersion);
+            $grounding = $this->groundingOf($generation->data ?? [], $sample['evidence']);
 
             $result->forceFill([
                 'status' => 'succeeded',
                 'model' => $generation->run->model,
+                'prompt_version' => $generation->run->prompt_version,
                 'output' => $generation->data,
-                'grounding_flags' => $this->groundingOf($generation->data ?? [], $sample['evidence']),
+                'grounding_flags' => $grounding,
+                'checks' => ComparisonChecks::of($sample, $generation->data, $grounding),
                 'latency_ms' => $generation->run->latency_ms,
                 'input_tokens' => $generation->run->input_tokens,
                 'output_tokens' => $generation->run->output_tokens,
@@ -100,6 +111,16 @@ class LlmComparison
         $result->save();
 
         return $result;
+    }
+
+    /**
+     * What the model is given for a sample, so batches are only compared on unchanged inputs.
+     *
+     * @param  Sample  $sample
+     */
+    public static function inputHash(array $sample): string
+    {
+        return hash('sha256', (string) json_encode([$sample['task'], $sample['prompt'], $sample['variables'], $sample['evidence']]));
     }
 
     /**
