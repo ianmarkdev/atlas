@@ -3,6 +3,7 @@
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
 use App\Domain\Ai\Clients\FakeLlmClient;
+use App\Domain\Ai\GenerationInProgress;
 use App\Domain\Ai\GenerationPayload;
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Ai\InvalidModelOutput;
@@ -114,6 +115,75 @@ test('the same idempotency key returns the stored result instead of calling agai
         ->and($second->data)->toBe($first->data)
         ->and($fake->requests)->toHaveCount(1);
 });
+
+test('a key whose run failed is retried: the model is called again and the failed run is kept', function (string $failure) {
+    $candidate = candidateWithTwoFactor();
+    $failing = $failure === LlmUnavailable::class
+        ? [fn () => throw new LlmUnavailable('down')]
+        : [analysisOutput(['seniority' => 'wizard']), analysisOutput(['seniority' => 'wizard'])];
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([...$failing, analysisOutput()]));
+    expect(fn () => analyse($candidate, ['idempotencyKey' => 'jd:1']))->toThrow($failure);
+
+    $retried = analyse($candidate, ['idempotencyKey' => 'jd:1']);
+
+    $failed = inWorkspaceOf($candidate, fn () => GenerationRun::query()->whereKeyNot($retried->run->id)->sole());
+    expect($retried->data['seniority'])->toBe('senior')
+        ->and($retried->run->idempotency_key)->toBe('jd:1')
+        ->and($failed->status)->not->toBe('succeeded')
+        ->and($failed->idempotency_key)->toBeNull()
+        ->and($fake->requests)->toHaveCount(count($failing) + 1);
+})->with([
+    'provider unavailable' => [LlmUnavailable::class],
+    'invalid output (after its repair attempt)' => [InvalidModelOutput::class],
+]);
+
+test('a key whose stored result has expired is answered by calling the model again', function () {
+    $candidate = candidateWithTwoFactor();
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([analysisOutput(), analysisOutput(['seniority' => 'lead'])]));
+    analyse($candidate, ['idempotencyKey' => 'jd:1']);
+    $this->travel(15)->days();
+    $this->artisan('model:prune', ['--model' => [GenerationPayload::class]])->assertSuccessful();
+
+    $retried = analyse($candidate, ['idempotencyKey' => 'jd:1']);
+
+    expect($retried->data['seniority'])->toBe('lead')
+        ->and($retried->run->idempotency_key)->toBe('jd:1')
+        ->and($fake->requests)->toHaveCount(2);
+});
+
+test('a key whose run is still in progress is refused without calling the model', function () {
+    $candidate = candidateWithTwoFactor();
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([analysisOutput()]));
+    $running = runningGenerationOf($candidate, 'jd:1');
+
+    expect(fn () => analyse($candidate, ['idempotencyKey' => 'jd:1']))->toThrow(GenerationInProgress::class);
+
+    expect($fake->requests)->toBeEmpty()
+        ->and($running->refresh()->only(['status', 'idempotency_key']))->toBe(['status' => 'running', 'idempotency_key' => 'jd:1']);
+});
+
+test('a run left running past the stale limit is marked abandoned, and its key is retried', function () {
+    $candidate = candidateWithTwoFactor();
+    app(LlmRouter::class)->fake(new FakeLlmClient([analysisOutput()]));
+    $running = runningGenerationOf($candidate, 'jd:1');
+    $this->travel((int) config('ai.run_stale_after_minutes') + 1)->minutes();
+
+    $retried = analyse($candidate, ['idempotencyKey' => 'jd:1']);
+
+    expect($retried->run->idempotency_key)->toBe('jd:1')
+        ->and($running->refresh()->only(['status', 'error_code', 'idempotency_key']))->toBe(['status' => 'failed', 'error_code' => 'abandoned', 'idempotency_key' => null]);
+});
+
+/**
+ * A run another worker started (or that died before finishing) under `$key`.
+ */
+function runningGenerationOf(User $candidate, string $key): GenerationRun
+{
+    return inWorkspaceOf($candidate, fn () => GenerationRun::query()->forceCreate([
+        'task' => 'jd_analysis', 'provider' => 'fake', 'model' => 'fake', 'prompt_key' => 'jd_analysis', 'prompt_version' => 1,
+        'status' => 'running', 'request_hash' => str_repeat('0', 64), 'idempotency_key' => $key,
+    ]));
+}
 
 test('an unavailable provider is recorded as a failed run', function () {
     Http::fake(fn () => throw new ConnectionException('refused'));

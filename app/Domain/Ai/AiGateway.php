@@ -34,6 +34,7 @@ class AiGateway
      * @throws LlmConfigurationError before anything is sent (unknown task/prompt, external not allowed, no API key, no price)
      * @throws AiBudgetExceeded
      * @throws LlmUnavailable
+     * @throws GenerationInProgress when another call with the same idempotency key is still running
      * @throws InvalidModelOutput
      */
     public function run(
@@ -59,11 +60,12 @@ class AiGateway
             contextTokens: $route->contextTokens,
         );
 
-        if ($idempotencyKey !== null && ($previous = $this->previousResult($idempotencyKey)) !== null) {
-            return $previous;
+        $run = $this->reserve($route, $prompt, $request, $actor, $purpose, $idempotencyKey);
+
+        if ($run instanceof GenerationResult) {
+            return $run;
         }
 
-        $run = $this->reserve($route, $prompt, $request, $actor, $purpose, $idempotencyKey);
         $inputTokens = 0;
         $outputTokens = 0;
         $latency = 0;
@@ -134,13 +136,29 @@ class AiGateway
     /**
      * Check the budget and record the run with its estimated cost, atomically per workspace, so
      * concurrent calls near the ceiling overshoot by at most one call.
+     *
+     * With an idempotency key, the stored result of a succeeded run is returned instead. A key
+     * whose run failed, or whose result has expired, is taken over by the new run; the earlier
+     * run is kept without its key. The workspace lock makes this safe against a concurrent call.
+     *
+     * @throws GenerationInProgress
      */
-    private function reserve(TaskRoute $route, Prompt $prompt, LlmRequest $request, ?User $actor, ?string $purpose, ?string $idempotencyKey): GenerationRun
+    private function reserve(TaskRoute $route, Prompt $prompt, LlmRequest $request, ?User $actor, ?string $purpose, ?string $idempotencyKey): GenerationRun|GenerationResult
     {
         $estimate = $this->budget->estimate($route, $request);
 
-        return DB::transaction(function () use ($route, $prompt, $request, $actor, $purpose, $idempotencyKey, $estimate): GenerationRun {
+        return DB::transaction(function () use ($route, $prompt, $request, $actor, $purpose, $idempotencyKey, $estimate): GenerationRun|GenerationResult {
             $workspace = Workspace::query()->whereKey($this->tenant->workspaceId())->lockForUpdate()->firstOrFail();
+            $previous = $idempotencyKey === null ? null : GenerationRun::query()->where('idempotency_key', $idempotencyKey)->with('payload')->first();
+
+            if ($previous !== null) {
+                if ($previous->status === 'succeeded' && $previous->payload !== null) {
+                    return new GenerationResult($previous, $previous->payload->output, (string) $previous->payload->response);
+                }
+
+                $this->release($previous);
+            }
+
             $this->budget->ensureAffordable($workspace, $estimate);
 
             $run = new GenerationRun;
@@ -202,14 +220,23 @@ class AiGateway
         });
     }
 
-    private function previousResult(string $idempotencyKey): ?GenerationResult
+    /**
+     * Free an earlier run's idempotency key for a new attempt. A run still running is refused
+     * until it is older than `ai.run_stale_after_minutes`; then it is recorded as abandoned.
+     *
+     * @throws GenerationInProgress
+     */
+    private function release(GenerationRun $previous): void
     {
-        $run = GenerationRun::query()->where('idempotency_key', $idempotencyKey)->where('status', 'succeeded')->with('payload')->first();
+        $abandoned = $previous->status === 'running';
 
-        if ($run === null || $run->payload === null) {
-            return null;
+        if ($abandoned && $previous->created_at?->isAfter(now()->subMinutes((int) config('ai.run_stale_after_minutes')))) {
+            throw new GenerationInProgress(__('This is already being generated. Try again in a few minutes.'));
         }
 
-        return new GenerationResult($run, $run->payload->output, (string) $run->payload->response);
+        $previous->forceFill([
+            'idempotency_key' => null,
+            ...($abandoned ? ['status' => 'failed', 'error_code' => 'abandoned', 'error_message' => __('Never finished; a later call with the same key ran instead.')] : []),
+        ])->save();
     }
 }

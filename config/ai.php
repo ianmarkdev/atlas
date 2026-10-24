@@ -155,4 +155,8 @@ return [
     // …except those behind an application once it is sent (SubmittedWorkRetention).
     'submitted_payload_retention_days' => 365,
 
+    // A run still `running` after this long died without finishing (its worker was killed), so
+    // a call with the same idempotency key may start again. Longer than any AI job's timeout.
+    'run_stale_after_minutes' => 30,
+
 ];
