@@ -61,6 +61,7 @@ class ResumeController extends Controller
                 'name' => $resume->name,
                 'title' => $resume->document()['title'] ?? null,
                 'jobs' => count($resume->document()['experience'] ?? []),
+                'file_url' => $resume->file_url,
                 'is_default' => $resume->is_default,
                 'is_archived' => $resume->isArchived(),
                 'updated_at' => $resume->updated_at?->toIso8601String(),
@@ -103,6 +104,7 @@ class ResumeController extends Controller
             'resume' => [
                 'ulid' => $resume->ulid,
                 'name' => $resume->name,
+                'file_url' => $resume->file_url,
                 'is_default' => $resume->is_default,
                 'is_archived' => $resume->isArchived(),
                 'lock_version' => $resume->lock_version,
@@ -185,6 +187,20 @@ class ResumeController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Resume saved.')]);
 
         return to_route('resumes.show', $resume);
+    }
+
+    /**
+     * Set or clear the link to the resume's file in cloud storage (Google Drive, Dropbox, ...).
+     */
+    public function updateFileUrl(Request $request, ResumeVariant $resume): RedirectResponse
+    {
+        $validated = $request->validate([
+            'file_url' => ['nullable', 'url:http,https', 'max:2048'],
+        ]);
+
+        $this->resumes->setFileUrl($resume, $validated['file_url'] ?? null, $request->user());
+
+        return back();
     }
 
     public function makeDefault(Request $request, ResumeVariant $resume): RedirectResponse

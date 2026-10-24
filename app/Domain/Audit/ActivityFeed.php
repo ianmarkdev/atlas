@@ -113,6 +113,7 @@ class ActivityFeed
             $event->action === 'workspace.installed' => __('set up the workspace'),
             $event->action === 'proposal.created' => __('suggested a change'),
             $event->action === 'resume.made_default' => __('made a resume the default'),
+            $event->action === 'resume.file_link_changed' => __('changed a resume\'s file link'),
             $event->action === 'application.stage_changed' => __('moved an application to :stage', [
                 'stage' => ApplicationStage::tryFrom((string) ($event->metadata['to'] ?? ''))?->label() ?? __('another stage'),
             ]),

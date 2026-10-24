@@ -1,12 +1,12 @@
-import { Form, Head, Link } from '@inertiajs/react';
-import { FileText, Pencil, Plus } from 'lucide-react';
-import { useState } from 'react';
-import ResumeController from '@/actions/App/Http/Controllers/Profile/ResumeController';
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { NativeSelect } from '@/components/native-select';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Form, Head, Link } from "@inertiajs/react";
+import { ExternalLink, FileText, Link2, Pencil, Plus } from "lucide-react";
+import { useState } from "react";
+import ResumeController from "@/actions/App/Http/Controllers/Profile/ResumeController";
+import Heading from "@/components/heading";
+import InputError from "@/components/input-error";
+import { NativeSelect } from "@/components/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
@@ -15,17 +15,18 @@ import {
     DialogHeader,
     DialogTitle,
     DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { edit as editContact } from '@/routes/contact';
-import { index } from '@/routes/resumes';
-import type { Contact } from '@/types';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { edit as editContact } from "@/routes/contact";
+import { index } from "@/routes/resumes";
+import type { Contact } from "@/types";
 
 type ResumeCard = {
     ulid: string;
     name: string;
     title: string | null;
+    file_url: string | null;
     jobs: number;
     is_default: boolean;
     is_archived: boolean;
@@ -46,7 +47,7 @@ export default function Profile({
     const archived = resumes.filter((resume) => resume.is_archived);
     const contactLine = [contact.email, contact.phone, contact.location]
         .filter(Boolean)
-        .join(' · ');
+        .join(" · ");
 
     return (
         <>
@@ -60,7 +61,7 @@ export default function Profile({
                         </h1>
                         <p className="text-sm text-muted-foreground">
                             {contactLine ||
-                                'No contact details yet. They appear at the top of every resume.'}
+                                "No contact details yet. They appear at the top of every resume."}
                         </p>
                     </div>
                     {canEdit && (
@@ -108,7 +109,7 @@ export default function Profile({
                                 size="sm"
                                 onClick={() => setShowArchived(!showArchived)}
                             >
-                                {showArchived ? 'Hide' : 'Show'} archived
+                                {showArchived ? "Hide" : "Show"} archived
                                 resumes ({archived.length})
                             </Button>
                             {showArchived && (
@@ -152,7 +153,7 @@ function ResumeCardItem({
                         {resume.name}
                     </Link>
                     <p className="truncate text-sm text-muted-foreground">
-                        {resume.title ?? 'No title yet'}
+                        {resume.title ?? "No title yet"}
                     </p>
                 </div>
                 {resume.is_default && (
@@ -163,10 +164,21 @@ function ResumeCardItem({
                 )}
             </div>
             <p className="text-xs text-muted-foreground">
-                {resume.jobs} {resume.jobs === 1 ? 'experience' : 'experiences'}
+                {resume.jobs} {resume.jobs === 1 ? "experience" : "experiences"}
                 {resume.updated_at &&
                     ` · edited ${new Date(resume.updated_at).toLocaleDateString()}`}
             </p>
+            {resume.file_url && (
+                <a
+                    href={resume.file_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-sm underline-offset-4 hover:underline"
+                >
+                    <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+                    <span className="truncate">Open file</span>
+                </a>
+            )}
 
             {canEdit && (
                 <div className="mt-auto flex flex-wrap gap-2">
@@ -177,6 +189,7 @@ function ResumeCardItem({
                             </Link>
                         </Button>
                     )}
+                    {!resume.is_archived && <FileLinkDialog resume={resume} />}
                     {!resume.is_default && !resume.is_archived && (
                         <Form
                             {...ResumeController.makeDefault.form(resume.ulid)}
@@ -228,6 +241,60 @@ function ResumeCardItem({
                 </div>
             )}
         </li>
+    );
+}
+
+function FileLinkDialog({ resume }: { resume: ResumeCard }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                    <Link2 />{" "}
+                    {resume.file_url ? "Edit file link" : "Add file link"}
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>File link</DialogTitle>
+                    <DialogDescription>
+                        Link to this resume as a PDF or DOCX in cloud storage
+                        (Google Drive, Dropbox, ...), e.g. for uploading to
+                        onlinejobs.ph or sharing with your VA. Leave empty to
+                        remove it.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    {...ResumeController.updateFileUrl.form(resume.ulid)}
+                    options={{ preserveScroll: true }}
+                    onSuccess={() => setOpen(false)}
+                    className="space-y-4"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <div className="grid gap-2">
+                                <Label htmlFor={`file_url_${resume.ulid}`}>
+                                    Link
+                                </Label>
+                                <Input
+                                    id={`file_url_${resume.ulid}`}
+                                    name="file_url"
+                                    type="url"
+                                    defaultValue={resume.file_url ?? ""}
+                                    placeholder="https://drive.google.com/..."
+                                    maxLength={2048}
+                                />
+                                <InputError message={errors.file_url} />
+                            </div>
+                            <DialogFooter>
+                                <Button disabled={processing}>Save link</Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -291,5 +358,5 @@ function NewResumeDialog({ resumes }: { resumes: ResumeCard[] }) {
 }
 
 Profile.layout = {
-    breadcrumbs: [{ title: 'Profile', href: index() }],
+    breadcrumbs: [{ title: "Profile", href: index() }],
 };

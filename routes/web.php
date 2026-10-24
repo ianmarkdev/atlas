@@ -49,6 +49,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::middleware('can:edit-resumes')->group(function () {
             Route::post('resumes', [ResumeController::class, 'store'])->name('resumes.store');
             Route::put('resumes/{resume}', [ResumeController::class, 'update'])->name('resumes.update');
+            Route::patch('resumes/{resume}/file-url', [ResumeController::class, 'updateFileUrl'])->name('resumes.file-url');
             Route::patch('resumes/{resume}/default', [ResumeController::class, 'makeDefault'])->name('resumes.default');
             Route::patch('resumes/{resume}/archive', [ResumeController::class, 'archive'])->name('resumes.archive');
             Route::patch('resumes/{resume}/unarchive', [ResumeController::class, 'unarchive'])->name('resumes.unarchive');

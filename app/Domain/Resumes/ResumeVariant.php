@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $name
  * @property bool $is_default
  * @property string $status
+ * @property string|null $file_url link to the resume file (PDF/DOCX) in cloud storage
  * @property int|null $current_revision_id
  * @property int|null $created_by
  * @property int $lock_version

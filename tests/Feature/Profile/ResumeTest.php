@@ -388,6 +388,49 @@ describe('profile page and status', function () {
                 ->where('resumes.1.title', 'React'));
     });
 
+    test('the candidate can set, change and clear a resume\'s file link without adding a revision', function () {
+        $candidate = candidateWithTwoFactor();
+        $resume = resumeOf($candidate);
+
+        $this->actingAs($candidate)
+            ->patch(route('resumes.file-url', $resume), ['file_url' => 'https://drive.google.com/file/d/abc/view'])
+            ->assertSessionHasNoErrors();
+
+        expect($resume->refresh()->file_url)->toBe('https://drive.google.com/file/d/abc/view')
+            ->and($resume->currentRevision?->revision_no)->toBe(1);
+
+        $this->actingAs($candidate)->get(route('resumes.index'))
+            ->assertInertia(fn (Assert $page) => $page->where('resumes.0.file_url', 'https://drive.google.com/file/d/abc/view'));
+
+        $this->actingAs($candidate)->patch(route('resumes.file-url', $resume), ['file_url' => '']);
+
+        expect($resume->refresh()->file_url)->toBeNull();
+    });
+
+    test('a file link must be an http(s) URL', function () {
+        $candidate = candidateWithTwoFactor();
+        $resume = resumeOf($candidate);
+
+        $this->actingAs($candidate)
+            ->patch(route('resumes.file-url', $resume), ['file_url' => 'javascript:alert(1)'])
+            ->assertSessionHasErrors('file_url');
+
+        expect($resume->refresh()->file_url)->toBeNull();
+    });
+
+    test('VAs see a resume\'s file link but cannot change it', function () {
+        $candidate = candidateWithTwoFactor();
+        $va = vaOf($candidate);
+        $resume = resumeOf($candidate, [], ['file_url' => 'https://drive.google.com/file/d/abc/view']);
+
+        $this->actingAs($va)->get(route('resumes.show', $resume))
+            ->assertInertia(fn (Assert $page) => $page->where('resume.file_url', 'https://drive.google.com/file/d/abc/view'));
+
+        $this->actingAs($va)
+            ->patch(route('resumes.file-url', $resume), ['file_url' => 'https://example.com/other.pdf'])
+            ->assertForbidden();
+    });
+
     test('making a resume the default unsets the previous default', function () {
         $candidate = candidateWithTwoFactor();
         $old = resumeOf($candidate, [], ['is_default' => true]);

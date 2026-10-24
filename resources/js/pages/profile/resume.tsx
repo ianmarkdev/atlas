@@ -1,12 +1,12 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
-import { Check, Copy, History } from 'lucide-react';
-import { useState } from 'react';
-import ResumeController from '@/actions/App/Http/Controllers/Profile/ResumeController';
-import { ResumeEditor } from '@/components/resume/resume-editor';
-import { ResumePreview } from '@/components/resume/resume-preview';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Form, Head, Link, router } from "@inertiajs/react";
+import { Check, Copy, ExternalLink, History } from "lucide-react";
+import { useState } from "react";
+import ResumeController from "@/actions/App/Http/Controllers/Profile/ResumeController";
+import { ResumeEditor } from "@/components/resume/resume-editor";
+import { ResumePreview } from "@/components/resume/resume-preview";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Sheet,
     SheetContent,
@@ -14,20 +14,21 @@ import {
     SheetHeader,
     SheetTitle,
     SheetTrigger,
-} from '@/components/ui/sheet';
-import { indexLibrary, resumeToPlainText } from '@/lib/resume-document';
-import { copyToClipboard } from '@/lib/clipboard';
-import { index as resumesIndex } from '@/routes/resumes';
+} from "@/components/ui/sheet";
+import { indexLibrary, resumeToPlainText } from "@/lib/resume-document";
+import { copyToClipboard } from "@/lib/clipboard";
+import { index as resumesIndex } from "@/routes/resumes";
 import type {
     Contact,
     ResumeDocument,
     ResumeLibrary,
     ResumeUsage,
-} from '@/types';
+} from "@/types";
 
 type ResumeProps = {
     ulid: string;
     name: string;
+    file_url: string | null;
     is_default: boolean;
     is_archived: boolean;
     lock_version: number;
@@ -136,11 +137,14 @@ function ResumeEditorPage({
                 </>
             }
             toolbarEnd={(dirty) => (
-                <HistorySheet
-                    resume={resume}
-                    revisions={revisions}
-                    dirty={dirty}
-                />
+                <>
+                    <FileLinkButton resume={resume} />
+                    <HistorySheet
+                        resume={resume}
+                        revisions={revisions}
+                        dirty={dirty}
+                    />
+                </>
             )}
         />
     );
@@ -168,7 +172,7 @@ function HistorySheet({
                     <SheetDescription>
                         Every save is kept. Restoring an older version saves it
                         as a new revision.
-                        {dirty && ' Restoring discards your unsaved changes.'}
+                        {dirty && " Restoring discards your unsaved changes."}
                     </SheetDescription>
                 </SheetHeader>
                 <ul className="space-y-2 overflow-y-auto px-4 pb-4">
@@ -223,6 +227,21 @@ function HistorySheet({
     );
 }
 
+/** Opens the resume's file in cloud storage; the link is set on the Profile page. */
+function FileLinkButton({ resume }: { resume: ResumeProps }) {
+    if (!resume.file_url) {
+        return null;
+    }
+
+    return (
+        <Button size="sm" variant="outline" asChild>
+            <a href={resume.file_url} target="_blank" rel="noreferrer">
+                <ExternalLink /> Open file
+            </a>
+        </Button>
+    );
+}
+
 function ReadOnlyHeader({
     resume,
     onCopy,
@@ -247,9 +266,10 @@ function ReadOnlyHeader({
                 className="ml-auto"
                 onClick={onCopy}
             >
-                {copied ? <Check /> : <Copy />}{' '}
-                {copied ? 'Copied' : 'Copy as plain text'}
+                {copied ? <Check /> : <Copy />}{" "}
+                {copied ? "Copied" : "Copy as plain text"}
             </Button>
+            <FileLinkButton resume={resume} />
             <Button size="sm" variant="ghost" asChild>
                 <Link href={resumesIndex()}>All resumes</Link>
             </Button>
@@ -258,5 +278,5 @@ function ReadOnlyHeader({
 }
 
 ResumePage.layout = {
-    breadcrumbs: [{ title: 'Profile', href: resumesIndex() }],
+    breadcrumbs: [{ title: "Profile", href: resumesIndex() }],
 };

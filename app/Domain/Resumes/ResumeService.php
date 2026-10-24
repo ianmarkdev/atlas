@@ -71,6 +71,17 @@ class ResumeService
         });
     }
 
+    /**
+     * Set or clear the link to the resume's file in cloud storage. Not part of the document, so
+     * no revision is added.
+     */
+    public function setFileUrl(ResumeVariant $resume, ?string $fileUrl, User $actor): void
+    {
+        $resume->forceFill(['file_url' => $fileUrl])->save();
+
+        $this->audit->record('resume.file_link_changed', $resume, [], $actor);
+    }
+
     public function makeDefault(ResumeVariant $resume, User $actor): void
     {
         DB::transaction(function () use ($resume, $actor): void {
