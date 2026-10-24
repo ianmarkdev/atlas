@@ -14,17 +14,20 @@ import { index } from '@/routes/applications';
 import type { JobApplicationDetail, SelectOption } from '@/types';
 
 const MAX_JOB_DESCRIPTION_LENGTH = 50000;
+const MAX_PROPOSAL_ANGLE_LENGTH = 5000;
 
 export default function ApplicationForm({
     application,
     jobDescription,
     stages,
     employmentTypes,
+    applyRequirements,
 }: {
     application: JobApplicationDetail | null;
     jobDescription: string | null;
     stages: SelectOption[];
     employmentTypes: SelectOption[];
+    applyRequirements: SelectOption[];
 }) {
     const isEditing = application !== null;
     const [description, setDescription] = useState(jobDescription ?? '');
@@ -191,6 +194,73 @@ export default function ApplicationForm({
                                         />
                                     </Field>
                                 )}
+                            </fieldset>
+
+                            <fieldset className="grid gap-4 sm:grid-cols-2">
+                                <legend className="mb-3 type-label text-text-label uppercase">
+                                    How to apply
+                                </legend>
+                                <Field
+                                    id="source"
+                                    label="Source (optional)"
+                                    error={errors.source}
+                                >
+                                    <Input
+                                        id="source"
+                                        name="source"
+                                        defaultValue={application?.source ?? ''}
+                                        placeholder="e.g. linkedin.com"
+                                        maxLength={200}
+                                    />
+                                </Field>
+                                <Field
+                                    id="apply_requirement"
+                                    label="Required to apply"
+                                    error={errors.apply_requirement}
+                                >
+                                    <NativeSelect
+                                        id="apply_requirement"
+                                        name="apply_requirement"
+                                        options={applyRequirements}
+                                        placeholder="None"
+                                        defaultValue={
+                                            application?.apply_requirement ?? ''
+                                        }
+                                    />
+                                </Field>
+                                <Field
+                                    id="subject_line"
+                                    label="Email subject line (optional)"
+                                    error={errors.subject_line}
+                                    className="sm:col-span-2"
+                                >
+                                    <Input
+                                        id="subject_line"
+                                        name="subject_line"
+                                        defaultValue={
+                                            application?.subject_line ?? ''
+                                        }
+                                        placeholder="If the listing asks for one"
+                                        maxLength={200}
+                                    />
+                                </Field>
+                                <Field
+                                    id="proposal_angle"
+                                    label="Proposal angle (optional)"
+                                    error={errors.proposal_angle}
+                                    className="sm:col-span-2"
+                                >
+                                    <Textarea
+                                        id="proposal_angle"
+                                        name="proposal_angle"
+                                        rows={3}
+                                        defaultValue={
+                                            application?.proposal_angle ?? ''
+                                        }
+                                        maxLength={MAX_PROPOSAL_ANGLE_LENGTH}
+                                        placeholder="How to pitch the candidate for this role"
+                                    />
+                                </Field>
                             </fieldset>
 
                             <div className="grid gap-2">

@@ -7,6 +7,8 @@ export type ApplicationStage =
     | 'rejected'
     | 'withdrawn';
 
+export type ApplyRequirement = 'video' | 'test' | 'video_and_test';
+
 export type ReviewStatus =
     | 'not_started'
     | 'in_progress'
@@ -22,6 +24,10 @@ export type JobApplication = {
     employment_type: string | null;
     salary_text: string | null;
     source_url: string | null;
+    /** The job platform, e.g. `linkedin.com`. */
+    source: string | null;
+    subject_line: string | null;
+    apply_requirement: ApplyRequirement | null;
     stage: ApplicationStage;
     review_status: ReviewStatus;
     review_note: string | null;
@@ -50,5 +56,6 @@ export type ActivityItem = {
 
 export type JobApplicationDetail = JobApplication & {
     notes: string | null;
+    proposal_angle: string | null;
     owner?: string | null;
 };

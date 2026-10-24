@@ -4,6 +4,7 @@ namespace App\Http\Requests\Applications;
 
 use App\Concerns\NormalizesPlainText;
 use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\ApplyRequirement;
 use App\Domain\Knowledge\EmploymentType;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -18,6 +19,8 @@ class SaveJobApplicationRequest extends FormRequest
     use NormalizesPlainText;
 
     public const MAX_JOB_DESCRIPTION_LENGTH = 50000;
+
+    public const MAX_PROPOSAL_ANGLE_LENGTH = 5000;
 
     /**
      * Get the validation rules that apply to the request.
@@ -36,6 +39,10 @@ class SaveJobApplicationRequest extends FormRequest
             'employment_type' => ['nullable', Rule::enum(EmploymentType::class)],
             'salary_text' => ['nullable', 'string', 'max:200'],
             'deadline_on' => ['nullable', 'date_format:Y-m-d'],
+            'source' => ['nullable', 'string', 'max:200'],
+            'subject_line' => ['nullable', 'string', 'max:200'],
+            'apply_requirement' => ['nullable', Rule::enum(ApplyRequirement::class)],
+            'proposal_angle' => ['nullable', 'string', 'max:'.self::MAX_PROPOSAL_ANGLE_LENGTH],
             'notes' => ['nullable', 'string', 'max:5000'],
             'job_description' => ['nullable', 'string', 'max:'.self::MAX_JOB_DESCRIPTION_LENGTH],
             'stage' => [Rule::requiredIf($isCreating), Rule::enum(ApplicationStage::class)],
@@ -44,7 +51,7 @@ class SaveJobApplicationRequest extends FormRequest
     }
 
     /**
-     * @return array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
+     * @return array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string}
      */
     public function details(): array
     {
@@ -56,6 +63,10 @@ class SaveJobApplicationRequest extends FormRequest
             'employment_type' => $this->input('employment_type'),
             'salary_text' => $this->input('salary_text'),
             'deadline_on' => $this->input('deadline_on'),
+            'source' => $this->input('source'),
+            'subject_line' => $this->input('subject_line'),
+            'apply_requirement' => $this->input('apply_requirement'),
+            'proposal_angle' => $this->input('proposal_angle'),
             'notes' => $this->input('notes'),
         ];
     }
@@ -75,6 +86,9 @@ class SaveJobApplicationRequest extends FormRequest
             'role_title' => false,
             'location' => false,
             'salary_text' => false,
+            'source' => false,
+            'subject_line' => false,
+            'proposal_angle' => true,
             'notes' => true,
             'job_description' => true,
         ];

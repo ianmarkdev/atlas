@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\ApplyRequirement;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobPosting;
 use App\Domain\Audit\AuditEvent;
@@ -34,6 +35,10 @@ function applicationForm(array $overrides = []): array
         'salary_text' => '£85k',
         'deadline_on' => '2026-11-15',
         'notes' => 'Referred by Sam.',
+        'source' => 'linkedin.com',
+        'subject_line' => 'Backend application',
+        'apply_requirement' => 'video_and_test',
+        'proposal_angle' => 'Lead with payments.',
         'job_description' => "We are hiring.\n\nRequirements:\n- PHP",
         'stage' => 'saved',
         ...$overrides,
@@ -51,6 +56,10 @@ describe('create', function () {
         expect($application->company_name)->toBe('Northwind Payments')
             ->and($application->stage)->toBe(ApplicationStage::Saved)
             ->and($application->deadline_on?->format('Y-m-d'))->toBe('2026-11-15')
+            ->and($application->source)->toBe('linkedin.com')
+            ->and($application->subject_line)->toBe('Backend application')
+            ->and($application->apply_requirement)->toBe(ApplyRequirement::VideoAndTest)
+            ->and($application->proposal_angle)->toBe('Lead with payments.')
             ->and($application->owner_user_id)->toBe($candidate->id)
             ->and($application->applied_at)->toBeNull()
             ->and($application->jobDescription())->toBe("We are hiring.\n\nRequirements:\n- PHP")
@@ -82,8 +91,9 @@ describe('create', function () {
                 'role_title' => '',
                 'source_url' => 'javascript:alert(1)',
                 'deadline_on' => '2026-02-30',
+                'apply_requirement' => 'essay',
             ]))
-            ->assertSessionHasErrors(['company_name', 'role_title', 'source_url', 'deadline_on']);
+            ->assertSessionHasErrors(['company_name', 'role_title', 'source_url', 'deadline_on', 'apply_requirement']);
     });
 
     test('a job description over 50,000 characters is rejected', function () {

@@ -63,6 +63,7 @@ export default function ApplicationShow({
     jobDescription,
     stages,
     employmentTypes,
+    applyRequirements,
     tailoredResume,
     variants,
     resumeRanking,
@@ -76,6 +77,7 @@ export default function ApplicationShow({
     jobDescription: JobDescription | null;
     stages: SelectOption[];
     employmentTypes: SelectOption[];
+    applyRequirements: SelectOption[];
     tailoredResume: TailoredResumeSummary | null;
     variants: SelectOption[];
     resumeRanking: ResumeRankingData | null;
@@ -91,11 +93,17 @@ export default function ApplicationShow({
     const employmentType = employmentTypes.find(
         (option) => option.value === application.employment_type,
     )?.label;
+    const applyRequirement = applyRequirements.find(
+        (option) => option.value === application.apply_requirement,
+    )?.label;
 
     const facts: [string, string | null][] = [
         ["Location", application.location],
         ["Type", employmentType ?? null],
         ["Salary", application.salary_text],
+        ["Source", application.source],
+        ["Subject line", application.subject_line],
+        ["Required to apply", applyRequirement ?? null],
         [
             "Deadline",
             application.deadline_on ? formatDay(application.deadline_on) : null,
@@ -250,6 +258,19 @@ export default function ApplicationShow({
                                 />
                             </CardContent>
                         </Card>
+
+                        {application.proposal_angle && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Proposal angle</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className="text-sm whitespace-pre-line">
+                                        {application.proposal_angle}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         {application.notes && (
                             <Card>

@@ -2,6 +2,7 @@
 
 use App\Console\Commands\ExtensionToken;
 use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\ApplyRequirement;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Audit\AuditEvent;
 use App\Http\Requests\Applications\SaveJobApplicationRequest;
@@ -25,6 +26,11 @@ function capturePayload(array $overrides = []): array
         'salary_text' => 'GBP 70,000–85,000 / year',
         'deadline_on' => '2026-11-30',
         'job_description' => "We are hiring.\n\nRequirements:\n- PHP",
+        'source' => 'linkedin.com',
+        'subject_line' => 'Senior Backend Engineer – REQ-123',
+        'apply_requirement' => 'video',
+        'proposal_angle' => "Lead with the payments scale-up.\n\nThen the team lead work.",
+        'notes' => 'Referred by Sam.',
         'capture' => [
             'method' => 'json-ld',
             'site' => 'jobs.example.com',
@@ -69,7 +75,11 @@ describe('saving a captured listing', function () {
             ->and($application->owner_user_id)->toBe($candidate->id)
             ->and($application->location)->toBe('London (hybrid)')
             ->and($application->deadline_on?->format('Y-m-d'))->toBe('2026-11-30')
-            ->and($application->notes)->toBeNull()
+            ->and($application->source)->toBe('linkedin.com')
+            ->and($application->subject_line)->toBe('Senior Backend Engineer – REQ-123')
+            ->and($application->apply_requirement)->toBe(ApplyRequirement::Video)
+            ->and($application->proposal_angle)->toBe("Lead with the payments scale-up.\n\nThen the team lead work.")
+            ->and($application->notes)->toBe('Referred by Sam.')
             ->and($application->jobDescription())->toBe("We are hiring.\n\nRequirements:\n- PHP")
             ->and($application->posting?->captured_by)->toBe($candidate->id);
 
@@ -91,6 +101,7 @@ describe('saving a captured listing', function () {
         captureAs($candidate, [
             'company_name' => null, 'source_url' => null, 'location' => null, 'employment_type' => null, 'salary_text' => null,
             'deadline_on' => null, 'job_description' => null, 'capture' => null,
+            'source' => null, 'subject_line' => null, 'apply_requirement' => null, 'proposal_angle' => null, 'notes' => null,
         ])->assertCreated()->assertJsonPath('data.company_name', null);
 
         $application = capturedApplications($candidate)->sole();
@@ -133,13 +144,12 @@ describe('saving a captured listing', function () {
         $other = candidateWithTwoFactor();
 
         captureAs($candidate, [
-            'notes' => 'Injected', 'stage' => 'offer', 'owner_user_id' => $other->id,
+            'stage' => 'offer', 'owner_user_id' => $other->id,
             'workspace_id' => workspaceOf($other)->id, 'review_status' => 'approved',
         ])->assertCreated();
 
         $application = capturedApplications($candidate)->sole();
-        expect($application->notes)->toBeNull()
-            ->and($application->stage)->toBe(ApplicationStage::Saved)
+        expect($application->stage)->toBe(ApplicationStage::Saved)
             ->and($application->owner_user_id)->toBe($candidate->id)
             ->and($application->workspace_id)->toBe(workspaceOf($candidate)->id)
             ->and(capturedApplications($other))->toBeEmpty();
@@ -168,6 +178,11 @@ describe('validation', function () {
         'non-http url' => [['source_url' => 'javascript:alert(1)'], 'source_url'],
         'unknown employment type' => [['employment_type' => 'gig'], 'employment_type'],
         'bad deadline' => [['deadline_on' => '30/11/2026'], 'deadline_on'],
+        'source too long' => [['source' => str_repeat('a', 201)], 'source'],
+        'subject line too long' => [['subject_line' => str_repeat('a', 201)], 'subject_line'],
+        'unknown apply requirement' => [['apply_requirement' => 'essay'], 'apply_requirement'],
+        'proposal angle too long' => [['proposal_angle' => str_repeat('a', 5001)], 'proposal_angle'],
+        'notes too long' => [['notes' => str_repeat('a', 5001)], 'notes'],
         'unknown extraction method' => [['capture' => ['method' => 'magic']], 'capture.method'],
         'unknown workplace type' => [['capture' => ['workplace_type' => 'moon']], 'capture.workplace_type'],
         'salary max below min' => [['capture' => ['salary' => ['min' => 90000, 'max' => 50000]]], 'capture.salary.max'],

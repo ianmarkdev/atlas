@@ -7,8 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * An application as listed on the board and table. The job description and notes are added by
- * the detail page.
+ * An application as listed on the board and table. The job description, notes and proposal
+ * angle are added by the detail page.
  *
  * @mixin JobApplication
  */
@@ -31,6 +31,9 @@ class JobApplicationResource extends JsonResource
             'employment_type' => $this->employment_type?->value,
             'salary_text' => $this->salary_text,
             'source_url' => $this->source_url,
+            'source' => $this->source,
+            'subject_line' => $this->subject_line,
+            'apply_requirement' => $this->apply_requirement?->value,
             'stage' => $this->stage->value,
             'review_status' => $this->review_status->value,
             'review_note' => $this->review_note,

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Applications;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationReviewService;
 use App\Domain\Applications\ApplicationStage;
+use App\Domain\Applications\ApplyRequirement;
 use App\Domain\Applications\JdCollection;
 use App\Domain\Applications\JobApplication;
 use App\Domain\Applications\JobApplicationService;
@@ -116,6 +117,7 @@ class JobApplicationController extends Controller
             'application' => [
                 ...JobApplicationResource::make($application)->resolve(),
                 'notes' => $application->notes,
+                'proposal_angle' => $application->proposal_angle,
                 'owner' => $application->owner?->name,
             ],
             'jobDescription' => $this->jobDescriptionOf($application),
@@ -167,6 +169,7 @@ class JobApplicationController extends Controller
             })),
             'stages' => self::stageOptions(),
             'employmentTypes' => self::employmentTypeOptions(),
+            'applyRequirements' => self::applyRequirementOptions(),
         ]);
     }
 
@@ -180,6 +183,7 @@ class JobApplicationController extends Controller
             'application' => [
                 ...JobApplicationResource::make($application)->resolve(),
                 'notes' => $application->notes,
+                'proposal_angle' => $application->proposal_angle,
             ],
             'jobDescription' => $application->jobDescription(),
             ...$this->formOptions(),
@@ -336,11 +340,22 @@ class JobApplicationController extends Controller
     }
 
     /**
-     * @return array{stages: list<array{value: string, label: string}>, employmentTypes: list<array{value: string, label: string}>}
+     * @return list<array{value: string, label: string}>
+     */
+    private static function applyRequirementOptions(): array
+    {
+        return array_map(
+            fn (ApplyRequirement $requirement): array => ['value' => $requirement->value, 'label' => $requirement->label()],
+            ApplyRequirement::cases(),
+        );
+    }
+
+    /**
+     * @return array{stages: list<array{value: string, label: string}>, employmentTypes: list<array{value: string, label: string}>, applyRequirements: list<array{value: string, label: string}>}
      */
     private function formOptions(): array
     {
-        return ['stages' => self::stageOptions(), 'employmentTypes' => self::employmentTypeOptions()];
+        return ['stages' => self::stageOptions(), 'employmentTypes' => self::employmentTypeOptions(), 'applyRequirements' => self::applyRequirementOptions()];
     }
 
     /**

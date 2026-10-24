@@ -10,8 +10,9 @@ use Illuminate\Validation\Rule;
 
 /**
  * A job listing captured by the browser extension. Same fields, limits and normalisation as the
- * "add application" form, without the user-managed ones (stage, notes): a capture is always a
- * new, `saved` application. The extension's extra findings arrive under `capture`.
+ * "add application" form, notes and the how-to-apply fields included, but without the stage: a
+ * capture is always a new, `saved` application. The extension's extra findings arrive under
+ * `capture`.
  */
 class CaptureJobApplicationRequest extends SaveJobApplicationRequest
 {
@@ -27,7 +28,7 @@ class CaptureJobApplicationRequest extends SaveJobApplicationRequest
     public function rules(): array
     {
         return [
-            ...Arr::except(parent::rules(), ['stage', 'lock_version', 'notes']),
+            ...Arr::except(parent::rules(), ['stage', 'lock_version']),
             // Some listings do not name the employer (agencies, anonymised ads).
             'company_name' => ['nullable', 'string', 'max:200'],
             'allow_duplicate' => ['sometimes', 'boolean'],
@@ -47,17 +48,15 @@ class CaptureJobApplicationRequest extends SaveJobApplicationRequest
     }
 
     /**
-     * The company is null when the listing did not name it. Notes belong to the user and are
-     * never set by a capture.
+     * The company is null when the listing did not name it.
      *
-     * @return array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, notes: ?string}
+     * @return array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string}
      */
     public function details(): array
     {
         return [
             ...parent::details(),
             'company_name' => $this->filled('company_name') ? $this->string('company_name')->toString() : null,
-            'notes' => null,
         ];
     }
 

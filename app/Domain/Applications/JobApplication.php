@@ -38,6 +38,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonImmutable|null $stage_changed_at
  * @property CarbonImmutable|null $applied_at
  * @property CarbonImmutable|null $deadline_on
+ * @property string|null $source the job platform, e.g. linkedin.com
+ * @property string|null $subject_line the email subject the listing asks applicants to use
+ * @property ApplyRequirement|null $apply_requirement
+ * @property string|null $proposal_angle
  * @property string|null $notes
  * @property string|null $review_note
  * @property CarbonImmutable|null $review_status_changed_at
@@ -208,6 +212,7 @@ class JobApplication extends Model
     {
         return [
             'employment_type' => EmploymentType::class,
+            'apply_requirement' => ApplyRequirement::class,
             'stage' => ApplicationStage::class,
             'review_status' => ReviewStatus::class,
             'stage_changed_at' => 'datetime',
