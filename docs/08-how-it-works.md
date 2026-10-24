@@ -160,4 +160,25 @@ Every call goes through [AiGateway](../app/Domain/Ai/AiGateway.php): one route p
 
 Searching, matching, ranking, clarifications and retention make no AI call. Embeddings for search always run locally on Ollama (`bge-m3`). Generation runs on Ollama unless a task is given `AI_<TASK>_PROVIDER=claude` and `AI_ALLOW_EXTERNAL=true` is set; see [ai-setup.md](ai-setup.md).
 
+## Background work
+
+Every AI job waits on a queue chosen by where its task runs and whether someone is waiting ([AiQueue](../app/Domain/Ai/AiQueue.php)). A worker drains its first queue before the next.
+
+| Queue | Jobs | Workers |
+|---|---|---|
+| `local-now` | Analysis, embeddings, and any task routed to Ollama that someone is waiting for | 1: the tasks share one GPU |
+| `local-bulk` | Weekly achievement suggestions, "Draft all" and learning from edits while on Ollama | the same worker |
+| `claude-now` | Tasks routed to Claude that someone is waiting for: an answer, a redraft, tailoring, claim checks | 2 |
+| `claude-bulk` | "Draft all" and learning from edits on Claude | the same workers |
+| `default` | Re-indexing the library (no AI) | 1 |
+
+```
+php artisan queue:work --queue=local-now,local-bulk
+php artisan queue:work --queue=claude-now,claude-bulk     # twice
+php artisan queue:work --queue=default
+php artisan schedule:work
+```
+
+The scheduler also picks up work saved by Career VA, which writes to the shared database and cannot queue jobs: every 10 minutes it analyses new applications that have a job description (`app:analyse-new-applications`), and daily it keeps the AI payloads of applications in a submitted stage (`app:retain-submitted-work`). With the data on Neon, the queue tables can live on local Postgres (`DB_QUEUE_CONNECTION=local_queue`, see `.env.example`), so polling workers do not keep Neon awake.
+
 Prompt and model changes are checked against a fixed set of synthetic samples: `php artisan app:compare-llm --baseline=<batch>` fails when a new batch does worse than the baseline (see [LlmComparison](../app/Domain/Ai/LlmComparison.php) and `tests/Eval/fixtures/llm-comparison.php`).

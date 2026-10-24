@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Domain\Ai\AiQueue;
 use App\Domain\Retrieval\EmbeddingModelRegistry;
 use App\Domain\Retrieval\Embeddings\EmbeddingProvider;
 use App\Domain\Retrieval\Embeddings\Vector;
@@ -33,6 +34,7 @@ class EmbedRetrievalUnits implements ShouldQueue
     public function __construct(public int $workspaceId)
     {
         $this->afterCommit();
+        $this->onQueue(AiQueue::embeddings());
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
 use App\Domain\Ai\LlmRouter;
@@ -43,6 +44,7 @@ class TailorApplicationResume implements ShouldQueue
     public function __construct(public int $workspaceId, public int $resumeId)
     {
         $this->afterCommit();
+        $this->onQueue(AiQueue::for('resume_tailoring'));
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
 use App\Domain\Ai\LlmUnavailable;
@@ -29,6 +30,8 @@ class AnalyseFeedback implements ShouldQueue
     public function __construct(public int $workspaceId, public int $feedbackEventId)
     {
         $this->afterCommit();
+        // Nobody waits for the lessons of an edit.
+        $this->onQueue(AiQueue::for('feedback_analysis', bulk: true));
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\Clients\FakeLlmClient;
 use App\Domain\Ai\LlmRequest;
 use App\Domain\Ai\LlmRouter;
@@ -12,7 +13,9 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Resumes\ResumeVariant;
+use App\Jobs\GenerateAnswerDraft;
 use App\Models\User;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function draftedApplicationOf(User $candidate): JobApplication
@@ -564,4 +567,18 @@ describe('claims labelled by a separate check', function () {
             ->patch(route('applications.questions.approve', [$application, $question]))
             ->assertSessionHasNoErrors();
     });
+});
+
+test('a single draft is queued ahead of the drafts asked for all at once', function () {
+    Queue::fake();
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $single = questionToDraft($candidate, $application, 'Why us?');
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $single]));
+    questionToDraft($candidate, $application, 'Your notice period?');
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft-all', $application));
+
+    Queue::assertPushedOn(AiQueue::LOCAL_NOW, GenerateAnswerDraft::class, fn (GenerateAnswerDraft $job): bool => $job->questionId === $single->id);
+    Queue::assertPushedOn(AiQueue::LOCAL_BULK, GenerateAnswerDraft::class, fn (GenerateAnswerDraft $job): bool => $job->questionId !== $single->id);
 });

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\ClaimGroundingValidator;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
@@ -50,9 +51,13 @@ class GenerateAnswerDraft implements ShouldQueue
     /** A 7B model partly on the CPU can take a few minutes for a cover letter. */
     public int $timeout = 900;
 
-    public function __construct(public int $workspaceId, public int $questionId)
+    /**
+     * @param  bool  $bulk  one of many drafts asked for at once ("Draft all"), behind single requests
+     */
+    public function __construct(public int $workspaceId, public int $questionId, bool $bulk = false)
     {
         $this->afterCommit();
+        $this->onQueue(AiQueue::for('answer_writing', $bulk));
     }
 
     /**

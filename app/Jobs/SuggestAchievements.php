@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
 use App\Domain\Ai\LlmUnavailable;
@@ -31,6 +32,8 @@ class SuggestAchievements implements ShouldQueue
     public function __construct(public int $workspaceId, public ?int $requestedBy = null)
     {
         $this->afterCommit();
+        // The weekly run waits behind everything; asked for from the page, it goes first.
+        $this->onQueue(AiQueue::for('achievement_suggestions', bulk: $requestedBy === null));
     }
 
     /**

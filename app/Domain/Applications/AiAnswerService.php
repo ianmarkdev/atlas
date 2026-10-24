@@ -26,12 +26,13 @@ class AiAnswerService
     /**
      * @param  string|null  $instruction  how this draft should differ ("shorter", "more formal")
      * @param  int|null  $paragraph  redraft only this paragraph (0-based) of the current text
+     * @param  bool  $bulk  one of many drafts asked for at once, queued behind single requests
      *
      * @throws ValidationException when the answer is approved, a draft is already being written, or the paragraph does not exist
      */
-    public function request(ApplicationQuestion $question, User $actor, ?string $instruction = null, ?int $paragraph = null): AnswerDraft
+    public function request(ApplicationQuestion $question, User $actor, ?string $instruction = null, ?int $paragraph = null, bool $bulk = false): AnswerDraft
     {
-        return DB::transaction(function () use ($question, $actor, $instruction, $paragraph): AnswerDraft {
+        return DB::transaction(function () use ($question, $actor, $instruction, $paragraph, $bulk): AnswerDraft {
             $draft = AnswerDraft::query()->where('application_question_id', $question->id)->lockForUpdate()->first();
 
             if ($draft === null) {
@@ -63,7 +64,7 @@ class AiAnswerService
 
             $this->audit->record('answer_draft.generation_requested', $question, ['instruction' => $instruction, 'paragraph' => $paragraph], $actor);
 
-            GenerateAnswerDraft::dispatch($question->workspace_id, $question->id);
+            GenerateAnswerDraft::dispatch($question->workspace_id, $question->id, $bulk);
 
             return $draft;
         });
@@ -89,7 +90,7 @@ class AiAnswerService
             ->values();
 
         return DB::transaction(fn (): array => $questions
-            ->each(fn (ApplicationQuestion $question) => $this->request($question, $actor))
+            ->each(fn (ApplicationQuestion $question) => $this->request($question, $actor, bulk: true))
             ->all());
     }
 

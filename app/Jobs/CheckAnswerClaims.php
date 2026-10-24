@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\ClaimGroundingValidator;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
@@ -34,6 +35,8 @@ class CheckAnswerClaims implements ShouldQueue
     public function __construct(public int $workspaceId, public int $versionId)
     {
         $this->afterCommit();
+        // Approving the draft waits for its labels.
+        $this->onQueue(AiQueue::for('claim_check'));
     }
 
     /**
