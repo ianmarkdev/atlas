@@ -13,6 +13,7 @@ final readonly class RetrievalQuery
     /**
      * @param  list<string>  $unitTypes
      * @param  list<string>  $statuses
+     * @param  list<int>|null  $claimIds  only these bullet points (a resume's); null = the whole library
      */
     public function __construct(
         public string $text,
@@ -20,5 +21,6 @@ final readonly class RetrievalQuery
         public int $limit = 8,
         public array $unitTypes = self::UNIT_TYPES,
         public array $statuses = RetrievalText::ACTIVE_STATUSES,
+        public ?array $claimIds = null,
     ) {}
 }

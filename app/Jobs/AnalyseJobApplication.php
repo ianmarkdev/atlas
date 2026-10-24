@@ -11,6 +11,7 @@ use App\Domain\Applications\BriefChecker;
 use App\Domain\Applications\ClarificationService;
 use App\Domain\Applications\EvidenceMatcher;
 use App\Domain\Applications\JobAnalysis;
+use App\Domain\Applications\ResumeRanker;
 use App\Jobs\Middleware\WithWorkspaceContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -43,7 +44,7 @@ class AnalyseJobApplication implements ShouldQueue
         return [new WithWorkspaceContext($this->workspaceId)];
     }
 
-    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher, ClarificationService $clarifications): void
+    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher, ResumeRanker $ranker, ClarificationService $clarifications): void
     {
         $analysis = JobAnalysis::query()->with(['application', 'posting', 'requester'])->find($this->analysisId);
 
@@ -79,13 +80,15 @@ class AnalyseJobApplication implements ShouldQueue
         }
 
         $brief = $checker->check($result->data ?? [], $jobDescription);
+        $matches = $matcher->match($brief, $application->candidate_profile_id);
 
         $analysis->forceFill([
             'status' => 'succeeded',
             'generation_run_id' => $result->run->id,
             'prompt_version' => $result->run->prompt_version,
             'brief' => $brief,
-            'matches' => $matcher->match($brief, $application->candidate_profile_id),
+            'matches' => $matches,
+            'resume_ranking' => $ranker->rank($matches, $application->candidate_profile_id),
             'matched_at' => now(),
             'completed_at' => now(),
             'error_message' => null,

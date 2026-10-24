@@ -17,6 +17,7 @@ class JobAnalysisService
     public function __construct(
         private AuditLogger $audit,
         private EvidenceMatcher $matcher,
+        private ResumeRanker $ranker,
         private ApplicationQuestionService $questions,
         private ClarificationService $clarifications,
     ) {}
@@ -57,7 +58,8 @@ class JobAnalysisService
     }
 
     /**
-     * Re-run evidence matching (after the library changed) without calling the model again.
+     * Re-run evidence matching and the resume ranking (after the library or a resume changed)
+     * without calling the model again.
      */
     public function refreshMatches(JobAnalysis $analysis): void
     {
@@ -65,8 +67,12 @@ class JobAnalysisService
             return;
         }
 
+        $profileId = $analysis->application->candidate_profile_id;
+        $matches = $this->matcher->match($analysis->brief, $profileId);
+
         $analysis->forceFill([
-            'matches' => $this->matcher->match($analysis->brief, $analysis->application->candidate_profile_id),
+            'matches' => $matches,
+            'resume_ranking' => $this->ranker->rank($matches, $profileId),
             'matched_at' => now(),
         ])->save();
 

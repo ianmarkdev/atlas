@@ -23,8 +23,15 @@ class HybridSearch
         private EvidenceRanker $ranker,
     ) {}
 
+    /** @var array<string, string> query vectors already computed, by embedding model and text */
+    private array $queryVectors = [];
+
     public function search(RetrievalQuery $query): SearchResult
     {
+        if ($query->claimIds === []) {
+            return new SearchResult([], false, __('There are no bullet points to search.'));
+        }
+
         $workspaceId = $this->tenant->workspaceId();
         $keywords = self::orQuery($query->text);
         [$vector, $model, $reason] = $this->queryVector($query->text);
@@ -37,7 +44,10 @@ class HybridSearch
         $k = (int) config('retrieval.rrf_k');
         $typePlaceholders = implode(',', array_fill(0, count($query->unitTypes), '?'));
         $statusPlaceholders = implode(',', array_fill(0, count($query->statuses), '?'));
-        $filterBindings = [$workspaceId, $query->candidateProfileId, ...$query->unitTypes, ...$query->statuses];
+        $filterBindings = [$workspaceId, $query->candidateProfileId, ...$query->unitTypes, ...$query->statuses, ...($query->claimIds ?? [])];
+        $claimFilter = $query->claimIds === null
+            ? ''
+            : "AND source_type = 'claim' AND source_id IN (".implode(',', array_fill(0, count($query->claimIds), '?')).')';
 
         $semanticSql = $vector === null
             ? 'SELECT NULL::bigint AS id, NULL::double precision AS distance, NULL::bigint AS rank, NULL::text AS embedding WHERE false'
@@ -64,7 +74,7 @@ class HybridSearch
             "WITH filtered AS (
                 SELECT id FROM retrieval_units
                  WHERE workspace_id = ? AND candidate_profile_id = ? AND is_active
-                   AND unit_type IN ({$typePlaceholders}) AND status IN ({$statusPlaceholders})
+                   AND unit_type IN ({$typePlaceholders}) AND status IN ({$statusPlaceholders}) {$claimFilter}
              ),
              semantic AS ({$semanticSql}),
              lexical AS ({$lexicalSql})
@@ -127,7 +137,8 @@ class HybridSearch
         }
 
         try {
-            return [Vector::literal($this->provider->embedQuery($text)), $model, null];
+            // Ranking several resumes asks the same requirement once per resume.
+            return [$this->queryVectors["{$model->id}:{$text}"] ??= Vector::literal($this->provider->embedQuery($text)), $model, null];
         } catch (EmbeddingFailed $exception) {
             report($exception);
 

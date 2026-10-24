@@ -1,4 +1,4 @@
-import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
+import { Form, Head, Link, router, usePoll } from "@inertiajs/react";
 import {
     Check,
     Copy,
@@ -7,36 +7,40 @@ import {
     MessageSquareText,
     Sparkles,
     Pencil,
-} from 'lucide-react';
-import { useEffect, useState } from 'react';
-import ApplicationQuestionController from '@/actions/App/Http/Controllers/Applications/ApplicationQuestionController';
-import JdCollectionController from '@/actions/App/Http/Controllers/Applications/JdCollectionController';
-import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
-import ApplicationResumeController from '@/actions/App/Http/Controllers/Applications/ApplicationResumeController';
-import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import ApplicationQuestionController from "@/actions/App/Http/Controllers/Applications/ApplicationQuestionController";
+import JdCollectionController from "@/actions/App/Http/Controllers/Applications/JdCollectionController";
+import JobAnalysisController from "@/actions/App/Http/Controllers/Applications/JobAnalysisController";
+import ApplicationResumeController from "@/actions/App/Http/Controllers/Applications/ApplicationResumeController";
+import JobApplicationController from "@/actions/App/Http/Controllers/Applications/JobApplicationController";
 import {
     DeadlineBadge,
     StageBadge,
     StageSelect,
-} from '@/components/applications/stage';
-import { NativeSelect } from '@/components/native-select';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from "@/components/applications/stage";
+import { NativeSelect } from "@/components/native-select";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-} from '@/components/ui/card';
-import { companyLabel, formatDay } from '@/lib/applications';
-import { timeAgo } from '@/lib/time';
-import { copyToClipboard } from '@/lib/clipboard';
-import { index } from '@/routes/applications';
-import { index as collectionsIndex } from '@/routes/collections';
-import ApplicationReviewController from '@/actions/App/Http/Controllers/Applications/ApplicationReviewController';
-import { ReviewBadge, Timeline } from '@/components/applications/review';
-import InputError from '@/components/input-error';
+} from "@/components/ui/card";
+import { companyLabel, formatDay } from "@/lib/applications";
+import { timeAgo } from "@/lib/time";
+import { copyToClipboard } from "@/lib/clipboard";
+import { index } from "@/routes/applications";
+import { index as collectionsIndex } from "@/routes/collections";
+import ApplicationReviewController from "@/actions/App/Http/Controllers/Applications/ApplicationReviewController";
+import { ReviewBadge, Timeline } from "@/components/applications/review";
+import {
+    ResumeRanking,
+    type ResumeRankingData,
+} from "@/components/applications/resume-ranking";
+import InputError from "@/components/input-error";
 import {
     Dialog,
     DialogContent,
@@ -44,9 +48,9 @@ import {
     DialogHeader,
     DialogTitle,
     DialogTrigger,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import type { ActivityItem, JobApplicationDetail, SelectOption } from '@/types';
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import type { ActivityItem, JobApplicationDetail, SelectOption } from "@/types";
 
 type JobDescription = {
     text: string;
@@ -61,6 +65,7 @@ export default function ApplicationShow({
     employmentTypes,
     tailoredResume,
     variants,
+    resumeRanking,
     questionsSummary,
     analysisSummary,
     collections,
@@ -73,6 +78,7 @@ export default function ApplicationShow({
     employmentTypes: SelectOption[];
     tailoredResume: TailoredResumeSummary | null;
     variants: SelectOption[];
+    resumeRanking: ResumeRankingData | null;
     questionsSummary: QuestionsSummary;
     analysisSummary: AnalysisSummary | null;
     collections: {
@@ -87,20 +93,20 @@ export default function ApplicationShow({
     )?.label;
 
     const facts: [string, string | null][] = [
-        ['Location', application.location],
-        ['Type', employmentType ?? null],
-        ['Salary', application.salary_text],
+        ["Location", application.location],
+        ["Type", employmentType ?? null],
+        ["Salary", application.salary_text],
         [
-            'Deadline',
+            "Deadline",
             application.deadline_on ? formatDay(application.deadline_on) : null,
         ],
         [
-            'Applied',
+            "Applied",
             application.applied_at
                 ? new Date(application.applied_at).toLocaleDateString()
                 : null,
         ],
-        ['Added by', application.owner ?? null],
+        ["Added by", application.owner ?? null],
     ];
 
     return (
@@ -126,7 +132,7 @@ export default function ApplicationShow({
                             <DeadlineBadge application={application} />
                             {application.stage_changed_at && (
                                 <span className="type-caption text-text-muted">
-                                    Stage changed{' '}
+                                    Stage changed{" "}
                                     {timeAgo(application.stage_changed_at)}
                                 </span>
                             )}
@@ -198,6 +204,7 @@ export default function ApplicationShow({
                             application={application}
                             resume={tailoredResume}
                             variants={variants}
+                            ranking={resumeRanking}
                         />
                         <QuestionsCard
                             application={application.ulid}
@@ -232,7 +239,7 @@ export default function ApplicationShow({
                                                 {label}
                                             </dt>
                                             <dd className="min-w-0 break-words text-text-primary">
-                                                {value ?? '—'}
+                                                {value ?? "—"}
                                             </dd>
                                         </div>
                                     ))}
@@ -300,8 +307,8 @@ function JobDescriptionCard({
                         variant="outline"
                         onClick={copy}
                     >
-                        {copied ? <Check /> : <Copy />}{' '}
-                        {copied ? 'Copied' : 'Copy'}
+                        {copied ? <Check /> : <Copy />}{" "}
+                        {copied ? "Copied" : "Copy"}
                     </Button>
                 </div>
                 <CardDescription>
@@ -320,7 +327,7 @@ function JobDescriptionCard({
 }
 
 type TailoredResumeSummary = {
-    status: 'draft' | 'approved';
+    status: "draft" | "approved";
     version_no: number | null;
     title: string | null;
     jobs: number;
@@ -332,10 +339,12 @@ function TailoredResumeCard({
     application,
     resume,
     variants,
+    ranking,
 }: {
     application: JobApplicationDetail;
     resume: TailoredResumeSummary | null;
     variants: SelectOption[];
+    ranking: ResumeRankingData | null;
 }) {
     if (resume !== null) {
         return (
@@ -345,7 +354,7 @@ function TailoredResumeCard({
                         <CardTitle className="flex items-center gap-2">
                             <FileText className="size-4" aria-hidden /> Tailored
                             resume
-                            {resume.status === 'approved' ? (
+                            {resume.status === "approved" ? (
                                 <Badge>Approved</Badge>
                             ) : (
                                 <Badge variant="outline">Draft</Badge>
@@ -357,23 +366,23 @@ function TailoredResumeCard({
                                     application.ulid,
                                 )}
                             >
-                                {resume.status === 'approved'
-                                    ? 'View'
-                                    : 'Open editor'}
+                                {resume.status === "approved"
+                                    ? "View"
+                                    : "Open editor"}
                             </Link>
                         </Button>
                     </div>
                     <CardDescription>
                         {[
                             resume.title,
-                            `${resume.jobs} ${resume.jobs === 1 ? 'job' : 'jobs'}`,
+                            `${resume.jobs} ${resume.jobs === 1 ? "job" : "jobs"}`,
                             resume.based_on && `from “${resume.based_on}”`,
                             `version ${resume.version_no ?? 1}`,
                             resume.updated_at &&
                                 `edited ${timeAgo(resume.updated_at)}`,
                         ]
                             .filter(Boolean)
-                            .join(' · ')}
+                            .join(" · ")}
                     </CardDescription>
                 </CardHeader>
             </Card>
@@ -392,7 +401,8 @@ function TailoredResumeCard({
                     show, their order and wording. Your library stays as it is.
                 </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+                {ranking && <ResumeRanking ranking={ranking} />}
                 {variants.length === 0 ? (
                     <p className="type-body text-text-muted">
                         You have no resumes yet. Create one on your Profile
@@ -411,6 +421,7 @@ function TailoredResumeCard({
                                     <NativeSelect
                                         name="variant"
                                         options={variants}
+                                        defaultValue={ranking?.resumes[0]?.ulid}
                                         aria-label="Resume to start from"
                                         className="h-10"
                                     />
@@ -461,11 +472,11 @@ function ReviewCard({
     const assignee = application.assignee ?? null;
     const canStart =
         review.can.start &&
-        (status === 'not_started' || status === 'changes_requested');
+        (status === "not_started" || status === "changes_requested");
     const canSubmit =
         review.can.submit &&
-        ['not_started', 'in_progress', 'changes_requested'].includes(status);
-    const inReview = status === 'in_review';
+        ["not_started", "in_progress", "changes_requested"].includes(status);
+    const inReview = status === "in_review";
 
     const assign = (assigneeUlid: string | null) =>
         router.patch(
@@ -488,18 +499,18 @@ function ReviewCard({
                 )}
             </CardHeader>
             <CardContent className="space-y-4">
-                {application.review_note && status !== 'approved' && (
+                {application.review_note && status !== "approved" && (
                     <div
                         className={
-                            status === 'changes_requested'
-                                ? 'rounded-kraken-sm border border-border-error bg-surface-error-subtle p-3 text-sm'
-                                : 'rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3 text-sm'
+                            status === "changes_requested"
+                                ? "rounded-kraken-sm border border-border-error bg-surface-error-subtle p-3 text-sm"
+                                : "rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-3 text-sm"
                         }
                     >
                         <p className="type-label text-text-label uppercase">
-                            {status === 'changes_requested'
-                                ? 'Changes requested'
-                                : 'Note from the VA'}
+                            {status === "changes_requested"
+                                ? "Changes requested"
+                                : "Note from the VA"}
                         </p>
                         <p className="whitespace-pre-line text-text-primary">
                             {application.review_note}
@@ -515,7 +526,7 @@ function ReviewCard({
                         <NativeSelect
                             aria-label="Assigned to"
                             className="h-10"
-                            value={assignee?.ulid ?? ''}
+                            value={assignee?.ulid ?? ""}
                             options={review.team}
                             placeholder="Nobody"
                             onChange={(event) =>
@@ -527,9 +538,9 @@ function ReviewCard({
                             <span className="text-sm text-text-primary">
                                 {assignee
                                     ? assignee.is_you
-                                        ? 'You'
+                                        ? "You"
                                         : assignee.name
-                                    : 'Nobody yet'}
+                                    : "Nobody yet"}
                             </span>
                             {review.can.take && (
                                 <Button
@@ -597,7 +608,7 @@ function ReviewCard({
                             variant="outline"
                         />
                     )}
-                    {review.can.review && status !== 'approved' && (
+                    {review.can.review && status !== "approved" && (
                         <Form
                             {...ApplicationReviewController.approve.form(
                                 application.ulid,
@@ -620,7 +631,7 @@ function ReviewCard({
                             )}
                         </Form>
                     )}
-                    {review.can.review && status === 'approved' && (
+                    {review.can.review && status === "approved" && (
                         <Form
                             {...ApplicationReviewController.reopen.form(
                                 application.ulid,
@@ -641,7 +652,7 @@ function ReviewCard({
                 </div>
 
                 {review.can.review &&
-                    status !== 'approved' &&
+                    status !== "approved" &&
                     review.missing.length > 0 && (
                         <div className="type-caption text-text-muted">
                             <p>
@@ -654,7 +665,7 @@ function ReviewCard({
                             </ul>
                         </div>
                     )}
-                {status === 'approved' && (
+                {status === "approved" && (
                     <p className="type-caption text-text-muted">
                         Ready to send. Once it is sent, move it to Applied.
                     </p>
@@ -671,7 +682,7 @@ function NoteDialog({
     action,
     submitLabel,
     required,
-    variant = 'default',
+    variant = "default",
 }: {
     trigger: string;
     title: string;
@@ -679,7 +690,7 @@ function NoteDialog({
     action: ReturnType<typeof ApplicationReviewController.submit.form>;
     submitLabel: string;
     required: boolean;
-    variant?: 'default' | 'outline';
+    variant?: "default" | "outline";
 }) {
     const [open, setOpen] = useState(false);
 
@@ -709,12 +720,12 @@ function NoteDialog({
                                 maxLength={2000}
                                 required={required}
                                 aria-label={
-                                    required ? 'Note' : 'Note (optional)'
+                                    required ? "Note" : "Note (optional)"
                                 }
                                 placeholder={
                                     required
-                                        ? 'What should change?'
-                                        : 'Optional note'
+                                        ? "What should change?"
+                                        : "Optional note"
                                 }
                             />
                             <InputError
@@ -770,7 +781,7 @@ function CollectionsRow({
                     <Badge
                         key={collection.ulid}
                         variant={
-                            collection.use_for_eval ? 'secondary' : 'outline'
+                            collection.use_for_eval ? "secondary" : "outline"
                         }
                     >
                         {collection.name}
@@ -804,7 +815,7 @@ function CollectionsRow({
 }
 
 type AnalysisSummary = {
-    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'invalid_output';
+    status: "queued" | "running" | "succeeded" | "failed" | "invalid_output";
     created_at: string | null;
     must_haves: number;
     strong: number;
@@ -828,10 +839,10 @@ function AnalysisCard({
 }) {
     const pending =
         summary !== null &&
-        (summary.status === 'queued' || summary.status === 'running');
+        (summary.status === "queued" || summary.status === "running");
     const poll = usePoll(
         3000,
-        { only: ['analysisSummary', 'timeline'] },
+        { only: ["analysisSummary", "timeline"] },
         { autoStart: false },
     );
 
@@ -846,7 +857,7 @@ function AnalysisCard({
 
     const description = (() => {
         if (!hasJobDescription) {
-            return 'Paste the job description to analyse it.';
+            return "Paste the job description to analyse it.";
         }
 
         if (summary === null) {
@@ -854,14 +865,14 @@ function AnalysisCard({
         }
 
         if (pending) {
-            return 'Analysing… this can take a minute or two with a local model.';
+            return "Analysing… this can take a minute or two with a local model.";
         }
 
-        if (summary.status !== 'succeeded') {
-            return `The last analysis failed: ${summary.error_message ?? 'unknown error'}`;
+        if (summary.status !== "succeeded") {
+            return `The last analysis failed: ${summary.error_message ?? "unknown error"}`;
         }
 
-        return `${summary.must_haves} must-haves · ${summary.strong} with strong evidence · ${summary.gaps} gaps${summary.injection_warnings > 0 ? ' · contains instructions aimed at AI' : ''}${summary.is_latest_posting ? '' : ' · the job description changed since'}`;
+        return `${summary.must_haves} must-haves · ${summary.strong} with strong evidence · ${summary.gaps} gaps${summary.injection_warnings > 0 ? " · contains instructions aimed at AI" : ""}${summary.is_latest_posting ? "" : " · the job description changed since"}`;
     })();
 
     return (
@@ -872,7 +883,7 @@ function AnalysisCard({
                         <Sparkles className="size-4" aria-hidden /> Job analysis
                         {pending && <Badge variant="secondary">Running</Badge>}
                         {summary !== null &&
-                            summary.status !== 'succeeded' &&
+                            summary.status !== "succeeded" &&
                             !pending && (
                                 <Badge variant="destructive">Failed</Badge>
                             )}
@@ -901,8 +912,8 @@ function AnalysisCard({
                                         disabled={processing || pending}
                                     >
                                         {summary === null
-                                            ? 'Analyse'
-                                            : 'Re-analyse'}
+                                            ? "Analyse"
+                                            : "Re-analyse"}
                                     </Button>
                                 )}
                             </Form>
@@ -939,12 +950,12 @@ function QuestionsCard({
             <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="flex items-center gap-2">
-                        <MessageSquareText className="size-4" aria-hidden />{' '}
+                        <MessageSquareText className="size-4" aria-hidden />{" "}
                         Questions & cover letter
                     </CardTitle>
                     <Button
                         size="sm"
-                        variant={summary.total === 0 ? 'default' : 'outline'}
+                        variant={summary.total === 0 ? "default" : "outline"}
                         asChild
                     >
                         <Link
@@ -953,15 +964,15 @@ function QuestionsCard({
                             )}
                         >
                             {summary.total === 0
-                                ? 'Add questions'
-                                : 'Answer questions'}
+                                ? "Add questions"
+                                : "Answer questions"}
                         </Link>
                     </Button>
                 </div>
                 <CardDescription>
                     {summary.total === 0
-                        ? 'Paste the questions from the application form; answer them by hand or from your answer library.'
-                        : `${summary.total} ${summary.total === 1 ? 'question' : 'questions'} · ${summary.answered} answered · ${summary.approved} approved${summary.has_cover_letter ? ' · includes a cover letter' : ''}`}
+                        ? "Paste the questions from the application form; answer them by hand or from your answer library."
+                        : `${summary.total} ${summary.total === 1 ? "question" : "questions"} · ${summary.answered} answered · ${summary.approved} approved${summary.has_cover_letter ? " · includes a cover letter" : ""}`}
                 </CardDescription>
             </CardHeader>
             {summary.total > 0 && (
@@ -987,7 +998,7 @@ function QuestionsCard({
 
 ApplicationShow.layout = {
     breadcrumbs: [
-        { title: 'Applications', href: index() },
-        { title: 'Application', href: index() },
+        { title: "Applications", href: index() },
+        { title: "Application", href: index() },
     ],
 };

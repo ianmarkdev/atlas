@@ -12,7 +12,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * One AI analysis of an application's job description (M7): the brief (validated model output
- * plus the server's own checks) and the requirement ↔ evidence matches.
+ * plus the server's own checks), the requirement ↔ evidence matches, and the resumes ranked by
+ * how well their own bullet points cover the requirements.
+ *
+ * @phpstan-import-type Ranking from ResumeRanker
  *
  * @property int $id
  * @property string $ulid
@@ -24,6 +27,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $status
  * @property array<string, mixed>|null $brief
  * @property array<string, mixed>|null $matches
+ * @property Ranking|null $resume_ranking which resume covers the requirements best (ResumeRanker)
  * @property CarbonImmutable|null $matched_at
  * @property string|null $error_message
  * @property int|null $requested_by
@@ -108,6 +112,7 @@ class JobAnalysis extends Model
         return [
             'brief' => 'array',
             'matches' => 'array',
+            'resume_ranking' => 'array',
             'matched_at' => 'datetime',
             'completed_at' => 'datetime',
         ];

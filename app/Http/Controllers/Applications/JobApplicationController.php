@@ -140,6 +140,7 @@ class JobApplicationController extends Controller
             ],
             'variants' => ResumeVariant::query()->active()->orderByDesc('is_default')->orderBy('name')->get(['ulid', 'name'])
                 ->map(fn (ResumeVariant $variant): array => ['value' => $variant->ulid, 'label' => $variant->name])->values()->all(),
+            'resumeRanking' => $resume === null ? self::resumeRanking($application) : null,
             'review' => [
                 'me' => $user->ulid,
                 'missing' => $reviews->notYetApproved($application),
@@ -274,6 +275,31 @@ class JobApplicationController extends Controller
             'injection_warnings' => count((array) ($analysis->brief['server_injection_warnings'] ?? [])) + count((array) ($analysis->brief['injection_warnings'] ?? [])),
             'error_message' => $analysis->error_message,
             'is_latest_posting' => $analysis->job_posting_id === $application->posting?->id,
+        ];
+    }
+
+    /**
+     * The latest analysis's resume ranking, for choosing the resume to start from. Stale when a
+     * resume was edited, added or archived since: the ranking read other bullet points.
+     *
+     * @return array{resumes: list<array<string, mixed>>, stale: bool}|null
+     */
+    private static function resumeRanking(JobApplication $application): ?array
+    {
+        $ranking = $application->latestAnalysis?->status === 'succeeded' ? $application->latestAnalysis->resume_ranking : null;
+
+        if ($ranking === null || $ranking['resumes'] === []) {
+            return null;
+        }
+
+        $current = ResumeVariant::query()->active()->pluck('current_revision_id', 'ulid')->all();
+        $ranked = array_column($ranking['resumes'], 'revision_id', 'ulid');
+        ksort($current);
+        ksort($ranked);
+
+        return [
+            'resumes' => array_map(fn (array $resume): array => array_diff_key($resume, ['revision_id' => true]), $ranking['resumes']),
+            'stale' => $current !== $ranked,
         ];
     }
 
