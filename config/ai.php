@@ -159,4 +159,8 @@ return [
     // a call with the same idempotency key may start again. Longer than any AI job's timeout.
     'run_stale_after_minutes' => 30,
 
+    // Applications saved in the last this many days with a job description and no analysis are
+    // analysed by the scheduler (app:analyse-new-applications), e.g. captures saved by Career VA.
+    'auto_analysis_days' => (int) env('AI_AUTO_ANALYSIS_DAYS', 14),
+
 ];

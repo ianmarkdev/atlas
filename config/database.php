@@ -101,6 +101,25 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // The queue's own database, when the data lives elsewhere (shared Neon database): workers
+        // poll this local one every few seconds, so the remote one can sleep between real work.
+        // Used when DB_QUEUE_CONNECTION=local_queue.
+        'local_queue' => [
+            'driver' => 'pgsql',
+            'url' => env('QUEUE_DB_URL'),
+            'host' => env('QUEUE_DB_HOST', '127.0.0.1'),
+            'port' => env('QUEUE_DB_PORT', '5432'),
+            'database' => env('QUEUE_DB_DATABASE', 'career_engine_queue'),
+            'username' => env('QUEUE_DB_USERNAME', 'postgres'),
+            'password' => env('QUEUE_DB_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'timezone' => 'UTC',
+            'sslmode' => env('QUEUE_DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

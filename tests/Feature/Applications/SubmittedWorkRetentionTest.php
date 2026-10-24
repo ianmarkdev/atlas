@@ -6,6 +6,7 @@ use App\Domain\Ai\LlmRouter;
 use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
+use App\Domain\Applications\ApplicationStage;
 use App\Domain\Applications\JobApplication;
 use App\Models\User;
 
@@ -67,6 +68,20 @@ test('moving to a later submitted stage lengthens what is kept, and never shorte
 
     expect($lengthened)->toBe('2027-12-02 09:00:00')
         ->and(aiPayloadOf($candidate, $application)->expires_at->toDateTimeString())->toBe('2027-12-02 09:00:00');
+});
+
+test('an application moved to a submitted stage outside this app is kept long by the daily command', function () {
+    $this->travelTo('2026-11-02 09:00:00');
+    $candidate = candidateWithTwoFactor();
+    $sent = applicationWithAiAnswer($candidate, 'Fabrikam');
+    $unsent = applicationWithAiAnswer($candidate, 'Contoso');
+    // Career VA changes the stage in the shared database, without JobApplicationService.
+    inWorkspaceOf($candidate, fn () => $sent->forceFill(['stage' => ApplicationStage::Interviewing, 'applied_at' => now()])->save());
+
+    $this->artisan('app:retain-submitted-work')->assertSuccessful();
+
+    expect(aiPayloadOf($candidate, $sent)->expires_at->toDateTimeString())->toBe('2027-11-02 09:00:00')
+        ->and(aiPayloadOf($candidate, $unsent)->expires_at->toDateTimeString())->toBe('2026-11-16 09:00:00');
 });
 
 test('a stage that is not a submission keeps the short retention', function () {
