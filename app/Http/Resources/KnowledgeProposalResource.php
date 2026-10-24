@@ -62,9 +62,6 @@ class KnowledgeProposalResource extends JsonResource
     /** At most this many rules in place are shown beside a new writing rule. */
     private const RELATED_RULES = 5;
 
-    /** Words too common in writing rules to make two rules look related. */
-    private const COMMON_WORDS = ['always', 'never', 'with', 'your', 'that', 'this', 'when', 'from', 'about', 'every', 'each', 'answer', 'answers', 'draft', 'drafts', 'write', 'words'];
-
     /**
      * Transform the resource into an array.
      *
@@ -184,39 +181,22 @@ class KnowledgeProposalResource extends JsonResource
     private function relatedRules(?User $viewer): array
     {
         $owner = $this->reviewer_user_id === null ? null : User::query()->find($this->reviewer_user_id);
-        $words = self::significantWords((string) ($this->payload['rule'] ?? ''));
-        $suggestedId = (int) ($this->payload['replaces'] ?? 0);
+        $similar = WritingPreference::similarTo(
+            (string) ($this->payload['rule'] ?? ''),
+            $owner,
+            (string) ($this->payload['kind'] ?? ''),
+            isset($this->payload['replaces']) ? (int) $this->payload['replaces'] : null,
+            self::RELATED_RULES,
+        );
 
-        return WritingPreference::query()->appliesTo($owner)->oldest()->get()
-            ->map(fn (WritingPreference $rule): array => [
-                'rule' => $rule,
-                'suggested' => $rule->id === $suggestedId,
-                'shared' => count(array_intersect($words, self::significantWords($rule->rule))),
-                'same_kind' => $rule->kind->value === ($this->payload['kind'] ?? null),
-            ])
-            ->filter(fn (array $match): bool => $match['suggested'] || $match['same_kind'] || $match['shared'] > 0)
-            ->sortBy([['suggested', 'desc'], ['shared', 'desc'], ['same_kind', 'desc']])
-            ->take(self::RELATED_RULES)
-            ->map(fn (array $match): array => [
-                'ulid' => $match['rule']->ulid,
-                'rule' => $match['rule']->rule,
-                'kind_label' => $match['rule']->kind->label(),
-                'drafts_label' => $match['rule']->drafts === WritingPreferenceDrafts::All ? null : $match['rule']->drafts->label(),
-                'suggested' => $match['suggested'],
-                'can_replace' => $viewer?->can('archive', $match['rule']) ?? false,
-            ])
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function significantWords(string $rule): array
-    {
-        $words = explode(' ', WritingPreference::normalizeRule($rule));
-
-        return array_values(array_unique(array_filter($words, fn (string $word): bool => mb_strlen($word) >= 4 && ! in_array($word, self::COMMON_WORDS, true))));
+        return array_map(fn (array $match): array => [
+            'ulid' => $match['rule']->ulid,
+            'rule' => $match['rule']->rule,
+            'kind_label' => $match['rule']->kind->label(),
+            'drafts_label' => $match['rule']->drafts === WritingPreferenceDrafts::All ? null : $match['rule']->drafts->label(),
+            'suggested' => $match['named'],
+            'can_replace' => $viewer?->can('archive', $match['rule']) ?? false,
+        ], $similar);
     }
 
     /**

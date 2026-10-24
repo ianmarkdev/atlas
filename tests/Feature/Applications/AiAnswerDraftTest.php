@@ -9,6 +9,7 @@ use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Knowledge\Project;
 use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
@@ -123,6 +124,22 @@ test('an AI version records what it was written from, unchanged by later edits o
         ->and($version->retrieval['sources'][$searchedId]['source_id'])->toBe($claim->id)
         ->and($version->retrieval['sources'][$searchedId]['source_revision_id'])->toBe($revisionId)
         ->and($claim->refresh()->current_revision_id)->not->toBe($revisionId);
+});
+
+test('every evidence item keeps the ref of its library item, not only bullet points', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $claim = claimOf($candidate, 'Tuned PostgreSQL indexes and queries for the billing platform');
+    $project = inWorkspaceOf($candidate, fn () => Project::factory()->forProfile(profileOf($candidate))->verified($candidate)->create(['name' => 'PostgreSQL upgrade', 'summary' => 'Upgraded the billing PostgreSQL cluster from 12 to 16 without downtime.']));
+    $question = questionToDraft($candidate, $application);
+    app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $refs = array_column(draftOf($candidate, $question)->currentVersion->evidence_pack, 'ref');
+    expect($refs)->toContain("claim:{$claim->ulid}")
+        ->and($refs)->toContain("project:{$project->ulid}")
+        ->and($refs)->not->toContain(null);
 });
 
 test('a cover letter draft asks for a letter of the default length', function () {

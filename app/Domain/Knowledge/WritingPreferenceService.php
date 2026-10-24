@@ -66,6 +66,22 @@ class WritingPreferenceService
         });
     }
 
+    /**
+     * Use a rule for other drafts (all, cover letters only, question answers only).
+     */
+    public function setDrafts(WritingPreference $preference, WritingPreferenceDrafts $drafts, User $actor): void
+    {
+        $from = $preference->drafts;
+
+        if ($from === $drafts) {
+            return;
+        }
+
+        $preference->forceFill(['drafts' => $drafts, 'lock_version' => $preference->lock_version + 1])->save();
+
+        $this->audit->record('writing_preference.drafts_changed', $preference, ['from' => $from->value, 'to' => $drafts->value], $actor);
+    }
+
     public function archive(WritingPreference $preference, User $actor): void
     {
         $preference->forceFill(['status' => 'archived', 'lock_version' => $preference->lock_version + 1])->save();

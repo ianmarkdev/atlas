@@ -65,14 +65,12 @@ class EvidencePackBuilder
             : $question->prompt_text;
         $result = $this->search->search(new RetrievalQuery($query, $application->candidate_profile_id, self::SEARCH_LIMIT));
 
-        // Bullet points keep their ref, so a correction learned from an edit can find them (M10).
-        $claimUlids = Claim::query()
-            ->whereIn('id', array_map(fn ($hit) => $hit->unit->source_id, array_filter($result->hits, fn ($hit) => $hit->unit->source_type === 'claim')))
-            ->pluck('ulid', 'id');
+        // Every hit keeps the ref of its library item (`claim:…`, `project:…`, …): a correction learned
+        // from an edit can find a bullet point (M10), and any answer can be traced to its sources.
+        $refs = EvidenceMatcher::refsOf($result->hits);
 
-        foreach ($result->hits as $hit) {
-            $ulid = $hit->unit->source_type === 'claim' ? $claimUlids->get($hit->unit->source_id) : null;
-            $items[] = ['ref' => $ulid === null ? null : "claim:{$ulid}", 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter(), 'source' => self::sourceOf($hit->unit)];
+        foreach ($result->hits as $index => $hit) {
+            $items[] = ['ref' => $refs[$index], 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter(), 'source' => self::sourceOf($hit->unit)];
         }
 
         // Distinct usable items in order, each with the storyline groups it appeared under.

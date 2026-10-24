@@ -56,6 +56,9 @@ class WritingPreference extends Model
     /** A rule added by hand ranks like one seen in this many edits. */
     public const MANUAL_SUPPORT = 2;
 
+    /** Words too common in writing rules to make two rules look related. */
+    private const COMMON_WORDS = ['always', 'never', 'with', 'your', 'that', 'this', 'when', 'from', 'about', 'every', 'each', 'answer', 'answers', 'draft', 'drafts', 'write', 'words'];
+
     /**
      * Written only through WritingPreferenceService.
      *
@@ -140,6 +143,44 @@ class WritingPreference extends Model
         }
 
         return $chosen;
+    }
+
+    /**
+     * Active rules (those appliesTo($owner) gives) that a new rule may repeat or contradict, most
+     * alike first: the one the AI named (`$namedId`), then those sharing more significant words,
+     * then — when `$kind` is given — those of the same kind. Only rules matching one of these.
+     *
+     * @return list<array{rule: self, named: bool}>
+     */
+    public static function similarTo(string $rule, ?User $owner, ?string $kind = null, ?int $namedId = null, int $limit = 5): array
+    {
+        $words = self::significantWords($rule);
+
+        return self::query()->appliesTo($owner)->oldest()->get()
+            ->map(fn (self $candidate): array => [
+                'rule' => $candidate,
+                'named' => $candidate->id === $namedId,
+                'shared' => count(array_intersect($words, self::significantWords($candidate->rule))),
+                'same_kind' => $kind !== null && $candidate->kind->value === $kind,
+            ])
+            ->filter(fn (array $match): bool => $match['named'] || $match['same_kind'] || $match['shared'] > 0)
+            ->sortBy([['named', 'desc'], ['shared', 'desc'], ['same_kind', 'desc']])
+            ->take($limit)
+            ->map(fn (array $match): array => ['rule' => $match['rule'], 'named' => $match['named']])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The words of a rule that can make two rules look related (not the common ones).
+     *
+     * @return list<string>
+     */
+    private static function significantWords(string $rule): array
+    {
+        $words = explode(' ', self::normalizeRule($rule));
+
+        return array_values(array_unique(array_filter($words, fn (string $word): bool => mb_strlen($word) >= 4 && ! in_array($word, self::COMMON_WORDS, true))));
     }
 
     /**

@@ -35,12 +35,13 @@ class WritingPreferenceController extends Controller
             'rule' => $preference->rule,
             'kind' => $preference->kind->value,
             'kind_label' => $preference->kind->label(),
+            'drafts' => $preference->drafts->value,
             'drafts_label' => $preference->drafts === WritingPreferenceDrafts::All ? null : $preference->drafts->label(),
             'learned' => str_starts_with($preference->created_via, 'proposal:'),
             'seen_in' => $preference->supporting_edits_count,
             // Drafts written with this rule that still needed it applied by hand.
             'missed_in' => $preference->missed_in_count,
-            'can' => ['archive' => $user->can('archive', $preference)],
+            'can' => ['archive' => $user->can('archive', $preference), 'update' => $user->can('update', $preference)],
         ];
         $active = WritingPreference::query()->appliesTo($user)->withCount(['supportingEdits', 'missedIn'])->oldest()->get();
 
@@ -60,6 +61,11 @@ class WritingPreferenceController extends Controller
         ]);
     }
 
+    /**
+     * Add a rule (or suggest it, for a VA's rule for everyone). A rule sharing words with rules in
+     * place is not added at once: the page shows those rules (flash `similarRules`) and the user
+     * adds it anyway (`confirmed`) or has it replace one of them (`replaces`, its ulid).
+     */
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -67,32 +73,84 @@ class WritingPreferenceController extends Controller
             'kind' => ['required', Rule::enum(WritingPreferenceKind::class)],
             'drafts' => ['nullable', Rule::enum(WritingPreferenceDrafts::class)],
             'personal' => ['boolean'],
+            'confirmed' => ['boolean'],
+            'replaces' => ['nullable', 'string', 'max:26'],
         ]);
         $rule = PlainText::normalize($validated['rule']);
         $kind = WritingPreferenceKind::from($validated['kind']);
         $drafts = WritingPreferenceDrafts::tryFrom((string) ($validated['drafts'] ?? '')) ?? WritingPreferenceDrafts::All;
         $user = $request->user();
         $isPersonal = (bool) ($validated['personal'] ?? false);
+        $owner = $isPersonal ? $user : null;
 
         if ($rule === '') {
             throw ValidationException::withMessages(['rule' => __('Write the rule.')]);
         }
 
-        if ($isPersonal || $user->isCandidate()) {
-            $this->preferences->create($rule, $kind, $isPersonal ? $user : null, $user, drafts: $drafts);
+        if ($this->preferences->exists($rule, $owner)) {
+            throw ValidationException::withMessages(['rule' => __('This rule is already in the list.')]);
+        }
 
-            Inertia::flash('toast', ['type' => 'success', 'message' => __('Rule added. New drafts follow it.')]);
+        $replaced = null;
+
+        if (isset($validated['replaces'])) {
+            $replaced = WritingPreference::query()->appliesTo($owner)->where('ulid', $validated['replaces'])->first();
+
+            // A VA's rule for everyone is only a suggestion: naming a rule to replace is a hint for the candidate.
+            if ($replaced === null || (($isPersonal || $user->isCandidate()) && ! $user->can('archive', $replaced))) {
+                throw ValidationException::withMessages(['replaces' => __('You cannot replace that rule.')]);
+            }
+        } elseif (! ($validated['confirmed'] ?? false)) {
+            $similar = WritingPreference::similarTo($rule, $owner);
+
+            if ($similar !== []) {
+                Inertia::flash('similarRules', [
+                    'rule' => $rule,
+                    'kind' => $kind->value,
+                    'drafts' => $drafts->value,
+                    'personal' => $isPersonal,
+                    'similar' => array_map(fn (array $match): array => [
+                        'ulid' => $match['rule']->ulid,
+                        'rule' => $match['rule']->rule,
+                        'kind_label' => $match['rule']->kind->label(),
+                        'can_replace' => $user->can('archive', $match['rule']) || (! $isPersonal && ! $user->isCandidate()),
+                    ], $similar),
+                ]);
+
+                return back();
+            }
+        }
+
+        if ($isPersonal || $user->isCandidate()) {
+            $this->preferences->create($rule, $kind, $owner, $user, drafts: $drafts, replacing: $replaced);
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => $replaced === null ? __('Rule added. New drafts follow it.') : __('Rule replaced. New drafts follow the new one.')]);
 
             return back();
         }
 
-        if ($this->preferences->exists($rule, null)) {
-            throw ValidationException::withMessages(['rule' => __('This rule is already in the list.')]);
-        }
-
-        $this->proposals->suggest('create_writing_preference', null, ['rule' => $rule, 'kind' => $kind->value, 'scope' => 'profile', 'drafts' => $drafts->value], null, ['origin' => 'manual', 'proposer' => $user]);
+        $this->proposals->suggest('create_writing_preference', null, [
+            'rule' => $rule,
+            'kind' => $kind->value,
+            'scope' => 'profile',
+            'drafts' => $drafts->value,
+            ...($replaced === null ? [] : ['replaces' => $replaced->id]),
+        ], null, ['origin' => 'manual', 'proposer' => $user]);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Rule suggested. It applies to every draft once the candidate approves it.')]);
+
+        return back();
+    }
+
+    public function drafts(Request $request, WritingPreference $preference): RedirectResponse
+    {
+        Gate::authorize('update', $preference);
+
+        $validated = $request->validate(['drafts' => ['required', Rule::enum(WritingPreferenceDrafts::class)]]);
+
+        $this->preferences->setDrafts($preference, WritingPreferenceDrafts::from($validated['drafts']), $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Rule updated. New drafts follow it.')]);
 
         return back();
     }

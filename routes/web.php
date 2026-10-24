@@ -183,6 +183,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::get('writing-style', [WritingPreferenceController::class, 'index'])->name('preferences.index');
         Route::post('writing-style', [WritingPreferenceController::class, 'store'])->name('preferences.store');
         Route::patch('writing-style/{preference}/archive', [WritingPreferenceController::class, 'archive'])->name('preferences.archive');
+        Route::patch('writing-style/{preference}/drafts', [WritingPreferenceController::class, 'drafts'])->name('preferences.drafts');
 
         Route::get('claims/bulk', [ClaimController::class, 'bulkCreate'])->name('claims.bulk.create');
         Route::post('claims/bulk', [ClaimController::class, 'bulkStore'])->name('claims.bulk.store');

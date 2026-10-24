@@ -81,17 +81,31 @@ class EvidenceMatcher
      */
     private function evidence(array $hits): array
     {
-        $ulids = $this->ulidsOf($hits);
+        $refs = self::refsOf($hits);
 
-        return array_map(fn (SearchHit $hit): array => [
-            'ref' => isset($ulids[$hit->unit->source_type][$hit->unit->source_id])
-                ? "{$hit->unit->source_type}:{$ulids[$hit->unit->source_type][$hit->unit->source_id]}"
-                : null,
+        return array_map(fn (SearchHit $hit, ?string $ref): array => [
+            'ref' => $ref,
             'unit_type' => $hit->unit->unit_type,
             'status' => $hit->unit->status,
             'text' => $hit->unit->search_text,
             'score' => round($hit->score, 3),
-        ], $hits);
+        ], $hits, $refs);
+    }
+
+    /**
+     * Each hit's library item as `{type}:{ulid}` ("claim:01J…", "project:01J…"), in hit order;
+     * null when the item no longer exists.
+     *
+     * @param  list<SearchHit>  $hits
+     * @return list<?string>
+     */
+    public static function refsOf(array $hits): array
+    {
+        $ulids = self::ulidsOf($hits);
+
+        return array_map(fn (SearchHit $hit): ?string => isset($ulids[$hit->unit->source_type][$hit->unit->source_id])
+            ? "{$hit->unit->source_type}:{$ulids[$hit->unit->source_type][$hit->unit->source_id]}"
+            : null, $hits);
     }
 
     /**
@@ -100,7 +114,7 @@ class EvidenceMatcher
      * @param  list<SearchHit>  $hits
      * @return array<string, array<int, string>>
      */
-    private function ulidsOf(array $hits): array
+    private static function ulidsOf(array $hits): array
     {
         $ids = [];
 

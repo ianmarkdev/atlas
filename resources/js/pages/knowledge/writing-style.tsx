@@ -1,5 +1,6 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router, usePage } from '@inertiajs/react';
 import { Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
 import WritingPreferenceController from '@/actions/App/Http/Controllers/Knowledge/WritingPreferenceController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
@@ -19,11 +20,26 @@ type Preference = {
     rule: string;
     kind: string;
     kind_label: string;
+    drafts: string;
     drafts_label: string | null;
     learned: boolean;
     seen_in: number;
     missed_in: number;
-    can: { archive: boolean };
+    can: { archive: boolean; update: boolean };
+};
+
+/** A new rule held back because rules in place look alike (flash from store). */
+type SimilarRules = {
+    rule: string;
+    kind: string;
+    drafts: string;
+    personal: boolean;
+    similar: {
+        ulid: string;
+        rule: string;
+        kind_label: string;
+        can_replace: boolean;
+    }[];
 };
 
 export default function WritingStyle({
@@ -41,6 +57,11 @@ export default function WritingStyle({
     draftTypes: SelectOption[];
     isCandidate: boolean;
 }) {
+    const similarRules = usePage().flash.similarRules as
+        | SimilarRules
+        | undefined;
+    const [dismissed, setDismissed] = useState<SimilarRules | null>(null);
+
     return (
         <>
             <Head title="Writing style" />
@@ -133,18 +154,119 @@ export default function WritingStyle({
                     )}
                 </Form>
 
+                {similarRules && similarRules !== dismissed && (
+                    <SimilarRulesPanel
+                        pending={similarRules}
+                        onCancel={() => setDismissed(similarRules)}
+                    />
+                )}
+
                 <RuleList
                     title="For every draft"
                     empty="No rules yet."
                     preferences={shared}
+                    draftTypes={draftTypes}
                 />
                 <RuleList
                     title="Only for your drafts"
                     empty="No personal rules."
                     preferences={personal}
+                    draftTypes={draftTypes}
                 />
             </div>
         </>
+    );
+}
+
+/**
+ * Rules in place that look like the one being added: add it anyway, have it replace one of
+ * them (a rewording or a merge), or cancel.
+ */
+function SimilarRulesPanel({
+    pending,
+    onCancel,
+}: {
+    pending: SimilarRules;
+    onCancel: () => void;
+}) {
+    const resend = (extra: Record<string, string>) => (
+        <>
+            <input type="hidden" name="rule" value={pending.rule} />
+            <input type="hidden" name="kind" value={pending.kind} />
+            <input type="hidden" name="drafts" value={pending.drafts} />
+            <input
+                type="hidden"
+                name="personal"
+                value={pending.personal ? '1' : '0'}
+            />
+            {Object.entries(extra).map(([name, value]) => (
+                <input key={name} type="hidden" name={name} value={value} />
+            ))}
+        </>
+    );
+
+    return (
+        <section
+            role="status"
+            className="space-y-3 rounded-lg border p-4 text-sm"
+        >
+            <p>
+                <span className="font-medium">“{pending.rule}”</span> looks
+                like {pending.similar.length === 1 ? 'a rule' : 'rules'}{' '}
+                already in place:
+            </p>
+            <ul className="space-y-2">
+                {pending.similar.map((rule) => (
+                    <li
+                        key={rule.ulid}
+                        className="flex flex-wrap items-center gap-2"
+                    >
+                        <Badge variant="outline">{rule.kind_label}</Badge>
+                        <span className="flex-1">{rule.rule}</span>
+                        {rule.can_replace && (
+                            <Form
+                                {...WritingPreferenceController.store.form()}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing }) => (
+                                    <>
+                                        {resend({ replaces: rule.ulid })}
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={processing}
+                                        >
+                                            Replace this one
+                                        </Button>
+                                    </>
+                                )}
+                            </Form>
+                        )}
+                    </li>
+                ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+                <Form
+                    {...WritingPreferenceController.store.form()}
+                    options={{ preserveScroll: true }}
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            {resend({ confirmed: '1' })}
+                            <Button size="sm" disabled={processing}>
+                                Add it anyway
+                            </Button>
+                            <InputError
+                                message={errors.rule ?? errors.replaces}
+                            />
+                        </>
+                    )}
+                </Form>
+                <Button size="sm" variant="ghost" onClick={onCancel}>
+                    Cancel
+                </Button>
+            </div>
+        </section>
     );
 }
 
@@ -152,10 +274,12 @@ function RuleList({
     title,
     empty,
     preferences,
+    draftTypes,
 }: {
     title: string;
     empty: string;
     preferences: Preference[];
+    draftTypes: SelectOption[];
 }) {
     return (
         <section className="space-y-3">
@@ -179,11 +303,12 @@ function RuleList({
                             </Badge>
                             <span className="flex-1 text-sm">
                                 {preference.rule}
-                                {preference.drafts_label && (
-                                    <span className="ml-2 type-caption text-text-secondary">
-                                        {preference.drafts_label.toLowerCase()}
-                                    </span>
-                                )}
+                                {preference.drafts_label &&
+                                    !preference.can.update && (
+                                        <span className="ml-2 type-caption text-text-secondary">
+                                            {preference.drafts_label.toLowerCase()}
+                                        </span>
+                                    )}
                                 {preference.learned && (
                                     <span className="ml-2 type-caption text-text-secondary">
                                         {preference.seen_in > 1
@@ -200,6 +325,23 @@ function RuleList({
                                     </span>
                                 )}
                             </span>
+                            {preference.can.update && (
+                                <NativeSelect
+                                    className="w-44"
+                                    aria-label={`Used for: ${preference.rule}`}
+                                    options={draftTypes}
+                                    value={preference.drafts}
+                                    onChange={(event) =>
+                                        router.patch(
+                                            WritingPreferenceController.drafts.url(
+                                                preference.ulid,
+                                            ),
+                                            { drafts: event.target.value },
+                                            { preserveScroll: true },
+                                        )
+                                    }
+                                />
+                            )}
                             {preference.can.archive && (
                                 <Form
                                     {...WritingPreferenceController.archive.form(

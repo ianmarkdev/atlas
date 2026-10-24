@@ -149,7 +149,9 @@ test('a held rule is proposed when a later edit repeats it in other words, and i
     $third = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'one_off']])], claim: $first['claim']);
     fbApprove($candidate, $third['application'], $third['question']);
 
-    expect($third['fake']->requests[1]->messages[0]['content'])->toContain("<held_rules>\n(none)\n</held_rules>");
+    // The held rule is used up; what is shown now is the suggestion it became, waiting for approval.
+    $suggestionId = fbProposals($candidate)->sole()->id;
+    expect($third['fake']->requests[1]->messages[0]['content'])->toContain("<held_rules>\n<rule id=\"P{$suggestionId}\">Spell words the UK way</rule>\n</held_rules>");
 });
 
 test('an edit that applies a rule the draft was written with is kept as a miss of that rule, not suggested again', function () {
@@ -265,6 +267,25 @@ test('a reviewer cannot replace a rule they do not manage', function () {
 
     expect(inWorkspaceOf($candidate, fn () => $proposal->fresh()->status))->toBe(ProposalStatus::Pending)
         ->and(inWorkspaceOf($candidate, fn () => $shared->fresh()->status))->toBe('active');
+});
+
+test('an edit repeating a rule waiting for approval, in other words, adds to its support instead of being dropped', function () {
+    $candidate = candidateWithTwoFactor();
+    $first = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Use British spelling', 'rule_kind' => 'spelling', 'personal' => false]])]);
+    fbApprove($candidate, $first['application'], $first['question']);
+    $suggestion = fbProposals($candidate)->sole();
+
+    $second = fbEditedDraft($candidate, $candidate, [fbAnalysis([['type' => 'writing_preference', 'rule' => 'Spell words the UK way', 'rule_kind' => 'spelling', 'personal' => false, 'same_as' => "P{$suggestion->id}"]])], claim: $first['claim']);
+    fbApprove($candidate, $second['application'], $second['question']);
+
+    [$firstEvent, $secondEvent] = inWorkspaceOf($candidate, fn () => FeedbackEvent::query()->orderBy('id')->get()->all());
+    expect($second['fake']->requests[1]->messages[0]['content'])->toContain("<rule id=\"P{$suggestion->id}\">Use British spelling</rule>")
+        ->and($secondEvent->analysis['items'][0]['outcome'])->toBe('supported')
+        ->and(fbProposals($candidate)->sole()->payload['supported_by'])->toBe([$firstEvent->id, $secondEvent->id]);
+
+    $this->actingAs($candidate)->patch(route('knowledge.proposals.approve', $suggestion))->assertSessionHasNoErrors();
+
+    expect(inWorkspaceOf($candidate, fn () => WritingPreference::query()->sole()->supportingEdits()->count()))->toBe(2);
 });
 
 test('a held rule is not promoted by an id that names no held rule', function () {

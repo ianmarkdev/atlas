@@ -21,6 +21,7 @@ use App\Domain\Knowledge\WritingPreferenceKind;
 use App\Domain\Shared\PlainText;
 use App\Domain\Shared\WordDiff;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Turns the AI's reading of an edit into proposals (M10, docs/04 §4.7), checking each item on
@@ -41,6 +42,8 @@ use App\Models\User;
  *   kept as a miss of that rule (outcome `missed`), for the candidate to see, and nothing changes;
  * - a writing rule already in place that the draft was not written with (added since) is not
  *   suggested again either: the edit is kept as one more it was seen in (outcome `supported`);
+ * - nor is a rule already suggested and waiting for approval (shown to the AI with the held
+ *   ones, `P{id}`): the edit is added to the suggestion's `supported_by` (outcome `supported`);
  * - a reusable answer (not a cover letter, not already in the library) becomes a
  *   `create_library_answer`;
  * - a one-off is recorded and nothing else.
@@ -81,7 +84,8 @@ class FeedbackAnalyser
             'changes' => WordDiff::render($event->diff),
             'evidence' => EvidencePackBuilder::render($event->fromVersion->evidence_pack ?? []),
             'writing_rules' => WritingPreference::renderWithIds(WritingPreference::query()->appliesTo($editor)->get()),
-            'held_rules' => self::renderHeldRules($this->heldRules($event)),
+            // Rules suggested and waiting for approval are shown with the held ones: an edit repeating either adds to its support.
+            'held_rules' => self::renderHeldRules([...$this->heldRules($event), ...$this->pendingRules($event)]),
         ];
     }
 
@@ -217,9 +221,12 @@ class FeedbackAnalyser
             return ['supported', 'another edit shows a rule already in place'];
         }
 
-        if ($this->pendingCreation('create_writing_preference', 'rule', $rule)
-            || collect($earlier)->contains(fn (array $seen): bool => WritingPreference::normalizeRule((string) ($seen['rule'] ?? '')) === $normalized)) {
+        if (collect($earlier)->contains(fn (array $seen): bool => WritingPreference::normalizeRule((string) ($seen['rule'] ?? '')) === $normalized)) {
             return ['skipped', 'already a rule or suggested'];
+        }
+
+        if ($this->supportPendingSuggestion($event, $sameAs, $normalized)) {
+            return ['supported', 'another edit shows a rule waiting for approval'];
         }
 
         $earlierEventId = array_key_exists($sameAs, $this->heldRules($event))
@@ -246,6 +253,51 @@ class FeedbackAnalyser
         ], $this->rationale($item), [...$this->from($event, $run), 'reviewer' => $owner]);
 
         return ['proposed', null];
+    }
+
+    /**
+     * Add this edit to the support of the pending rule suggestion it repeats — named by the AI
+     * (`P{id}`) or worded the same — so the rule starts with every edit it was seen in once
+     * approved. False when it repeats none.
+     */
+    private function supportPendingSuggestion(FeedbackEvent $event, string $sameAs, string $normalizedRule): bool
+    {
+        return DB::transaction(function () use ($event, $sameAs, $normalizedRule): bool {
+            $suggestion = KnowledgeProposal::query()
+                ->where('proposal_type', 'create_writing_preference')
+                ->where('status', ProposalStatus::Pending)
+                ->lockForUpdate()
+                ->get()
+                ->first(fn (KnowledgeProposal $proposal): bool => $sameAs === "P{$proposal->id}" || WritingPreference::normalizeRule((string) ($proposal->payload['rule'] ?? '')) === $normalizedRule);
+
+            if ($suggestion === null) {
+                return false;
+            }
+
+            $supportedBy = array_values(array_filter((array) ($suggestion->payload['supported_by'] ?? []), is_int(...)));
+            $suggestion->forceFill(['payload' => [...$suggestion->payload, 'supported_by' => array_values(array_unique([...$supportedBy, $event->id]))]])->save();
+
+            return true;
+        });
+    }
+
+    /**
+     * Rule suggestions waiting for approval that this editor's edits may repeat (those for
+     * everyone and the editor's own), keyed by the id the AI names in `same_as`: `P{proposal id}`.
+     *
+     * @return array<string, string>
+     */
+    private function pendingRules(FeedbackEvent $event): array
+    {
+        return KnowledgeProposal::query()
+            ->where('proposal_type', 'create_writing_preference')
+            ->where('status', ProposalStatus::Pending)
+            ->where(fn ($query) => $query->whereNull('reviewer_user_id')->when($event->user_id !== null, fn ($own) => $own->orWhere('reviewer_user_id', $event->user_id)))
+            ->latest('id')
+            ->limit(self::HELD_RULES)
+            ->get(['id', 'payload'])
+            ->mapWithKeys(fn (KnowledgeProposal $proposal): array => ["P{$proposal->id}" => (string) ($proposal->payload['rule'] ?? '')])
+            ->all();
     }
 
     /**

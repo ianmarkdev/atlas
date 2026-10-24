@@ -11,6 +11,14 @@ use App\Models\User;
  */
 class WritingPreferencePolicy
 {
+    /**
+     * Change which drafts a rule is used for: whoever may remove it.
+     */
+    public function update(User $user, WritingPreference $preference): bool
+    {
+        return $this->archive($user, $preference);
+    }
+
     public function archive(User $user, WritingPreference $preference): bool
     {
         if ($preference->status !== 'active') {
