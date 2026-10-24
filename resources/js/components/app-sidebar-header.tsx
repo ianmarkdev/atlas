@@ -1,4 +1,5 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { HEADER_ACTIONS_ID } from '@/components/header-actions';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem as BreadcrumbItemType } from '@/types';
 
@@ -13,6 +14,10 @@ export function AppSidebarHeader({
                 <SidebarTrigger className="-ml-1" />
                 <Breadcrumbs breadcrumbs={breadcrumbs} />
             </div>
+            <div
+                id={HEADER_ACTIONS_ID}
+                className="ml-auto flex items-center gap-2"
+            />
         </header>
     );
 }

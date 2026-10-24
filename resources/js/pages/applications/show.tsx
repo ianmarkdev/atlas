@@ -1,6 +1,8 @@
 import { Form, Head, Link, router, usePoll } from "@inertiajs/react";
 import {
     Check,
+    ChevronLeft,
+    ChevronRight,
     Copy,
     ExternalLink,
     FileText,
@@ -9,6 +11,7 @@ import {
     Pencil,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import ApplicationQuestionController from "@/actions/App/Http/Controllers/Applications/ApplicationQuestionController";
 import JdCollectionController from "@/actions/App/Http/Controllers/Applications/JdCollectionController";
 import JobAnalysisController from "@/actions/App/Http/Controllers/Applications/JobAnalysisController";
@@ -19,6 +22,7 @@ import {
     StageBadge,
     StageSelect,
 } from "@/components/applications/stage";
+import { HeaderActions } from "@/components/header-actions";
 import { NativeSelect } from "@/components/native-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +62,66 @@ type JobDescription = {
     versions: number;
 };
 
+type Neighbour = { ulid: string; label: string };
+
+type Neighbours = {
+    position: number;
+    total: number;
+    previous: Neighbour | null;
+    next: Neighbour | null;
+};
+
+/**
+ * Previous and next application, in the list's order.
+ */
+function ApplicationStepper({ neighbours }: { neighbours: Neighbours }) {
+    const step = (
+        neighbour: Neighbour | null,
+        direction: "Previous" | "Next",
+        icon: ReactNode,
+    ) =>
+        neighbour ? (
+            <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                asChild
+            >
+                <Link
+                    href={JobApplicationController.show(neighbour.ulid)}
+                    aria-label={`${direction}: ${neighbour.label}`}
+                    title={`${direction}: ${neighbour.label}`}
+                    prefetch
+                >
+                    {icon}
+                </Link>
+            </Button>
+        ) : (
+            <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                disabled
+                aria-label={`No ${direction.toLowerCase()} application`}
+            >
+                {icon}
+            </Button>
+        );
+
+    return (
+        <nav
+            aria-label="Applications"
+            className="flex items-center gap-1"
+        >
+            {step(neighbours.previous, "Previous", <ChevronLeft />)}
+            <span className="type-caption min-w-12 text-center text-text-muted tabular-nums">
+                {neighbours.position} / {neighbours.total}
+            </span>
+            {step(neighbours.next, "Next", <ChevronRight />)}
+        </nav>
+    );
+}
+
 export default function ApplicationShow({
     application,
     jobDescription,
@@ -72,6 +136,7 @@ export default function ApplicationShow({
     collections,
     review,
     timeline,
+    neighbours,
 }: {
     application: JobApplicationDetail;
     jobDescription: JobDescription | null;
@@ -89,6 +154,7 @@ export default function ApplicationShow({
     };
     review: ReviewProps;
     timeline: ActivityItem[];
+    neighbours: Neighbours | null;
 }) {
     const employmentType = employmentTypes.find(
         (option) => option.value === application.employment_type,
@@ -200,6 +266,12 @@ export default function ApplicationShow({
                         )}
                     </div>
                 </header>
+
+                {neighbours && neighbours.total > 1 && (
+                    <HeaderActions>
+                        <ApplicationStepper neighbours={neighbours} />
+                    </HeaderActions>
+                )}
 
                 <div className="grid gap-6 lg:grid-cols-3">
                     <div className="flex flex-col gap-6 lg:col-span-2">

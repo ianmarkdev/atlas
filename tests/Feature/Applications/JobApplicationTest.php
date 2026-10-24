@@ -221,6 +221,23 @@ test('the list searches company and role, soonest deadline first, and flags over
         ->assertInertia(fn (Assert $page) => $page->has('applications', 1)->where('applications.0.company_name', 'Contoso'));
 });
 
+test('the application page links the applications before and after it in the list', function () {
+    $candidate = candidateWithTwoFactor();
+    $first = applicationOf($candidate, ['company_name' => 'Late Co', 'role_title' => 'Engineer', 'deadline_on' => now()->addDay()]);
+    $middle = applicationOf($candidate, ['company_name' => 'Later Ltd', 'deadline_on' => now()->addDays(5)]);
+    $last = applicationOf($candidate, ['company_name' => 'Contoso', 'role_title' => 'Ruby Developer']);
+
+    $this->actingAs($candidate)->get(route('applications.show', $middle))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('neighbours.position', 2)
+            ->where('neighbours.total', 3)
+            ->where('neighbours.previous', ['ulid' => $first->ulid, 'label' => 'Engineer · Late Co'])
+            ->where('neighbours.next', ['ulid' => $last->ulid, 'label' => 'Ruby Developer · Contoso']));
+
+    $this->actingAs($candidate)->get(route('applications.show', $first))
+        ->assertInertia(fn (Assert $page) => $page->where('neighbours.previous', null)->where('neighbours.next.ulid', $middle->ulid));
+});
+
 test('an application of another workspace responds 404', function () {
     $foreign = applicationOf(candidateWithTwoFactor());
     $candidate = candidateWithTwoFactor();

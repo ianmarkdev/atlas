@@ -70,8 +70,7 @@ class JobApplicationController extends Controller
                     ->where('company_name', 'ilike', $like)
                     ->orWhere('role_title', 'ilike', $like));
             })
-            ->orderByRaw('deadline_on IS NULL, deadline_on')
-            ->latest('updated_at')
+            ->tap(self::inListOrder(...))
             ->get();
 
         return Inertia::render('applications/index', [
@@ -167,10 +166,52 @@ class JobApplicationController extends Controller
                     $events->orWhere(fn (Builder $q) => $q->where('subject_type', 'application_question')->whereIn('subject_id', $questions->modelKeys()));
                 }
             })),
+            'neighbours' => self::neighboursOf($application),
             'stages' => self::stageOptions(),
             'employmentTypes' => self::employmentTypeOptions(),
             'applyRequirements' => self::applyRequirementOptions(),
         ]);
+    }
+
+    /**
+     * The list's order: soonest deadline first, then the most recently updated.
+     *
+     * @param  Builder<JobApplication>  $query
+     */
+    private static function inListOrder(Builder $query): void
+    {
+        $query->orderByRaw('deadline_on IS NULL, deadline_on')->latest('updated_at')->orderByDesc('id');
+    }
+
+    /**
+     * The applications before and after this one in the list, for stepping through them.
+     *
+     * @return array{position: int, total: int, previous: ?array{ulid: string, label: string}, next: ?array{ulid: string, label: string}}|null
+     */
+    private static function neighboursOf(JobApplication $application): ?array
+    {
+        $ulids = JobApplication::query()->tap(self::inListOrder(...))->pluck('ulid')->all();
+        $position = array_search($application->ulid, $ulids, true);
+
+        if ($position === false) {
+            return null;
+        }
+
+        $neighbours = JobApplication::query()
+            ->whereIn('ulid', array_filter([$ulids[$position - 1] ?? null, $ulids[$position + 1] ?? null]))
+            ->get(['ulid', 'company_name', 'role_title'])
+            ->keyBy('ulid');
+        $summary = fn (?string $ulid): ?array => $ulid === null || ! $neighbours->has($ulid) ? null : [
+            'ulid' => $ulid,
+            'label' => $neighbours[$ulid]->role_title.' · '.$neighbours[$ulid]->companyLabel(),
+        ];
+
+        return [
+            'position' => $position + 1,
+            'total' => count($ulids),
+            'previous' => $summary($ulids[$position - 1] ?? null),
+            'next' => $summary($ulids[$position + 1] ?? null),
+        ];
     }
 
     public function edit(JobApplication $application): Response
