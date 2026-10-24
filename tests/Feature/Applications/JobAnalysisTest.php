@@ -2,6 +2,7 @@
 
 use App\Domain\Ai\Clients\FakeLlmClient;
 use App\Domain\Ai\LlmRouter;
+use App\Domain\Ai\PromptBudget;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobApplication;
@@ -71,6 +72,40 @@ test('analysing stores a checked brief and matches each requirement to library e
         ->and($requirements->firstWhere('requirement', 'Kubernetes operations')['coverage'])->toBe('gap')
         ->and($requirements->firstWhere('requirement', 'German language')['kind'])->toBe('nice')
         ->and($fake->requests[0]->messages[0]['content'])->toContain('<job_description untrusted="true">');
+});
+
+test("a job description too long for the model's window is analysed from its start, and the brief says how much was read", function () {
+    config(['ai.tasks.jd_analysis.context' => 3000]);
+    $candidate = candidateWithTwoFactor();
+    $jobDescription = implode("\n", array_map(fn (int $n): string => "Line {$n} of a very long job description.", range(1, 300)));
+    $application = analysedApplicationOf($candidate, $jobDescription);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput()]));
+
+    $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
+
+    $request = $fake->requests[0];
+    $shortened = latestAnalysisOf($candidate)->brief['shortened_input'];
+    expect($request->messages[0]['content'])->toContain('Line 1 of a very long job description.')
+        ->and($request->messages[0]['content'])->not->toContain('Line 300 of')
+        ->and($request->messages[0]['content'])->toContain("[… the rest of the job description was left out to fit the model's window]")
+        ->and(mb_strlen($request->system) + mb_strlen($request->messages[0]['content']))->toBeLessThanOrEqual((int) ((3000 - 2000) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN)
+        ->and($shortened['total_characters'])->toBe(mb_strlen($jobDescription))
+        ->and($shortened['read_characters'])->toBeLessThan($shortened['total_characters']);
+
+    $this->actingAs($candidate)
+        ->get(route('applications.analysis.show', $application))
+        ->assertInertia(fn (Assert $page) => $page->where('analysis.brief.shortened_input.total_characters', mb_strlen($jobDescription)));
+});
+
+test('a job description that fits is analysed whole', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = analysedApplicationOf($candidate);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput()]));
+
+    $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
+
+    expect($fake->requests[0]->messages[0]['content'])->toContain('What is your notice period?')
+        ->and(latestAnalysisOf($candidate)->brief['shortened_input'])->toBeNull();
 });
 
 test('a VA can analyse too, and only one analysis runs at a time', function () {

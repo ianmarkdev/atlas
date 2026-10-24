@@ -47,6 +47,11 @@ type Brief = {
     red_flags: string[];
     injection_warnings: string[];
     server_injection_warnings: string[];
+    /** Set when the job description was too long for the model and only its start was read. */
+    shortened_input?: {
+        read_characters: number;
+        total_characters: number;
+    } | null;
 };
 
 type Evidence = {
@@ -281,6 +286,30 @@ function BriefView({
                 {!analysis.is_latest_posting &&
                     " · the job description has changed since: re-analyse to update"}
             </p>
+
+            {brief.shortened_input && (
+                <p
+                    role="status"
+                    className="flex items-start gap-2 rounded-kraken-sm border p-3 text-sm"
+                >
+                    <AlertTriangle
+                        className="mt-0.5 size-4 shrink-0 text-text-error"
+                        aria-hidden
+                    />
+                    <span>
+                        The job description was too long for the model, so
+                        only its first{" "}
+                        {Math.round(
+                            (brief.shortened_input.read_characters /
+                                brief.shortened_input.total_characters) *
+                                100,
+                        )}
+                        % was analysed. Requirements later in the text may be
+                        missing: check them, or use a model with a larger
+                        window.
+                    </span>
+                </p>
+            )}
 
             {warnings.length > 0 && (
                 <div

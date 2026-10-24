@@ -6,7 +6,10 @@ use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
+use App\Domain\Ai\LlmRouter;
 use App\Domain\Ai\LlmUnavailable;
+use App\Domain\Ai\PromptBudget;
+use App\Domain\Ai\PromptRegistry;
 use App\Domain\Applications\BriefChecker;
 use App\Domain\Applications\ClarificationService;
 use App\Domain\Applications\EvidenceMatcher;
@@ -18,8 +21,9 @@ use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Analyse one application's job description (M7): the jd_analysis prompt through AiGateway, the
- * server's own checks on the brief, then evidence matching. The outcome — including failures —
- * is stored on the JobAnalysis row, which the page polls. Not retried automatically: the gateway
+ * server's own checks on the brief, then evidence matching. A job description longer than the
+ * model's window is read from its start (PromptBudget; `brief.shortened_input` records how
+ * much). The outcome — including failures — is stored on the JobAnalysis row, which the page polls. Not retried automatically: the gateway
  * already retries the provider, and the user can re-analyse.
  */
 class AnalyseJobApplication implements ShouldQueue
@@ -44,7 +48,7 @@ class AnalyseJobApplication implements ShouldQueue
         return [new WithWorkspaceContext($this->workspaceId)];
     }
 
-    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher, ResumeRanker $ranker, ClarificationService $clarifications): void
+    public function handle(AiGateway $gateway, BriefChecker $checker, EvidenceMatcher $matcher, ResumeRanker $ranker, ClarificationService $clarifications, LlmRouter $router, PromptRegistry $prompts, PromptBudget $budget): void
     {
         $analysis = JobAnalysis::query()->with(['application', 'posting', 'requester'])->find($this->analysisId);
 
@@ -56,15 +60,22 @@ class AnalyseJobApplication implements ShouldQueue
         $application = $analysis->application;
         $jobDescription = $analysis->posting->raw_text;
 
+        $variables = [
+            'company_name' => $application->companyLabel(),
+            'role_title' => $application->role_title,
+            'job_description' => '',
+        ];
+
         try {
+            // A job description longer than the model's window is analysed from its start; the
+            // brief says how much was read, so the page can warn that later requirements may be missing.
+            $room = $budget->remaining($router->route('jd_analysis'), $prompts->get('jd_analysis'), $variables);
+            $variables['job_description'] = PromptBudget::shorten($jobDescription, $room, __('[… the rest of the job description was left out to fit the model\'s window]'));
+
             $result = $gateway->run(
                 'jd_analysis',
                 'jd_analysis',
-                [
-                    'company_name' => $application->companyLabel(),
-                    'role_title' => $application->role_title,
-                    'job_description' => $jobDescription,
-                ],
+                $variables,
                 $analysis->requester,
                 purpose: 'jd_analysis',
                 idempotencyKey: "jd_analysis:{$analysis->ulid}",
@@ -80,6 +91,10 @@ class AnalyseJobApplication implements ShouldQueue
         }
 
         $brief = $checker->check($result->data ?? [], $jobDescription);
+        $brief['shortened_input'] = $variables['job_description'] === $jobDescription ? null : [
+            'read_characters' => mb_strlen($variables['job_description']),
+            'total_characters' => mb_strlen($jobDescription),
+        ];
         $matches = $matcher->match($brief, $application->candidate_profile_id);
 
         $analysis->forceFill([

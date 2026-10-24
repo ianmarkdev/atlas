@@ -6,7 +6,10 @@ use App\Domain\Ai\AiBudgetExceeded;
 use App\Domain\Ai\AiGateway;
 use App\Domain\Ai\InvalidModelOutput;
 use App\Domain\Ai\LlmConfigurationError;
+use App\Domain\Ai\LlmRouter;
 use App\Domain\Ai\LlmUnavailable;
+use App\Domain\Ai\PromptBudget;
+use App\Domain\Ai\PromptRegistry;
 use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\ApplicationResumeService;
 use App\Domain\Applications\JobAnalysis;
@@ -25,7 +28,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * Tailor an application's resume with AI (M8, docs/04 §4.10): show the model the resume and the
  * job brief, let ResumeTailor keep only the checked parts of its proposal, and store the result
- * as a new version written by `ai`. Failures are stored on the resume.
+ * as a new version written by `ai`. Failures are stored on the resume. The prompt is kept within
+ * the model's window (PromptBudget): the job description is shortened to what the resume leaves.
  */
 class TailorApplicationResume implements ShouldQueue
 {
@@ -49,7 +53,7 @@ class TailorApplicationResume implements ShouldQueue
         return [new WithWorkspaceContext($this->workspaceId)];
     }
 
-    public function handle(AiGateway $gateway, ResumeTailor $tailor, ResumeDocumentValidator $validator, ApplicationResumeService $resumes): void
+    public function handle(AiGateway $gateway, ResumeTailor $tailor, ResumeDocumentValidator $validator, ApplicationResumeService $resumes, LlmRouter $router, PromptRegistry $prompts, PromptBudget $budget): void
     {
         $resume = ApplicationResume::query()->with(['currentVersion', 'application.posting'])->find($this->resumeId);
 
@@ -65,14 +69,32 @@ class TailorApplicationResume implements ShouldQueue
         $presented = $tailor->present($document, $library);
         $analysis = $application->analyses()->where('status', 'succeeded')->first();
 
+        $variables = [
+            'company_name' => $application->companyLabel(),
+            'role_title' => $application->role_title,
+            'job_description' => '',
+            'brief' => self::briefOf($analysis),
+            'resume' => $presented['text'],
+        ];
+
         try {
-            $result = $gateway->run('resume_tailoring', 'resume_tailoring', [
-                'company_name' => $application->companyLabel(),
-                'role_title' => $application->role_title,
-                'job_description' => $application->jobDescription() ?? '(no job description pasted)',
-                'brief' => self::briefOf($analysis),
-                'resume' => $presented['text'],
-            ], $requester, purpose: 'resume_tailoring', idempotencyKey: "resume:{$resume->id}:".$resume->generation_requested_at?->getTimestamp());
+            // The whole resume must go in (the model rewrites it); the job description gets what is
+            // left and is shortened — the brief already lists its requirements.
+            $room = $budget->remaining($router->route('resume_tailoring'), $prompts->get('resume_tailoring'), $variables);
+
+            if ($room === 0) {
+                $resumes->failTailoring($resume, __('The resume is too long for the AI model\'s window. Shorten it, or use a model with a larger window.'));
+
+                return;
+            }
+
+            $variables['job_description'] = PromptBudget::shorten(
+                $application->jobDescription() ?? '(no job description pasted)',
+                $room,
+                __('[… the rest of the job description was left out to fit the model\'s window]'),
+            );
+
+            $result = $gateway->run('resume_tailoring', 'resume_tailoring', $variables, $requester, purpose: 'resume_tailoring', idempotencyKey: "resume:{$resume->id}:".$resume->generation_requested_at?->getTimestamp());
         } catch (InvalidModelOutput) {
             $resumes->failTailoring($resume, __("The AI's proposal was not usable (invalid structure), even after a repair attempt. Try again, or use a larger model."));
 

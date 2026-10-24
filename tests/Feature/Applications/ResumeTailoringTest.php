@@ -3,6 +3,7 @@
 use App\Domain\Ai\Clients\FakeLlmClient;
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Ai\LlmRouter;
+use App\Domain\Ai\PromptBudget;
 use App\Domain\Applications\ApplicationResume;
 use App\Domain\Applications\ApplicationResumeService;
 use App\Domain\Applications\JobAnalysis;
@@ -20,7 +21,7 @@ use Inertia\Testing\AssertableInertia as Assert;
  *
  * @return array{candidate: User, employment: Employment, onResume: Claim, second: Claim, libraryOnly: Claim, application: JobApplication}
  */
-function aiTailoringSetup(): array
+function aiTailoringSetup(string $jobDescription = 'Payments engineer. PostgreSQL a must.'): array
 {
     $candidate = candidateWithTwoFactor();
     $employment = employmentOf($candidate);
@@ -32,7 +33,7 @@ function aiTailoringSetup(): array
     ]];
     $variant = ResumeVariant::factory()->forProfile(profileOf($candidate))->withDocument(['title' => 'Senior PHP Engineer', 'summary' => 'Backend engineer.', 'experience' => [$job(null)]])->create(['name' => 'PHP focused']);
     ResumeVariant::factory()->forProfile(profileOf($candidate))->withDocument(['experience' => [$job('Backend Lead')]])->create(['name' => 'Lead focused']);
-    $application = JobApplication::factory()->forProfile(profileOf($candidate))->withJobDescription('Payments engineer. PostgreSQL a must.')->create(['company_name' => 'Fabrikam', 'role_title' => 'Payments Engineer']);
+    $application = JobApplication::factory()->forProfile(profileOf($candidate))->withJobDescription($jobDescription)->create(['company_name' => 'Fabrikam', 'role_title' => 'Payments Engineer']);
     test()->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
 
     return compact('candidate', 'employment', 'onResume', 'second', 'libraryOnly', 'application');
@@ -101,6 +102,34 @@ test('AI tailoring stores a checked new version: rewordings, library bullets and
     $this->actingAs($candidate)
         ->get(route('applications.resume.show', $application))
         ->assertInertia(fn (Assert $page) => $page->where('resume.ai_report.refused.0.reason', 'adds_number'));
+});
+
+test('a job description too long for the window is shortened to what the resume leaves', function () {
+    config(['ai.tasks.resume_tailoring.context' => 7000]);
+    ['candidate' => $candidate, 'application' => $application] = aiTailoringSetup(implode("\n", array_map(fn (int $n): string => "Line {$n} of a very long job description.", range(1, 300))));
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput()]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    $request = $fake->requests[0];
+    expect($request->messages[0]['content'])->toContain('Cut the nightly invoice run from 4 hours to 20 minutes')
+        ->and($request->messages[0]['content'])->toContain('Line 1 of a very long job description.')
+        ->and($request->messages[0]['content'])->not->toContain('Line 300 of')
+        ->and(mb_strlen($request->system) + mb_strlen($request->messages[0]['content']))->toBeLessThanOrEqual((int) ((7000 - 4000) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN)
+        ->and(aiTailoredResumeOf($candidate)->generation_status)->toBeNull();
+});
+
+test('a resume too long for the window is not sent, and the failure says why', function () {
+    config(['ai.tasks.resume_tailoring.context' => 4200]);
+    ['candidate' => $candidate, 'application' => $application] = aiTailoringSetup();
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput()]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    $resume = aiTailoredResumeOf($candidate);
+    expect($fake->requests)->toBeEmpty()
+        ->and($resume->generation_status)->toBe('failed')
+        ->and($resume->generation_error)->toContain("too long for the AI model's window");
 });
 
 test('a tailored version records the job description and analysis it was tailored to', function () {
