@@ -42,11 +42,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property-read User|null $user
  * @property-read Collection<int, FeedbackEvent> $supportingEdits
  * @property-read Collection<int, FeedbackEvent> $missedIn
+ * @property-read int|null $supporting_edits_count
+ * @property-read int|null $missed_in_count
  */
 #[UsePolicy(WritingPreferencePolicy::class)]
 class WritingPreference extends Model
 {
     use BelongsToWorkspace, HasUlids;
+
+    /** At most this many rules go into one writer's prompt. */
+    public const MAX_PROMPT_RULES = 20;
+
+    /** A rule added by hand ranks like one seen in this many edits. */
+    public const MANUAL_SUPPORT = 2;
 
     /**
      * Written only through WritingPreferenceService.
@@ -94,6 +102,55 @@ class WritingPreference extends Model
     public function scopeForDrafts(Builder $query, WritingPreferenceDrafts $drafts): void
     {
         $query->whereIn('drafts', array_unique([WritingPreferenceDrafts::All->value, $drafts->value]));
+    }
+
+    /**
+     * The rules for a writer's prompt, most important first, as many as fit `$maxCharacters`
+     * (as render() lines) and at most MAX_PROMPT_RULES: those the writer has missed before
+     * (`missed_in_count`, they need the prominence), then the best supported
+     * (`supporting_edits_count`; a rule added by hand counts as MANUAL_SUPPORT edits), then the
+     * oldest. A rule too long for what is left is passed over for shorter ones after it.
+     *
+     * @param  Collection<int, self>  $preferences  loaded with withCount(['supportingEdits', 'missedIn'])
+     * @return Collection<int, self>
+     */
+    public static function forPrompt(Collection $preferences, int $maxCharacters): Collection
+    {
+        $ranked = $preferences->sortBy([
+            fn (self $a, self $b): int => (int) $b->missed_in_count <=> (int) $a->missed_in_count,
+            fn (self $a, self $b): int => $b->support() <=> $a->support(),
+            fn (self $a, self $b): int => $a->id <=> $b->id,
+        ]);
+        $chosen = new Collection;
+        $characters = 0;
+
+        foreach ($ranked as $preference) {
+            $length = mb_strlen("- {$preference->line()}") + 1;
+
+            if ($characters + $length > $maxCharacters) {
+                continue;
+            }
+
+            $chosen->push($preference);
+            $characters += $length;
+
+            if ($chosen->count() >= self::MAX_PROMPT_RULES) {
+                break;
+            }
+        }
+
+        return $chosen;
+    }
+
+    /**
+     * How well a rule is supported: the edits it was seen in, or MANUAL_SUPPORT for a rule
+     * someone added by hand (stated outright, so as sure as a rule seen twice).
+     */
+    private function support(): int
+    {
+        $edits = (int) $this->supporting_edits_count;
+
+        return $this->created_via === 'manual' ? max($edits, self::MANUAL_SUPPORT) : $edits;
     }
 
     /**

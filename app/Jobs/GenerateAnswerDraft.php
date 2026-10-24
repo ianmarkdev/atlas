@@ -31,7 +31,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * M10) through AiGateway, have the server check every claim label against that evidence, and
  * store the result as a new
  * version of the answer. Failures are stored on the draft. The prompt is kept within the
- * model's window (PromptBudget): evidence is chosen to fit, then the job description is shortened.
+ * model's window (PromptBudget): the most important writing rules and evidence are chosen to fit,
+ * then the job description is shortened.
  *
  * With `ai.answer_claims = separate` (the default) the writer writes only the text and
  * CheckAnswerClaims labels its claims afterwards; until then the draft cannot be approved.
@@ -83,14 +84,19 @@ class GenerateAnswerDraft implements ShouldQueue
             return;
         }
 
-        $rules = WritingPreference::query()->appliesTo($requester)->forDrafts(WritingPreferenceDrafts::of($question))->oldest()->get();
+        $applicableRules = WritingPreference::query()
+            ->appliesTo($requester)
+            ->forDrafts(WritingPreferenceDrafts::of($question))
+            ->withCount(['supportingEdits', 'missedIn'])
+            ->get();
+        $rules = $applicableRules;
         $variables = [
             'candidate_name' => CandidateProfile::current()->display_name,
             'company_name' => $application->companyLabel(),
             'role_title' => $application->role_title,
             'job_description' => '',
             'evidence' => '',
-            'writing_rules' => WritingPreference::render($rules),
+            'writing_rules' => '',
             'instruction' => $instruction ?? '(none)',
             'question' => $question->isCoverLetter() ? __('Write a cover letter for this role, addressed to the hiring team.') : $question->prompt_text,
             'limit' => self::limitOf($question),
@@ -106,9 +112,13 @@ class GenerateAnswerDraft implements ShouldQueue
         $promptVersion = $base === null && ! $checkSeparately ? 4 : null;
 
         try {
-            // The evidence and the job description share what the rest of the prompt leaves of the
-            // model's window; the job description is sure of a third of it and is shortened last.
+            // The writing rules (most important first, at most a quarter), the evidence and the job
+            // description share what the rest of the prompt leaves of the model's window; the job
+            // description is sure of a third of what the rules leave and is shortened last.
             $room = $budget->remaining($router->route('answer_writing'), $prompts->get($promptKey, $promptVersion), $variables);
+            $rules = WritingPreference::forPrompt($applicableRules, intdiv($room, 4));
+            $variables['writing_rules'] = WritingPreference::render($rules);
+            $room -= mb_strlen($variables['writing_rules']);
             $jobDescription = $application->jobDescription() ?? '(no job description pasted)';
 
             // A paragraph of an AI draft is rewritten from that draft's evidence, so the claims kept

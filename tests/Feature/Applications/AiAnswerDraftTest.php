@@ -9,6 +9,7 @@ use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Resumes\ResumeVariant;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -284,6 +285,30 @@ test("a job description too long for the model's window is shortened, and the ev
         ->and($prompt)->toContain("[… the rest of the job description was left out to fit the model's window]")
         ->and($prompt)->toContain('<item id="E1" status="verified">Tuned PostgreSQL indexes and queries for the billing platform</item>')
         ->and(mb_strlen($request->system) + mb_strlen($prompt))->toBeLessThanOrEqual((int) ((5000 - 2500) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN);
+});
+
+test('when the window is small only the most important rules are sent, and only those are recorded', function () {
+    config(['ai.tasks.answer_writing.context' => 4400]);
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+
+    foreach (range(1, 6) as $n) {
+        $this->actingAs($candidate)->post(route('knowledge.preferences.store'), ['rule' => "Rule {$n}: ".str_repeat('keep this sentence plain and direct ', 5), 'kind' => 'tone']);
+    }
+
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    $sent = inWorkspaceOf($candidate, fn () => draftOf($candidate, $question)->currentVersion->writing_rule_ids);
+    $all = inWorkspaceOf($candidate, fn () => WritingPreference::query()->orderBy('id')->pluck('id')->all());
+    expect($sent)->not->toBeEmpty()
+        ->and(count($sent))->toBeLessThan(6)
+        ->and($sent)->toBe(array_slice($all, 0, count($sent)))
+        ->and($prompt)->toContain('Rule 1:')
+        ->and($prompt)->not->toContain('Rule 6:');
 });
 
 test('a rule only for cover letters shapes cover letters, not answers to questions', function () {
