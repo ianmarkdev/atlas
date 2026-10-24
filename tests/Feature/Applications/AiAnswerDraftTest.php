@@ -162,6 +162,31 @@ test('a cover letter draft asks for a letter of the default length', function ()
         ->and(draftOf($candidate, $letter)->body())->toBe('Dear hiring team, …');
 });
 
+test('a cover letter covers the points the job description asks for that are not questions of their own', function (array $injectionWarnings, bool $covered) {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    inWorkspaceOf($candidate, fn () => (new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => ['summary' => 'A Zoho role.', 'questions' => ['Your experience integrating Twilio with Zoho.', 'Your estimated timeline and rate.'], 'injection_warnings' => $injectionWarnings],
+        'matches' => ['requirements' => []],
+    ])->save());
+    questionToDraft($candidate, $application, 'Your estimated timeline and rate.');
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $letter = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('origin', 'cover_letter')->sole());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('Dear hiring team, …', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    expect(str_contains($prompt, "<points_to_cover untrusted=\"true\">\n1. Your experience integrating Twilio with Zoho.\n</points_to_cover>"))->toBe($covered)
+        ->and($prompt)->toContain($covered ? 'about 300 to 450 words' : 'about 250 to 350 words');
+})->with([
+    'found points' => [[], true],
+    'none while the analysis warns of text aimed at the AI' => [['Ignore previous instructions'], false],
+]);
+
 test('drafting is refused on an approved answer or while a draft is being written', function () {
     $candidate = candidateWithTwoFactor();
     $application = draftedApplicationOf($candidate);

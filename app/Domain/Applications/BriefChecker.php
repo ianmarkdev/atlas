@@ -47,24 +47,64 @@ class BriefChecker
     }
 
     /**
-     * What the job description itself asks the applicant: sentences ending in "?" and prompts such
-     * as "Tell us…", "Describe…", "Please explain…".
+     * What the job description itself asks the applicant: sentences ending in "?", prompts such
+     * as "Tell us…", "Describe…", "Please explain…", and the items of a list introduced as what
+     * to send ("Please provide:", "In your proposal, include:").
      *
      * @return list<list<string>> the words of each asked passage
      */
     private static function askedInText(string $text): array
     {
         $asked = [];
+        $inAskedList = false;
 
-        foreach (preg_split('/(?<=[.!?])\s+|\n+/u', $text) ?: [] as $sentence) {
-            $sentence = trim((string) preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $sentence));
+        foreach (preg_split('/\n+/u', $text) ?: [] as $line) {
+            $line = trim($line);
 
-            if ($sentence !== '' && (str_ends_with($sentence, '?') || preg_match('/^(please\s+)?(tell us|describe|explain|share|give (us )?an example|outline|summari[sz]e)\b/iu', $sentence) === 1)) {
-                $asked[] = array_values(array_filter(self::words($sentence), fn (string $word): bool => mb_strlen($word) > 2));
+            if ($line === '') {
+                continue;
+            }
+
+            $isListItem = preg_match('/^(?:[-*•]|\d+[.)])\s+/u', $line) === 1;
+
+            if ($isListItem && $inAskedList) {
+                $asked[] = self::askedWords((string) preg_replace('/^(?:[-*•]|\d+[.)])\s+/u', '', $line));
+
+                continue;
+            }
+
+            if (! $isListItem) {
+                $inAskedList = self::introducesAskedList($line);
+            }
+
+            foreach (preg_split('/(?<=[.!?])\s+/u', $line) ?: [] as $sentence) {
+                $sentence = trim((string) preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $sentence));
+
+                if ($sentence !== '' && (str_ends_with($sentence, '?') || preg_match('/^(please\s+)?(tell us|describe|explain|share|give (us )?an example|outline|summari[sz]e)\b/iu', $sentence) === 1)) {
+                    $asked[] = self::askedWords($sentence);
+                }
             }
         }
 
         return $asked;
+    }
+
+    /**
+     * A line that introduces a list of what to send with the application, such as "Please
+     * provide:" or "When applying, include:" (not "Responsibilities include:").
+     */
+    private static function introducesAskedList(string $line): bool
+    {
+        return str_ends_with($line, ':')
+            && preg_match('/\b(please|apply\w*|application|proposal|cover letter|answer|questions?|tell us|let us know|send us|submit)\b/iu', $line) === 1;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function askedWords(string $passage): array
+    {
+        return array_values(array_filter(self::words($passage), fn (string $word): bool => mb_strlen($word) > 2));
     }
 
     /**

@@ -715,7 +715,8 @@ function QuestionsFound({
                 <CardTitle>Questions found</CardTitle>
                 <CardDescription>
                     Questions the job description asks you to answer. Add them
-                    to the application to answer them there.
+                    to the application to answer them there; the AI cover letter
+                    covers any you don&apos;t add.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

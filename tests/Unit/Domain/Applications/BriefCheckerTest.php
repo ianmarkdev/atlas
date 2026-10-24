@@ -23,6 +23,19 @@ test('questions are kept only when the job description actually asks them', func
         ->and($brief['dropped_questions'])->toBe(['Do you have 5+ years of PHP experience?']);
 });
 
+test('the items of a list introduced as what to send are asked, other lists are not', function () {
+    $jd = "Responsibilities include:\n- Build Zoho workflows.\n\nHow to Apply\n\nPlease provide:\n\n1. Your experience integrating Twilio with Zoho.\n2. Your estimated timeline and project-based rate or quotation.";
+
+    $brief = checkedBrief(['questions' => [
+        'Your experience integrating Twilio with Zoho.',
+        'Your estimated timeline and project-based rate or quotation.',
+        'Build Zoho workflows.',
+    ]], $jd);
+
+    expect($brief['questions'])->toBe(['Your experience integrating Twilio with Zoho.', 'Your estimated timeline and project-based rate or quotation.'])
+        ->and($brief['dropped_questions'])->toBe(['Build Zoho workflows.']);
+});
+
 test('model injection warnings that point at nothing in the text are dropped', function () use ($jd) {
     $brief = checkedBrief(['injection_warnings' => ['The ad tells the assistant to reveal its system prompt']], $jd);
 

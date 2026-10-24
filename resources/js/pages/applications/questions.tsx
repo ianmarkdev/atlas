@@ -392,7 +392,8 @@ function FoundQuestions({
                 </h2>
                 <p className="type-caption text-text-secondary">
                     Found by the job analysis. Untick any that are not real
-                    application questions, then add the rest.
+                    application questions, then add the rest. The AI cover
+                    letter covers any you don&apos;t add.
                 </p>
             </div>
             <ul className="space-y-2">

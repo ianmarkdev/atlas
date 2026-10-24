@@ -158,6 +158,24 @@ class JobAnalysisService
     }
 
     /**
+     * What the cover letter should cover: the questions the latest analysis found that are not on
+     * the application as questions of their own. None while the analysis warns of text aimed at
+     * the AI, since nobody has confirmed these points.
+     *
+     * @return list<string>
+     */
+    public function coverLetterPoints(JobApplication $application): array
+    {
+        $analysis = $application->analyses()->where('status', 'succeeded')->first();
+
+        if ($analysis === null || ($analysis->brief['injection_warnings'] ?? []) !== [] || ($analysis->brief['server_injection_warnings'] ?? []) !== []) {
+            return [];
+        }
+
+        return array_values($this->questionsNotAdded($analysis));
+    }
+
+    /**
      * A question's text for spotting the same question twice (case and spacing ignored).
      */
     public static function normaliseQuestion(string $text): string
