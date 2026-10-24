@@ -16,6 +16,7 @@ use App\Domain\Applications\AnswerDraft;
 use App\Domain\Applications\AnswerDraftVersion;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\EvidencePackBuilder;
+use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\ParagraphRedraft;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\WritingPreference;
@@ -133,10 +134,10 @@ class GenerateAnswerDraft implements ShouldQueue
                 $variables['storyline'] = $built['storyline'];
             }
 
-            $variables['job_description'] = PromptBudget::shorten(
+            $variables['job_description'] = self::jobDescriptionFor(
                 $jobDescription,
                 $room - mb_strlen($variables['evidence']) - mb_strlen($base === null ? $variables['storyline'] : ''),
-                __('[… the rest of the job description was left out to fit the model\'s window]'),
+                $built['job_analysis_id'],
             );
 
             $result = $gateway->run(
@@ -193,6 +194,33 @@ class GenerateAnswerDraft implements ShouldQueue
         }
 
         $answers->storeDraft($draft, self::withoutEvidenceIds((string) ($data['answer'] ?? '')), $result->run, $pack, $checkSeparately ? null : $checked, $clarifications, $requester, $instruction, $built['resume_version_id'], $inputs);
+    }
+
+    /**
+     * The job description as it fits `$characters`: whole when it fits; otherwise the analysed
+     * brief first (its requirements may sit anywhere in the text) and then as much of the text
+     * as is left; just the start of the text when there is no analysis.
+     */
+    private static function jobDescriptionFor(string $jobDescription, int $characters, ?int $analysisId): string
+    {
+        if (mb_strlen($jobDescription) <= $characters) {
+            return $jobDescription;
+        }
+
+        $note = __('[… the rest of the job description was left out to fit the model\'s window]');
+        $brief = $analysisId === null ? '' : (string) JobAnalysis::query()->find($analysisId)?->briefForPrompt();
+
+        if ($brief === '') {
+            return PromptBudget::shorten($jobDescription, $characters, $note);
+        }
+
+        $head = __('The job, as analysed:')."\n{$brief}\n\n".__('The job description, from the start:')."\n";
+
+        if (mb_strlen($head) >= $characters) {
+            return PromptBudget::shorten($brief, $characters, $note);
+        }
+
+        return $head.PromptBudget::shorten($jobDescription, $characters - mb_strlen($head), $note);
     }
 
     /**

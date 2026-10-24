@@ -287,6 +287,36 @@ test("a job description too long for the model's window is shortened, and the ev
         ->and(mb_strlen($request->system) + mb_strlen($prompt))->toBeLessThanOrEqual((int) ((5000 - 2500) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN);
 });
 
+test('a job description too long for the window is sent as its analysed brief first, so requirements at the end still go in', function () {
+    config(['ai.tasks.answer_writing.context' => 5000]);
+    $candidate = candidateWithTwoFactor();
+    $jobDescription = implode("\n", array_map(fn (int $n): string => "Line {$n} of a very long job description.", range(1, 299)))."\nYou must have run Kubernetes in production.";
+    $application = JobApplication::factory()->forProfile(profileOf($candidate))->withJobDescription($jobDescription)->create(['company_name' => 'Fabrikam', 'role_title' => 'Senior Engineer']);
+    inWorkspaceOf($candidate, fn () => (new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => [
+            'summary' => 'A platform role.',
+            'must_haves' => [['requirement' => 'Kubernetes', 'quote' => 'You must have run Kubernetes in production.', 'quote_check' => 'found']],
+            'nice_to_haves' => [['requirement' => 'Some Go', 'quote' => 'Go is a plus', 'quote_check' => 'missing']],
+        ],
+        'matches' => ['requirements' => []],
+    ])->save());
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('An answer.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    $request = $fake->requests[0];
+    $prompt = $request->messages[0]['content'];
+    expect($prompt)->toContain("The job, as analysed:\nSummary: A platform role.\nMust-haves:\n- You must have run Kubernetes in production.\nNice-to-haves:\n- Some Go")
+        ->and($prompt)->toContain("The job description, from the start:\nLine 1 of a very long job description.")
+        ->and($prompt)->not->toContain('Line 299 of')
+        ->and($prompt)->toContain("[… the rest of the job description was left out to fit the model's window]")
+        ->and(mb_strlen($request->system) + mb_strlen($prompt))->toBeLessThanOrEqual((int) ((5000 - 2500) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN);
+});
+
 test('when the window is small only the most important rules are sent, and only those are recorded', function () {
     config(['ai.tasks.answer_writing.context' => 4400]);
     $candidate = candidateWithTwoFactor();

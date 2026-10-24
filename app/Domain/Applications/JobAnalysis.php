@@ -71,6 +71,42 @@ class JobAnalysis extends Model
     }
 
     /**
+     * The brief in a few lines, for a prompt that cannot take the whole job description: the
+     * summary, then each requirement in the ad's own words where its quote was found in the text
+     * (the model's paraphrase otherwise). '' without a brief.
+     */
+    public function briefForPrompt(): string
+    {
+        $brief = (array) ($this->brief ?? []);
+        $lines = [];
+        $summary = trim((string) ($brief['summary'] ?? ''));
+
+        if ($summary !== '') {
+            $lines[] = "Summary: {$summary}";
+        }
+
+        foreach (['must_haves' => 'Must-haves:', 'nice_to_haves' => 'Nice-to-haves:'] as $list => $heading) {
+            $items = [];
+
+            foreach ((array) ($brief[$list] ?? []) as $item) {
+                $quoted = in_array($item['quote_check'] ?? null, ['found', 'close'], true) && trim((string) ($item['quote'] ?? '')) !== '';
+                $text = trim((string) ($quoted ? $item['quote'] : ($item['requirement'] ?? '')));
+
+                if ($text !== '') {
+                    $items[] = "- {$text}";
+                }
+            }
+
+            if ($items !== []) {
+                $lines[] = $heading;
+                array_push($lines, ...$items);
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * @return BelongsTo<JobApplication, $this>
      */
     public function application(): BelongsTo
