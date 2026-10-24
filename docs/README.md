@@ -43,6 +43,7 @@ The user and their virtual assistants (VAs) prepare many job applications. Gener
 | [06-adrs.md](06-adrs.md) | Architecture Decision Records |
 | [07-backlog.md](07-backlog.md) | Spikes, MVP epics, optional enhancements, deployment |
 | [ai-setup.md](ai-setup.md) | Running AI locally with Ollama, and optional Claude API configuration |
+| [08-how-it-works.md](08-how-it-works.md) | As built: the analyse → write → learn → submit flow in diagrams, each step linked to its code, and the AI calls |
 
 > If PLAN.md and a split file disagree, PLAN.md wins. Edit PLAN.md first, then the split copy.
 
