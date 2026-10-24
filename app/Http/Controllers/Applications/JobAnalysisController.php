@@ -47,6 +47,7 @@ class JobAnalysisController extends Controller
                 'brief' => $selected->brief,
                 'matches' => $selected->matches,
                 'matched_at' => $selected->matched_at?->toIso8601String(),
+                'refreshing' => $selected->rematch_requested_at !== null,
                 'error_message' => $selected->error_message,
                 'created_at' => $selected->created_at?->toIso8601String(),
                 'completed_at' => $selected->completed_at?->toIso8601String(),
@@ -91,9 +92,11 @@ class JobAnalysisController extends Controller
     {
         Gate::authorize('update', $application);
 
-        $this->analyses->refreshMatches($analysis->setRelation('application', $application));
+        $refreshing = $this->analyses->requestRefresh($analysis);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Evidence refreshed from your current library.')]);
+        Inertia::flash('toast', $refreshing
+            ? ['type' => 'success', 'message' => __('Matching again against your current library and resumes. It updates here when done.')]
+            : ['type' => 'error', 'message' => __('Only a finished analysis can be matched again.')]);
 
         return back();
     }

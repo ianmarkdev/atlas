@@ -77,4 +77,19 @@ class CheckAnswerClaims implements ShouldQueue
             array_map(fn (array $item): array => ['status' => $item['status'], 'text' => $item['text']], $pack),
         ));
     }
+
+    /**
+     * The queue gave up on the job (the worker stopped, or it ran past its timeout), so the
+     * handler never recorded an outcome. What is still waiting for this job must not stay so.
+     */
+    public function failed(): void
+    {
+        WithWorkspaceContext::run($this->workspaceId, function (): void {
+            $version = AnswerDraftVersion::query()->find($this->versionId);
+
+            if ($version !== null) {
+                app(AiAnswerService::class)->failClaimCheck($version, __('the check stopped unexpectedly'));
+            }
+        });
+    }
 }

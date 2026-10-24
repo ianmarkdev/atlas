@@ -1,14 +1,20 @@
 <?php
 
+use App\Domain\Ai\AiQueue;
 use App\Domain\Ai\Clients\FakeLlmClient;
 use App\Domain\Ai\LlmRouter;
 use App\Domain\Ai\PromptBudget;
 use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\JobAnalysis;
+use App\Domain\Applications\JobAnalysisService;
 use App\Domain\Applications\JobApplication;
+use App\Jobs\AnalyseJobApplication;
+use App\Jobs\Middleware\WithWorkspaceContext;
+use App\Jobs\RefreshAnalysisMatches;
 use App\Models\User;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -231,4 +237,42 @@ test('another workspace\'s analysis is not reachable', function () {
     $application = analysedApplicationOf($owner);
 
     $this->actingAs(candidateWithTwoFactor())->get(route('applications.analysis.show', $application))->assertNotFound();
+});
+
+test('refreshing evidence is queued on the local lane once, and the page shows it until it has run', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = analysedApplicationOf($candidate);
+    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput()]));
+    $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
+    $analysis = latestAnalysisOf($candidate);
+    Queue::fake();
+
+    $this->actingAs($candidate)->post(route('applications.analysis.refresh', [$application, $analysis]))
+        ->assertInertiaFlash('toast.message', 'Matching again against your current library and resumes. It updates here when done.');
+    $this->actingAs($candidate)->post(route('applications.analysis.refresh', [$application, $analysis]));
+
+    Queue::assertPushedOn(AiQueue::LOCAL_NOW, RefreshAnalysisMatches::class);
+    Queue::assertPushed(RefreshAnalysisMatches::class, 1);
+    $this->actingAs($candidate)->get(route('applications.analysis.show', $application))
+        ->assertInertia(fn (Assert $page) => $page->where('analysis.refreshing', true));
+
+    $this->travel(5)->minutes();
+    WithWorkspaceContext::run($application->workspace_id, fn () => (new RefreshAnalysisMatches($application->workspace_id, $analysis->id))->handle(app(JobAnalysisService::class)));
+
+    $refreshed = latestAnalysisOf($candidate);
+    expect($refreshed->rematch_requested_at)->toBeNull()
+        ->and($refreshed->matched_at->isAfter($analysis->matched_at))->toBeTrue();
+});
+
+test('an analysis whose job the queue gave up on is failed instead of left running', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = analysedApplicationOf($candidate);
+    $analysis = inWorkspaceOf($candidate, fn () => JobAnalysis::query()->forceCreate([
+        'job_application_id' => $application->id, 'job_posting_id' => $application->posting->id, 'status' => 'running',
+    ]));
+
+    (new AnalyseJobApplication($application->workspace_id, $analysis->id))->failed();
+
+    expect(latestAnalysisOf($candidate)->only(['status', 'error_message']))
+        ->toBe(['status' => 'failed', 'error_message' => 'The analysis stopped unexpectedly. Try again.']);
 });

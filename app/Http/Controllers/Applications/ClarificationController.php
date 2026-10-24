@@ -48,11 +48,11 @@ class ClarificationController extends Controller
         $latest = $application->latestAnalysis()->first();
 
         if ($latest !== null) {
-            $this->analyses->refreshMatches($latest->setRelation('application', $application));
+            $this->analyses->requestRefresh($latest);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $request->user()->isCandidate()
-            ? __('Added to your library and matched again.')
+            ? __('Added to your library. The evidence is matched again in a moment.')
             : __('Added to the library as a proposed bullet point for the candidate to verify.')]);
 
         return back();

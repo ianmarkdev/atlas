@@ -152,4 +152,19 @@ class TailorApplicationResume implements ShouldQueue
 
         return implode("\n", $lines);
     }
+
+    /**
+     * The queue gave up on the job (the worker stopped, or it ran past its timeout), so the
+     * handler never recorded an outcome. What is still waiting for this job must not stay so.
+     */
+    public function failed(): void
+    {
+        WithWorkspaceContext::run($this->workspaceId, function (): void {
+            $resume = ApplicationResume::query()->find($this->resumeId);
+
+            if ($resume !== null && in_array($resume->generation_status, ['queued', 'running'], true)) {
+                app(ApplicationResumeService::class)->failTailoring($resume, __('Tailoring stopped unexpectedly. Try again.'));
+            }
+        });
+    }
 }

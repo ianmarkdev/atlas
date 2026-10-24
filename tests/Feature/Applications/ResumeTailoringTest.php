@@ -11,7 +11,9 @@ use App\Domain\Applications\JobApplication;
 use App\Domain\Knowledge\Claim;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Resumes\ResumeVariant;
+use App\Jobs\TailorApplicationResume;
 use App\Models\User;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 
 /**
@@ -215,4 +217,15 @@ test('an AI version is discarded when the resume was saved while the AI worked',
     expect($resume->currentVersion->version_no)->toBe(1)
         ->and($resume->generation_status)->toBe('failed')
         ->and($resume->generation_error)->toContain('discarded');
+});
+
+test('tailoring whose job the queue gave up on is failed instead of left running', function () {
+    Queue::fake();
+    ['candidate' => $candidate, 'application' => $application] = aiTailoringSetup();
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    (new TailorApplicationResume($application->workspace_id, aiTailoredResumeOf($candidate)->id))->failed();
+
+    expect(aiTailoredResumeOf($candidate)->only(['generation_status', 'generation_error']))
+        ->toBe(['generation_status' => 'failed', 'generation_error' => 'Tailoring stopped unexpectedly. Try again.']);
 });

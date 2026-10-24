@@ -4,6 +4,7 @@ namespace App\Domain\Applications;
 
 use App\Domain\Audit\AuditLogger;
 use App\Jobs\AnalyseJobApplication;
+use App\Jobs\RefreshAnalysisMatches;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -58,12 +59,38 @@ class JobAnalysisService
     }
 
     /**
+     * Queue "Refresh evidence" (RefreshAnalysisMatches). A refresh already waiting is not queued
+     * twice.
+     *
+     * @return bool whether the analysis can be matched again
+     */
+    public function requestRefresh(JobAnalysis $analysis): bool
+    {
+        return DB::transaction(function () use ($analysis): bool {
+            $analysis = JobAnalysis::query()->whereKey($analysis->id)->lockForUpdate()->firstOrFail();
+
+            if (! $analysis->isRefreshable()) {
+                return false;
+            }
+
+            if ($analysis->rematch_requested_at === null) {
+                $analysis->forceFill(['rematch_requested_at' => now()])->save();
+                RefreshAnalysisMatches::dispatch($analysis->workspace_id, $analysis->id);
+            }
+
+            return true;
+        });
+    }
+
+    /**
      * Re-run evidence matching and the resume ranking (after the library or a resume changed)
-     * without calling the model again.
+     * without calling the model again. Ends a requested refresh.
      */
     public function refreshMatches(JobAnalysis $analysis): void
     {
         if ($analysis->status !== 'succeeded' || $analysis->brief === null) {
+            $analysis->forceFill(['rematch_requested_at' => null])->save();
+
             return;
         }
 
@@ -74,6 +101,7 @@ class JobAnalysisService
             'matches' => $matches,
             'resume_ranking' => $this->ranker->rank($matches, $profileId),
             'matched_at' => now(),
+            'rematch_requested_at' => null,
         ])->save();
 
         $this->clarifications->syncFromAnalysis($analysis);

@@ -248,4 +248,19 @@ class GenerateAnswerDraft implements ShouldQueue
             default => __('concise: about 100 to 200 words'),
         };
     }
+
+    /**
+     * The queue gave up on the job (the worker stopped, or it ran past its timeout), so the
+     * handler never recorded an outcome. What is still waiting for this job must not stay so.
+     */
+    public function failed(): void
+    {
+        WithWorkspaceContext::run($this->workspaceId, function (): void {
+            $draft = AnswerDraft::query()->where('application_question_id', $this->questionId)->first();
+
+            if ($draft !== null && in_array($draft->generation_status, ['queued', 'running'], true)) {
+                app(AiAnswerService::class)->fail($draft, __('Writing the draft stopped unexpectedly. Try again.'));
+            }
+        });
+    }
 }

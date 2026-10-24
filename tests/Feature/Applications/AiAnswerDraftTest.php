@@ -582,3 +582,18 @@ test('a single draft is queued ahead of the drafts asked for all at once', funct
     Queue::assertPushedOn(AiQueue::LOCAL_NOW, GenerateAnswerDraft::class, fn (GenerateAnswerDraft $job): bool => $job->questionId === $single->id);
     Queue::assertPushedOn(AiQueue::LOCAL_BULK, GenerateAnswerDraft::class, fn (GenerateAnswerDraft $job): bool => $job->questionId !== $single->id);
 });
+
+test('a draft whose job the queue gave up on is failed, and can be asked for again', function () {
+    Queue::fake();
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    $question = questionToDraft($candidate, $application);
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    (new GenerateAnswerDraft($application->workspace_id, $question->id))->failed();
+
+    expect(draftOf($candidate, $question)->only(['generation_status', 'generation_error']))
+        ->toBe(['generation_status' => 'failed', 'generation_error' => 'Writing the draft stopped unexpectedly. Try again.']);
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]))->assertSessionHasNoErrors();
+    expect(draftOf($candidate, $question)->generation_status)->toBe('queued');
+});

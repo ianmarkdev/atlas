@@ -19,3 +19,6 @@ Schedule::command('app:suggest-achievements')->weeklyOn(1, '07:00');
 // jobs): analyse new ones, and keep the AI payloads of those it moved to a submitted stage.
 Schedule::command('app:analyse-new-applications')->everyTenMinutes()->withoutOverlapping(10);
 Schedule::command('app:retain-submitted-work')->daily();
+
+// AI work that started and never finished (the PC was switched off mid-job): fail it so it can be tried again.
+Schedule::command('app:fail-stale-ai-work')->everyFifteenMinutes()->withoutOverlapping(15);

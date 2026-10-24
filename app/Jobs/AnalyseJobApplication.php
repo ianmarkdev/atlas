@@ -123,4 +123,19 @@ class AnalyseJobApplication implements ShouldQueue
             'completed_at' => now(),
         ])->save();
     }
+
+    /**
+     * The queue gave up on the job (the worker stopped, or it ran past its timeout), so the
+     * handler never recorded an outcome. What is still waiting for this job must not stay so.
+     */
+    public function failed(): void
+    {
+        WithWorkspaceContext::run($this->workspaceId, function (): void {
+            $analysis = JobAnalysis::query()->find($this->analysisId);
+
+            if ($analysis?->isPending()) {
+                $this->fail($analysis, 'failed', __('The analysis stopped unexpectedly. Try again.'));
+            }
+        });
+    }
 }

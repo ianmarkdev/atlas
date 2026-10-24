@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array<string, mixed>|null $matches
  * @property Ranking|null $resume_ranking which resume covers the requirements best (ResumeRanker)
  * @property CarbonImmutable|null $matched_at
+ * @property CarbonImmutable|null $rematch_requested_at set while "Refresh evidence" is queued or running
  * @property string|null $error_message
  * @property int|null $requested_by
  * @property CarbonImmutable|null $completed_at
@@ -68,6 +69,14 @@ class JobAnalysis extends Model
     public function isPending(): bool
     {
         return in_array($this->status, self::PENDING, true);
+    }
+
+    /**
+     * Whether its evidence can be matched again: only a finished analysis has a brief to match.
+     */
+    public function isRefreshable(): bool
+    {
+        return $this->status === 'succeeded' && $this->brief !== null;
     }
 
     /**
@@ -150,6 +159,7 @@ class JobAnalysis extends Model
             'matches' => 'array',
             'resume_ranking' => 'array',
             'matched_at' => 'datetime',
+            'rematch_requested_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }

@@ -80,6 +80,7 @@ type Analysis = {
         requirements: Match[];
     } | null;
     matched_at: string | null;
+    refreshing: boolean;
     error_message: string | null;
     created_at: string | null;
     completed_at: string | null;
@@ -113,6 +114,8 @@ export default function AnalysisPage({
     const pending =
         analysis !== null &&
         (analysis.status === "queued" || analysis.status === "running");
+    // Poll while the analysis or a "Refresh evidence" is on its way.
+    const waiting = pending || (analysis?.refreshing ?? false);
     const poll = usePoll(
         3000,
         { only: ["analysis", "history"] },
@@ -120,13 +123,13 @@ export default function AnalysisPage({
     );
 
     useEffect(() => {
-        if (pending) {
+        if (waiting) {
             poll.start();
         } else {
             poll.stop();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pending]);
+    }, [waiting]);
 
     return (
         <>
@@ -297,8 +300,8 @@ function BriefView({
                         aria-hidden
                     />
                     <span>
-                        The job description was too long for the model, so
-                        only its first{" "}
+                        The job description was too long for the model, so only
+                        its first{" "}
                         {Math.round(
                             (brief.shortened_input.read_characters /
                                 brief.shortened_input.total_characters) *
@@ -378,10 +381,19 @@ function BriefView({
                                 <Button
                                     size="sm"
                                     variant="outline"
-                                    disabled={processing}
+                                    disabled={processing || analysis.refreshing}
                                     title="Match again against your current library and resumes (no AI call)"
                                 >
-                                    <RefreshCw /> Refresh evidence
+                                    <RefreshCw
+                                        className={
+                                            analysis.refreshing
+                                                ? "animate-spin"
+                                                : undefined
+                                        }
+                                    />{" "}
+                                    {analysis.refreshing
+                                        ? "Refreshing…"
+                                        : "Refresh evidence"}
                                 </Button>
                             )}
                         </Form>

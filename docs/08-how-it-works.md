@@ -166,7 +166,7 @@ Every AI job waits on a queue chosen by where its task runs and whether someone 
 
 | Queue | Jobs | Workers |
 |---|---|---|
-| `local-now` | Analysis, embeddings, and any task routed to Ollama that someone is waiting for | 1: the tasks share one GPU |
+| `local-now` | Analysis, embeddings, "Refresh evidence", and any task routed to Ollama that someone is waiting for | 1: the tasks share one GPU |
 | `local-bulk` | Weekly achievement suggestions, "Draft all" and learning from edits while on Ollama | the same worker |
 | `claude-now` | Tasks routed to Claude that someone is waiting for: an answer, a redraft, tailoring, claim checks | 2 |
 | `claude-bulk` | "Draft all" and learning from edits on Claude | the same workers |
@@ -179,6 +179,8 @@ php artisan queue:work --queue=default
 php artisan schedule:work
 ```
 
-The scheduler also picks up work saved by Career VA, which writes to the shared database and cannot queue jobs: every 10 minutes it analyses new applications that have a job description (`app:analyse-new-applications`), and daily it keeps the AI payloads of applications in a submitted stage (`app:retain-submitted-work`). With the data on Neon, the queue tables can live on local Postgres (`DB_QUEUE_CONNECTION=local_queue`, see `.env.example`), so polling workers do not keep Neon awake.
+The scheduler also picks up work saved by Career VA, which writes to the shared database and cannot queue jobs: every 10 minutes it analyses new applications that have a job description (`app:analyse-new-applications`), and daily it keeps the AI payloads of applications in a submitted stage (`app:retain-submitted-work`). AI work never stays stuck: when the queue gives up on a job (a killed worker, a timeout), the job's `failed()` handler marks its analysis, draft, tailoring, claim check or edit analysis as failed with a message, so it can be asked for again. Every 15 minutes `app:fail-stale-ai-work` ends anything still *running* past `ai.run_stale_after_minutes` (30), for when the PC was switched off mid-job. Queued work is left alone: it may rightly wait while the PC is off.
+
+With the data on Neon, the queue tables can live on local Postgres (`DB_QUEUE_CONNECTION=local_queue`, see `.env.example`), so polling workers do not keep Neon awake.
 
 Prompt and model changes are checked against a fixed set of synthetic samples: `php artisan app:compare-llm --baseline=<batch>` fails when a new batch does worse than the baseline (see [LlmComparison](../app/Domain/Ai/LlmComparison.php) and `tests/Eval/fixtures/llm-comparison.php`).

@@ -16,8 +16,22 @@ class WithWorkspaceContext
 
     public function handle(object $job, Closure $next): mixed
     {
-        $workspace = Workspace::query()->findOrFail($this->workspaceId);
+        return self::run($this->workspaceId, fn () => $next($job));
+    }
 
-        return app(TenantContext::class)->run($workspace, fn () => $next($job));
+    /**
+     * Run in the workspace's tenant context outside the middleware, e.g. in a job's `failed()`,
+     * which the queue calls without it.
+     *
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    public static function run(int $workspaceId, callable $callback): mixed
+    {
+        $workspace = Workspace::query()->findOrFail($workspaceId);
+
+        return app(TenantContext::class)->run($workspace, $callback);
     }
 }

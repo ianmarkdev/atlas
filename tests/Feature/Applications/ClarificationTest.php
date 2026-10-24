@@ -61,7 +61,7 @@ test('answering adds a verified bullet point for the candidate and closes the ga
             'answer' => 'Ran Kubernetes operations for 40 services at Contoso.',
             'subject' => 'general',
         ])
-        ->assertInertiaFlash('toast.message', 'Added to your library and matched again.');
+        ->assertInertiaFlash('toast.message', 'Added to your library. The evidence is matched again in a moment.');
 
     $request = clarificationsOf($candidate)[0];
     $claim = inWorkspaceOf($candidate, fn () => Claim::query()->with('currentRevision')->find($request->converted_claim_id));
