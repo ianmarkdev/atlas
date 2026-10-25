@@ -47,7 +47,7 @@ test('the comparison command runs every sample through each provider, skipping C
         ->assertSuccessful();
 
     $results = inWorkspaceOf($candidate, fn () => LlmComparisonResult::query()->get());
-    expect($results)->toHaveCount(54)
+    expect($results)->toHaveCount(56)
         ->and($results->where('provider', 'ollama')->pluck('status')->unique()->all())->toBe(['succeeded'])
         ->and($results->where('provider', 'claude')->pluck('status')->unique()->all())->toBe(['skipped'])
         ->and($results->firstWhere('provider', 'claude')->error_message)->toContain('AI_ALLOW_EXTERNAL')

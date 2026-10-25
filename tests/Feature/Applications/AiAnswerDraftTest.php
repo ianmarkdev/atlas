@@ -157,7 +157,8 @@ test('a cover letter draft asks for a letter of the default length', function ()
     $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
 
     expect($fake->requests[0]->messages[0]['content'])->toContain('Write a cover letter for this role')
-        ->and($fake->requests[0]->messages[0]['content'])->toContain('about 250 to 350 words')
+        ->and($fake->requests[0]->messages[0]['content'])->toContain('about 180 to 280 words')
+        ->and($fake->requests[0]->messages[0]['content'])->toContain('Pick the 2 experiences')
         ->and($fake->requests[0]->messages[0]['content'])->toContain('(no evidence:')
         ->and(draftOf($candidate, $letter)->body())->toBe('Dear hiring team, …');
 });
@@ -181,7 +182,7 @@ test('a cover letter covers the points the job description asks for that are not
 
     $prompt = $fake->requests[0]->messages[0]['content'];
     expect(str_contains($prompt, "<points_to_cover untrusted=\"true\">\n1. Your experience integrating Twilio with Zoho.\n</points_to_cover>"))->toBe($covered)
-        ->and($prompt)->toContain($covered ? 'about 300 to 450 words' : 'about 250 to 350 words');
+        ->and($prompt)->toContain($covered ? 'about 300 to 450 words' : 'about 180 to 280 words');
 })->with([
     'found points' => [[], true],
     'none while the analysis warns of text aimed at the AI' => [['Ignore previous instructions'], false],

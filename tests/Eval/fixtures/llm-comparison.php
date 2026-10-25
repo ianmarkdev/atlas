@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\GenerateAnswerDraft;
+
 /**
  * Model comparison samples (M4): synthetic, so running them through an external provider never
  * sends real career data. Each sample names a task and prompt, the prompt variables, and the
@@ -172,6 +174,27 @@ return [
             'Leads with the strongest matches to the must-haves; stays within the evidence.',
         ],
         'checks' => ['banned' => ['[Your Name]'], 'mentions' => ['Alex Morgan']],
+    ],
+    'cover-letter-rules' => [
+        'title' => 'Cover letter with the cover letter rules',
+        'task' => 'answer_writing',
+        'prompt' => 'answer_writing',
+        'prompt_version' => 4,
+        'variables' => [
+            'company_name' => 'Fabrikam Pay', 'role_title' => 'Senior Backend Engineer', 'job_description' => $jobDescription,
+            'question' => GenerateAnswerDraft::coverLetterTask([]),
+            'limit' => 'at most 280 words',
+            'storyline' => '(none)', 'writing_rules' => '(none)', 'instruction' => '(none)', 'candidate_name' => 'Alex Morgan',
+        ],
+        'evidence' => $evidence,
+        'expectations' => [
+            'Builds on two experiences that match the must-haves, each tied to the job, rather than walking through every evidence item.',
+            'Opens with the role, closes in one sentence, and has no stock phrases or placeholders.',
+        ],
+        'checks' => [
+            'banned' => ['[Your Name]', '[confirm:', 'I am excited', 'I am writing to', 'strong background', 'proven track record', 'confident in my ability', 'equipped me', 'comprehensive understanding', 'eager to', 'look forward to the opportunity', 'passionate'],
+            'mentions' => ['Alex Morgan', 'Dear Hiring Team'],
+        ],
     ],
     'claim-check' => [
         'title' => 'Check a draft that overstates (invented team size, unverified PCI claim)',
