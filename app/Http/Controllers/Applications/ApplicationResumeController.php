@@ -47,7 +47,7 @@ class ApplicationResumeController extends Controller
         Gate::authorize('update', $application);
 
         $variant = $this->variantFrom($request);
-        [$document, $snapshot] = $this->documentOf($variant);
+        [$document, $snapshot] = $this->resumes->copyOf($variant);
 
         $this->resumes->start($application, $variant, $document, $snapshot, $request->user());
 
@@ -154,7 +154,7 @@ class ApplicationResumeController extends Controller
         Gate::authorize('update', $resume);
 
         $variant = $this->variantFrom($request);
-        [$document, $snapshot] = $this->documentOf($variant);
+        [$document, $snapshot] = $this->resumes->copyOf($variant);
 
         $this->resumes->copyFrom($resume, $variant, $document, $snapshot, $request->integer('lock_version'), $request->user());
 
@@ -304,24 +304,6 @@ class ApplicationResumeController extends Controller
         }
 
         return $variant->load('currentRevision');
-    }
-
-    /**
-     * The variant's document checked against today's library, with its facts snapshot.
-     *
-     * @return array{array<string, mixed>, array<string, mixed>}
-     */
-    private function documentOf(ResumeVariant $variant): array
-    {
-        try {
-            $document = $this->validator->validate($variant->document());
-        } catch (ValidationException) {
-            throw ValidationException::withMessages([
-                'variant' => __('":name" uses experience, projects or bullet points that are no longer in your library. Open it on your Profile and save it first.', ['name' => $variant->name]),
-            ]);
-        }
-
-        return [$document, $this->snapshotOf($document)];
     }
 
     /**

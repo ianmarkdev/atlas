@@ -33,9 +33,9 @@ class JobApplicationController extends Controller
 {
     /**
      * Quick filters of the list: everything, assigned to me, unassigned (open), waiting for the
-     * candidate's review, sent back with changes, past the deadline.
+     * candidate's review, sent back with changes, past the deadline, prepared in the background.
      */
-    private const FILTERS = ['all', 'mine', 'unassigned', 'in_review', 'changes_requested', 'overdue'];
+    private const FILTERS = ['all', 'mine', 'unassigned', 'in_review', 'changes_requested', 'overdue', 'background'];
 
     public function __construct(private JobApplicationService $applications) {}
 
@@ -64,6 +64,7 @@ class JobApplicationController extends Controller
             ->when($filter === 'overdue', fn (Builder $query) => $query
                 ->whereIn('stage', [ApplicationStage::Saved, ApplicationStage::Preparing])
                 ->whereDate('deadline_on', '<', CarbonImmutable::today()))
+            ->when($filter === 'background', fn (Builder $query) => $query->whereNotNull('autopilot_status'))
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $like = '%'.addcslashes($search, '%_\\').'%';
                 $query->where(fn (Builder $inner) => $inner

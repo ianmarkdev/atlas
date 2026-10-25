@@ -50,6 +50,11 @@ class JobApplicationResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'deleted_at' => $this->deleted_at?->toIso8601String(),
             'lock_version' => $this->lock_version,
+            'autopilot' => $this->autopilot_status === null ? null : [
+                'status' => $this->autopilot_status,
+                'note' => $this->autopilot_note,
+                'finished_at' => $this->autopilot_finished_at?->toIso8601String(),
+            ],
             'can' => [
                 'update' => $user?->can('update', $this->resource) ?? false,
                 'delete' => $user?->can('delete', $this->resource) ?? false,

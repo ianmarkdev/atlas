@@ -1,20 +1,20 @@
 export type ApplicationStage =
-    | 'saved'
-    | 'preparing'
-    | 'applied'
-    | 'interviewing'
-    | 'offer'
-    | 'rejected'
-    | 'withdrawn';
+    | "saved"
+    | "preparing"
+    | "applied"
+    | "interviewing"
+    | "offer"
+    | "rejected"
+    | "withdrawn";
 
-export type ApplyRequirement = 'video' | 'test' | 'video_and_test';
+export type ApplyRequirement = "video" | "test" | "video_and_test";
 
 export type ReviewStatus =
-    | 'not_started'
-    | 'in_progress'
-    | 'in_review'
-    | 'changes_requested'
-    | 'approved';
+    | "not_started"
+    | "in_progress"
+    | "in_review"
+    | "changes_requested"
+    | "approved";
 
 export type JobApplication = {
     ulid: string;
@@ -41,6 +41,12 @@ export type JobApplication = {
     created_at: string | null;
     deleted_at: string | null;
     lock_version: number;
+    /** Prepared in the background (ApplicationAutopilot); null when never asked. */
+    autopilot: {
+        status: "running" | "ready" | "stopped";
+        note: string | null;
+        finished_at: string | null;
+    } | null;
     can: { update: boolean; delete: boolean; restore: boolean };
 };
 

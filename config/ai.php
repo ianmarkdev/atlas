@@ -163,4 +163,9 @@ return [
     // analysed by the scheduler (app:analyse-new-applications), e.g. captures saved by Career VA.
     'auto_analysis_days' => (int) env('AI_AUTO_ANALYSIS_DAYS', 14),
 
+    // Preparing an application in the background (app:prepare-applications) answers a question
+    // with an approved library answer when their questions are this similar (cosine, embedding
+    // model dependent); otherwise the AI drafts it.
+    'autopilot_library_similarity' => (float) env('AI_AUTOPILOT_LIBRARY_SIMILARITY', 0.85),
+
 ];

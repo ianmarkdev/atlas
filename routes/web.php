@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Applications\ApplicationAutopilotController;
 use App\Http\Controllers\Applications\ApplicationQuestionController;
 use App\Http\Controllers\Applications\ApplicationResumeController;
 use App\Http\Controllers\Applications\ApplicationReviewController;
@@ -60,6 +61,8 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
 
     // Applications tracker (M7a, D10): candidate and VAs prepare applications by hand.
     Route::get('applications', [JobApplicationController::class, 'index'])->name('applications.index');
+    Route::post('applications/autopilot', [ApplicationAutopilotController::class, 'store'])->name('applications.autopilot.store');
+    Route::delete('applications/autopilot', [ApplicationAutopilotController::class, 'destroy'])->name('applications.autopilot.destroy');
     Route::get('applications/collections', [JdCollectionController::class, 'index'])->name('collections.index');
     Route::post('applications/collections', [JdCollectionController::class, 'store'])->name('collections.store');
     Route::put('applications/collections/{collection}', [JdCollectionController::class, 'update'])->name('collections.update');

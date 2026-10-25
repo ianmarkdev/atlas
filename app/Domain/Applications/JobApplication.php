@@ -48,6 +48,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $owner_user_id
  * @property int|null $assigned_user_id
  * @property int $lock_version
+ * @property string|null $autopilot_status `running`, `ready` (for review) or `stopped` (needs someone); null when never asked
+ * @property string|null $autopilot_note why it stopped
+ * @property int|null $autopilot_requested_by
+ * @property CarbonImmutable|null $autopilot_requested_at
+ * @property CarbonImmutable|null $autopilot_questions_added_at
+ * @property CarbonImmutable|null $autopilot_finished_at
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
  * @property CarbonImmutable|null $deleted_at
@@ -219,6 +225,9 @@ class JobApplication extends Model
             'applied_at' => 'datetime',
             'deadline_on' => 'date',
             'review_status_changed_at' => 'datetime',
+            'autopilot_requested_at' => 'datetime',
+            'autopilot_questions_added_at' => 'datetime',
+            'autopilot_finished_at' => 'datetime',
         ];
     }
 }

@@ -119,6 +119,8 @@ class ActivityFeed
             ]),
             $event->action === 'application.analysis_requested' => __('asked AI to analyse a job description'),
             $event->action === 'application.review_start' => __('started preparing an application'),
+            $event->action === 'application.autopilot_started' => __('asked AI to prepare an application in the background'),
+            $event->action === 'application.autopilot_stopped' => __('stopped preparing an application in the background'),
             $event->action === 'application.review_submit' => __('sent an application for review'),
             $event->action === 'application.review_request_changes' => __('requested changes to an application'),
             $event->action === 'application.review_approve' => __('approved an application'),

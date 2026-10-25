@@ -1,52 +1,70 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
-import { Columns3, ExternalLink, Plus, Rows3, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
+import { Form, Head, Link, router, usePoll } from "@inertiajs/react";
+import {
+    Columns3,
+    ExternalLink,
+    Plus,
+    Rows3,
+    Search,
+    Sparkles,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import ApplicationAutopilotController from "@/actions/App/Http/Controllers/Applications/ApplicationAutopilotController";
+import JobApplicationController from "@/actions/App/Http/Controllers/Applications/JobApplicationController";
 import {
     DeadlineBadge,
     StageBadge,
     StageSelect,
-} from '@/components/applications/stage';
-import { Initials, ReviewBadge } from '@/components/applications/review';
-import Heading from '@/components/heading';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { companyLabel, formatDay, groupByStage } from '@/lib/applications';
-import { timeAgo } from '@/lib/time';
-import { cn } from '@/lib/utils';
-import { index } from '@/routes/applications';
-import { index as collectionsIndex } from '@/routes/collections';
-import type { JobApplication, SelectOption } from '@/types';
+} from "@/components/applications/stage";
+import { Initials, ReviewBadge } from "@/components/applications/review";
+import Heading from "@/components/heading";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { companyLabel, formatDay, groupByStage } from "@/lib/applications";
+import { timeAgo } from "@/lib/time";
+import { cn } from "@/lib/utils";
+import { index } from "@/routes/applications";
+import { index as collectionsIndex } from "@/routes/collections";
+import type { JobApplication, SelectOption } from "@/types";
 
-type View = 'board' | 'table';
+type View = "board" | "table";
 
 type QuickFilter =
-    | 'all'
-    | 'mine'
-    | 'unassigned'
-    | 'in_review'
-    | 'changes_requested'
-    | 'overdue';
+    | "all"
+    | "mine"
+    | "unassigned"
+    | "in_review"
+    | "changes_requested"
+    | "overdue"
+    | "background";
 
 const quickFilters: { value: QuickFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'mine', label: 'Assigned to me' },
-    { value: 'unassigned', label: 'Unassigned' },
-    { value: 'in_review', label: 'In review' },
-    { value: 'changes_requested', label: 'Changes requested' },
-    { value: 'overdue', label: 'Overdue' },
+    { value: "all", label: "All" },
+    { value: "mine", label: "Assigned to me" },
+    { value: "unassigned", label: "Unassigned" },
+    { value: "in_review", label: "In review" },
+    { value: "changes_requested", label: "Changes requested" },
+    { value: "overdue", label: "Overdue" },
+    { value: "background", label: "In background" },
 ];
 
-const viewStorageKey = 'applications.view';
+/** The applications chosen for "Prepare in background", by ulid. */
+type Selection = {
+    has: (ulid: string) => boolean;
+    toggle: (ulid: string, on: boolean) => void;
+    setAll: (ulids: string[], on: boolean) => void;
+};
+
+const viewStorageKey = "applications.view";
 
 function storedView(): View {
     try {
-        return window.localStorage.getItem(viewStorageKey) === 'table'
-            ? 'table'
-            : 'board';
+        return window.localStorage.getItem(viewStorageKey) === "table"
+            ? "table"
+            : "board";
     } catch {
-        return 'board';
+        return "board";
     }
 }
 
@@ -64,9 +82,74 @@ export default function Applications({
     collection: { ulid: string; name: string } | null;
 }) {
     const [search, setSearch] = useState(filters.q);
-    const [view, setView] = useState<View>('board');
+    const [view, setView] = useState<View>("board");
 
     useEffect(() => setView(storedView()), []);
+
+    const [selected, setSelected] = useState<string[]>([]);
+    const selection: Selection = {
+        has: (ulid) => selected.includes(ulid),
+        toggle: (ulid, on) =>
+            setSelected((current) =>
+                on
+                    ? [...current, ulid]
+                    : current.filter((value) => value !== ulid),
+            ),
+        setAll: (ulids, on) =>
+            setSelected((current) =>
+                on
+                    ? [...new Set([...current, ...ulids])]
+                    : current.filter((value) => !ulids.includes(value)),
+            ),
+    };
+
+    // Forget choices that left the list (another filter, or deleted).
+    useEffect(() => {
+        setSelected((current) =>
+            current.filter((ulid) =>
+                applications.some((application) => application.ulid === ulid),
+            ),
+        );
+    }, [applications]);
+
+    // Refresh the list while applications are being prepared in the background.
+    const preparing = applications.some(
+        (application) => application.autopilot?.status === "running",
+    );
+    const poll = usePoll(
+        15000,
+        { only: ["applications"] },
+        { autoStart: false },
+    );
+
+    useEffect(() => {
+        if (preparing) {
+            poll.start();
+        } else {
+            poll.stop();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [preparing]);
+
+    const runInBackground = (start: boolean) => {
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => setSelected([]),
+        };
+
+        if (start) {
+            router.post(
+                ApplicationAutopilotController.store.url(),
+                { applications: selected },
+                options,
+            );
+        } else {
+            router.delete(ApplicationAutopilotController.destroy.url(), {
+                data: { applications: selected },
+                ...options,
+            });
+        }
+    };
 
     const chooseView = (next: View) => {
         setView(next);
@@ -95,7 +178,7 @@ export default function Applications({
                 ...(inCollection ? { collection: inCollection } : {}),
                 ...(query.q ? { q: query.q } : {}),
                 ...(query.deleted ? { deleted: 1 } : {}),
-                ...(query.filter && query.filter !== 'all'
+                ...(query.filter && query.filter !== "all"
                     ? { filter: query.filter }
                     : {}),
             },
@@ -112,8 +195,8 @@ export default function Applications({
                     <Heading
                         title={
                             filters.deleted
-                                ? 'Recently deleted applications'
-                                : 'Applications'
+                                ? "Recently deleted applications"
+                                : "Applications"
                         }
                         description="Every job you are applying for, from saved to offer. Paste the job description once; the resume and answers for it live here too."
                     />
@@ -195,20 +278,20 @@ export default function Applications({
                             <Button
                                 type="button"
                                 variant={
-                                    view === 'board' ? 'secondary' : 'ghost'
+                                    view === "board" ? "secondary" : "ghost"
                                 }
-                                aria-pressed={view === 'board'}
-                                onClick={() => chooseView('board')}
+                                aria-pressed={view === "board"}
+                                onClick={() => chooseView("board")}
                             >
                                 <Columns3 /> Board
                             </Button>
                             <Button
                                 type="button"
                                 variant={
-                                    view === 'table' ? 'secondary' : 'ghost'
+                                    view === "table" ? "secondary" : "ghost"
                                 }
-                                aria-pressed={view === 'table'}
-                                onClick={() => chooseView('table')}
+                                aria-pressed={view === "table"}
+                                onClick={() => chooseView("table")}
                             >
                                 <Rows3 /> Table
                             </Button>
@@ -229,8 +312,8 @@ export default function Applications({
                                 size="sm"
                                 variant={
                                     filters.filter === option.value
-                                        ? 'secondary'
-                                        : 'ghost'
+                                        ? "secondary"
+                                        : "ghost"
                                 }
                                 aria-pressed={filters.filter === option.value}
                                 onClick={() =>
@@ -246,16 +329,62 @@ export default function Applications({
                     </div>
                 )}
 
+                {!filters.deleted && selected.length > 0 && (
+                    <div
+                        role="region"
+                        aria-label="Chosen applications"
+                        className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle px-3 py-2 text-sm text-text-primary"
+                    >
+                        <span className="mr-auto">
+                            {selected.length} chosen. The AI analyses each job,
+                            adds its questions, tailors the resume and drafts
+                            the answers and cover letter while you are away.
+                            Nothing is approved.
+                        </span>
+                        <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => runInBackground(true)}
+                        >
+                            <Sparkles /> Prepare in background
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => runInBackground(false)}
+                        >
+                            Stop
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSelected([])}
+                        >
+                            Clear
+                        </Button>
+                    </div>
+                )}
+
                 {filters.deleted ? (
                     <DeletedList applications={applications} />
                 ) : applications.length === 0 ? (
                     <EmptyState
-                        searching={filters.q !== '' || filters.filter !== 'all'}
+                        searching={filters.q !== "" || filters.filter !== "all"}
                     />
-                ) : view === 'board' ? (
-                    <Board applications={applications} stages={stages} />
+                ) : view === "board" ? (
+                    <Board
+                        applications={applications}
+                        stages={stages}
+                        selection={selection}
+                    />
                 ) : (
-                    <Table applications={applications} stages={stages} />
+                    <Table
+                        applications={applications}
+                        stages={stages}
+                        selection={selection}
+                    />
                 )}
 
                 {canViewDeleted && (
@@ -267,8 +396,8 @@ export default function Applications({
                         className="self-start type-caption text-text-muted underline-offset-4 focus-ring hover:underline"
                     >
                         {filters.deleted
-                            ? 'Back to applications'
-                            : 'Recently deleted'}
+                            ? "Back to applications"
+                            : "Recently deleted"}
                     </button>
                 )}
             </div>
@@ -281,8 +410,8 @@ function EmptyState({ searching }: { searching: boolean }) {
         <div className="rounded-kraken-sm border border-dashed border-border-input p-8 text-center">
             <p className="type-body text-text-muted">
                 {searching
-                    ? 'No applications match.'
-                    : 'No applications yet. Add the first job you want to apply for — paste its job description and set a deadline.'}
+                    ? "No applications match."
+                    : "No applications yet. Add the first job you want to apply for — paste its job description and set a deadline."}
             </p>
         </div>
     );
@@ -291,9 +420,11 @@ function EmptyState({ searching }: { searching: boolean }) {
 function Board({
     applications,
     stages,
+    selection,
 }: {
     applications: JobApplication[];
     stages: SelectOption[];
+    selection: Selection;
 }) {
     const { columns, closed } = groupByStage(applications);
     const label = (stage: string) =>
@@ -325,6 +456,7 @@ function Board({
                                         <ApplicationCard
                                             application={application}
                                             stages={stages}
+                                            selection={selection}
                                         />
                                     </li>
                                 ))}
@@ -345,6 +477,7 @@ function Board({
                                 <ApplicationCard
                                     application={application}
                                     stages={stages}
+                                    selection={selection}
                                 />
                             </li>
                         ))}
@@ -358,33 +491,48 @@ function Board({
 function ApplicationCard({
     application,
     stages,
+    selection,
 }: {
     application: JobApplication;
     stages: SelectOption[];
+    selection: Selection;
 }) {
     return (
         <article className="space-y-2 rounded-kraken-sm border border-border-subtle bg-card p-3 transition-colors duration-fast ease-out hover:border-border-accent-subtle">
-            <Link
-                href={JobApplicationController.show(application.ulid)}
-                className="block focus-ring"
-            >
-                <p className="truncate font-medium text-text-primary">
-                    {companyLabel(application.company_name)}
-                </p>
-                <p className="truncate text-sm text-text-secondary">
-                    {application.role_title}
-                </p>
-                {application.location && (
-                    <p className="truncate type-caption text-text-muted">
-                        {application.location}
-                    </p>
+            <div className="flex items-start gap-2">
+                {application.can.update && (
+                    <Checkbox
+                        className="mt-1"
+                        checked={selection.has(application.ulid)}
+                        onCheckedChange={(checked) =>
+                            selection.toggle(application.ulid, checked === true)
+                        }
+                        aria-label={`Choose ${companyLabel(application.company_name)}, ${application.role_title}`}
+                    />
                 )}
-            </Link>
+                <Link
+                    href={JobApplicationController.show(application.ulid)}
+                    className="block min-w-0 flex-1 focus-ring"
+                >
+                    <p className="truncate font-medium text-text-primary">
+                        {companyLabel(application.company_name)}
+                    </p>
+                    <p className="truncate text-sm text-text-secondary">
+                        {application.role_title}
+                    </p>
+                    {application.location && (
+                        <p className="truncate type-caption text-text-muted">
+                            {application.location}
+                        </p>
+                    )}
+                </Link>
+            </div>
+            <AutopilotStatus application={application} />
             <div className="flex flex-wrap items-center gap-1.5">
                 {application.assignee && (
                     <Initials
                         name={application.assignee.name}
-                        title={`Assigned to ${application.assignee.is_you ? 'you' : application.assignee.name}`}
+                        title={`Assigned to ${application.assignee.is_you ? "you" : application.assignee.name}`}
                     />
                 )}
                 <ReviewBadge
@@ -412,23 +560,45 @@ function ApplicationCard({
 function Table({
     applications,
     stages,
+    selection,
 }: {
     applications: JobApplication[];
     stages: SelectOption[];
+    selection: Selection;
 }) {
+    const choosable = applications
+        .filter((application) => application.can.update)
+        .map((application) => application.ulid);
+    const allChosen =
+        choosable.length > 0 && choosable.every((ulid) => selection.has(ulid));
+
     return (
         <div className="overflow-x-auto rounded-kraken-md border border-border-subtle">
             <table className="w-full min-w-[640px] text-sm">
                 <thead>
                     <tr className="border-b border-border-subtle text-left">
+                        <th scope="col" className="w-8 px-3 py-2">
+                            {choosable.length > 0 && (
+                                <Checkbox
+                                    checked={allChosen}
+                                    onCheckedChange={(checked) =>
+                                        selection.setAll(
+                                            choosable,
+                                            checked === true,
+                                        )
+                                    }
+                                    aria-label="Choose all applications"
+                                />
+                            )}
+                        </th>
                         {[
-                            'Company & role',
-                            'Stage',
-                            'Assigned to',
-                            'Review',
-                            'Deadline',
-                            'Applied',
-                            '',
+                            "Company & role",
+                            "Stage",
+                            "Assigned to",
+                            "Review",
+                            "Deadline",
+                            "Applied",
+                            "",
                         ].map((heading) => (
                             <th
                                 key={heading}
@@ -446,6 +616,23 @@ function Table({
                             key={application.ulid}
                             className="border-b border-border-subtle last:border-0 hover:bg-surface-card"
                         >
+                            <td className="px-3 py-2 align-top">
+                                {application.can.update && (
+                                    <Checkbox
+                                        className="mt-0.5"
+                                        checked={selection.has(
+                                            application.ulid,
+                                        )}
+                                        onCheckedChange={(checked) =>
+                                            selection.toggle(
+                                                application.ulid,
+                                                checked === true,
+                                            )
+                                        }
+                                        aria-label={`Choose ${companyLabel(application.company_name)}, ${application.role_title}`}
+                                    />
+                                )}
+                            </td>
                             <td className="px-3 py-2">
                                 <Link
                                     href={JobApplicationController.show(
@@ -458,6 +645,7 @@ function Table({
                                 <p className="text-text-secondary">
                                     {application.role_title}
                                 </p>
+                                <AutopilotStatus application={application} />
                             </td>
                             <td className="px-3 py-2">
                                 {application.can.update ? (
@@ -475,9 +663,9 @@ function Table({
                             <td className="px-3 py-2 text-text-secondary">
                                 {application.assignee
                                     ? application.assignee.is_you
-                                        ? 'You'
+                                        ? "You"
                                         : application.assignee.name
-                                    : '—'}
+                                    : "—"}
                             </td>
                             <td className="px-3 py-2">
                                 <ReviewBadge
@@ -489,9 +677,9 @@ function Table({
                                 {!application.is_overdue &&
                                     application.deadline_on &&
                                     [
-                                        'applied',
-                                        'interviewing',
-                                        'offer',
+                                        "applied",
+                                        "interviewing",
+                                        "offer",
                                     ].includes(application.stage) && (
                                         <span className="text-text-muted">
                                             {formatDay(application.deadline_on)}
@@ -503,7 +691,7 @@ function Table({
                                     ? new Date(
                                           application.applied_at,
                                       ).toLocaleDateString()
-                                    : '—'}
+                                    : "—"}
                             </td>
                             <td className="px-3 py-2 text-right">
                                 {application.source_url && (
@@ -526,6 +714,47 @@ function Table({
     );
 }
 
+const autopilotLabels = {
+    running: "Preparing in background…",
+    ready: "Ready for review",
+    stopped: "Needs you",
+} as const;
+
+/**
+ * Where "Prepare in background" is, with the note when it stopped or left something to check.
+ */
+function AutopilotStatus({ application }: { application: JobApplication }) {
+    const autopilot = application.autopilot;
+
+    if (!autopilot) {
+        return null;
+    }
+
+    return (
+        <div className="mt-1 space-y-1">
+            <Badge
+                variant={
+                    autopilot.status === "stopped"
+                        ? "destructive"
+                        : autopilot.status === "ready"
+                          ? "default"
+                          : "secondary"
+                }
+            >
+                {autopilot.status === "running" && (
+                    <Sparkles className="animate-pulse" aria-hidden />
+                )}
+                {autopilotLabels[autopilot.status]}
+            </Badge>
+            {autopilot.note && (
+                <p className="type-caption whitespace-pre-line text-text-muted">
+                    {autopilot.note}
+                </p>
+            )}
+        </div>
+    );
+}
+
 function DeletedList({ applications }: { applications: JobApplication[] }) {
     if (applications.length === 0) {
         return (
@@ -541,7 +770,7 @@ function DeletedList({ applications }: { applications: JobApplication[] }) {
                 <li
                     key={application.ulid}
                     className={cn(
-                        'flex flex-wrap items-center justify-between gap-3 rounded-kraken-sm border border-border-subtle p-3',
+                        "flex flex-wrap items-center justify-between gap-3 rounded-kraken-sm border border-border-subtle p-3",
                     )}
                 >
                     <div className="min-w-0">
@@ -581,5 +810,5 @@ function DeletedList({ applications }: { applications: JobApplication[] }) {
 }
 
 Applications.layout = {
-    breadcrumbs: [{ title: 'Applications', href: index() }],
+    breadcrumbs: [{ title: "Applications", href: index() }],
 };

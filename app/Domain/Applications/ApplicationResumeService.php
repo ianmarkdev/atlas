@@ -4,9 +4,14 @@ namespace App\Domain\Applications;
 
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\ProposalService;
+use App\Domain\Resumes\ResumeDocumentValidator;
+use App\Domain\Resumes\ResumeFacts;
 use App\Domain\Resumes\ResumeService;
 use App\Domain\Resumes\ResumeVariant;
+use App\Http\Controllers\Profile\ContactController;
+use App\Http\Controllers\Profile\ResumeController;
 use App\Jobs\TailorApplicationResume;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +24,28 @@ use Illuminate\Validation\ValidationException;
  */
 class ApplicationResumeService
 {
-    public function __construct(private AuditLogger $audit, private ResumeService $variants, private ProposalService $proposals) {}
+    public function __construct(private AuditLogger $audit, private ResumeService $variants, private ProposalService $proposals, private ResumeDocumentValidator $validator) {}
+
+    /**
+     * The variant's document checked against today's library, with its facts snapshot: what
+     * start() and copyFrom() take.
+     *
+     * @return array{array<string, mixed>, array<string, mixed>}
+     *
+     * @throws ValidationException when the variant shows items no longer in the library
+     */
+    public function copyOf(ResumeVariant $variant): array
+    {
+        try {
+            $document = $this->validator->validate($variant->document());
+        } catch (ValidationException) {
+            throw ValidationException::withMessages([
+                'variant' => __('":name" uses experience, projects or bullet points that are no longer in your library. Open it on your Profile and save it first.', ['name' => $variant->name]),
+            ]);
+        }
+
+        return [$document, ResumeFacts::snapshot(ResumeController::editorLibrary(), ContactController::contactOf(CandidateProfile::current()), $document)];
+    }
 
     /**
      * @param  array<string, mixed>  $document  the variant's document, validated

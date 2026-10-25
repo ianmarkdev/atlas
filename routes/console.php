@@ -20,5 +20,9 @@ Schedule::command('app:suggest-achievements')->weeklyOn(1, '07:00');
 Schedule::command('app:analyse-new-applications')->everyTenMinutes()->withoutOverlapping(10);
 Schedule::command('app:retain-submitted-work')->daily();
 
+// Applications marked "Prepare in background": take each one's next step (analysis, questions,
+// resume, answers, cover letter). Steps only queue AI work, so this runs often.
+Schedule::command('app:prepare-applications')->everyMinute()->withoutOverlapping(10);
+
 // AI work that started and never finished (the PC was switched off mid-job): fail it so it can be tried again.
 Schedule::command('app:fail-stale-ai-work')->everyFifteenMinutes()->withoutOverlapping(15);
