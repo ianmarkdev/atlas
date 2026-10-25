@@ -175,13 +175,13 @@ class JobApplicationController extends Controller
     }
 
     /**
-     * The list's order: soonest deadline first, then the most recently updated.
+     * The list's order: the newest application first.
      *
      * @param  Builder<JobApplication>  $query
      */
     private static function inListOrder(Builder $query): void
     {
-        $query->orderByRaw('deadline_on IS NULL, deadline_on')->latest('updated_at')->orderByDesc('id');
+        $query->latest('created_at')->orderByDesc('id');
     }
 
     /**

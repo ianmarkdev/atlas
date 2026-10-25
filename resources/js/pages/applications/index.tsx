@@ -60,11 +60,11 @@ const viewStorageKey = "applications.view";
 
 function storedView(): View {
     try {
-        return window.localStorage.getItem(viewStorageKey) === "table"
-            ? "table"
-            : "board";
+        return window.localStorage.getItem(viewStorageKey) === "board"
+            ? "board"
+            : "table";
     } catch {
-        return "board";
+        return "table";
     }
 }
 
@@ -82,7 +82,7 @@ export default function Applications({
     collection: { ulid: string; name: string } | null;
 }) {
     const [search, setSearch] = useState(filters.q);
-    const [view, setView] = useState<View>("board");
+    const [view, setView] = useState<View>("table");
 
     useEffect(() => setView(storedView()), []);
 

@@ -203,19 +203,20 @@ describe('delete and restore', function () {
     });
 });
 
-test('the list searches company and role, soonest deadline first, and flags overdue ones', function () {
+test('the list searches company and role, newest first, and flags overdue ones', function () {
     $candidate = candidateWithTwoFactor();
-    applicationOf($candidate, ['company_name' => 'Later Ltd', 'deadline_on' => now()->addDays(10)]);
-    applicationOf($candidate, ['company_name' => 'Late Co', 'deadline_on' => now()->subDay()]);
+    applicationOf($candidate, ['company_name' => 'Later Ltd', 'deadline_on' => now()->addDays(10), 'created_at' => now()->subDays(2)]);
     applicationOf($candidate, ['company_name' => 'Contoso', 'role_title' => 'Ruby Developer']);
+    applicationOf($candidate, ['company_name' => 'Late Co', 'deadline_on' => now()->subDay(), 'created_at' => now()->subDay()]);
 
     $this->actingAs($candidate)->get(route('applications.index'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('applications/index')
-            ->where('applications.0.company_name', 'Late Co')
-            ->where('applications.0.is_overdue', true)
-            ->where('applications.1.company_name', 'Later Ltd')
-            ->where('applications.1.is_overdue', false));
+            ->where('applications.0.company_name', 'Contoso')
+            ->where('applications.1.company_name', 'Late Co')
+            ->where('applications.1.is_overdue', true)
+            ->where('applications.2.company_name', 'Later Ltd')
+            ->where('applications.2.is_overdue', false));
 
     $this->actingAs($candidate)->get(route('applications.index', ['q' => 'ruby']))
         ->assertInertia(fn (Assert $page) => $page->has('applications', 1)->where('applications.0.company_name', 'Contoso'));
@@ -223,9 +224,9 @@ test('the list searches company and role, soonest deadline first, and flags over
 
 test('the application page links the applications before and after it in the list', function () {
     $candidate = candidateWithTwoFactor();
-    $first = applicationOf($candidate, ['company_name' => 'Late Co', 'role_title' => 'Engineer', 'deadline_on' => now()->addDay()]);
-    $middle = applicationOf($candidate, ['company_name' => 'Later Ltd', 'deadline_on' => now()->addDays(5)]);
-    $last = applicationOf($candidate, ['company_name' => 'Contoso', 'role_title' => 'Ruby Developer']);
+    $last = applicationOf($candidate, ['company_name' => 'Contoso', 'role_title' => 'Ruby Developer', 'created_at' => now()->subDays(2)]);
+    $middle = applicationOf($candidate, ['company_name' => 'Later Ltd', 'created_at' => now()->subDay()]);
+    $first = applicationOf($candidate, ['company_name' => 'Late Co', 'role_title' => 'Engineer']);
 
     $this->actingAs($candidate)->get(route('applications.show', $middle))
         ->assertInertia(fn (Assert $page) => $page
