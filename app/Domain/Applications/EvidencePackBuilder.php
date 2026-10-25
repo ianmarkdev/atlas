@@ -61,7 +61,7 @@ class EvidencePackBuilder
         }
 
         $query = $question->isCoverLetter()
-            ? trim($application->role_title.'. '.((string) ($analysis->brief['summary'] ?? '')))
+            ? trim($application->role_title.'. '.trim($application->proposal_angle.' '.((string) ($analysis->brief['summary'] ?? ''))))
             : $question->prompt_text;
         $result = $this->search->search(new RetrievalQuery($query, $application->candidate_profile_id, self::SEARCH_LIMIT));
 

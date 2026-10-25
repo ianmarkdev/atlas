@@ -188,6 +188,41 @@ test('a cover letter covers the points the job description asks for that are not
     'none while the analysis warns of text aimed at the AI' => [['Ignore previous instructions'], false],
 ]);
 
+test('a cover letter uses the how-to-apply fields: the proposal angle and notes in the task, the subject line on top', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    inWorkspaceOf($candidate, fn () => $application->forceFill([
+        'subject_line' => 'Application: Senior Engineer - Jane',
+        'proposal_angle' => 'PostgreSQL Laravel',
+        'notes' => "Apply by email.\nIn your cover letter, say when you can start.",
+    ])->save());
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $letter = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('origin', 'cover_letter')->sole());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('Dear Hiring Team, …', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    expect($prompt)->toContain("<proposal_angle untrusted=\"true\">\nPostgreSQL Laravel\n</proposal_angle>")
+        ->and($prompt)->toContain("<application_notes untrusted=\"true\">\nApply by email.\nIn your cover letter, say when you can start.\n</application_notes>")
+        ->and($prompt)->toContain('about 300 to 450 words')
+        ->and($prompt)->not->toContain('Application: Senior Engineer - Jane')
+        ->and(draftOf($candidate, $letter)->body())->toBe("Subject: Application: Senior Engineer - Jane\n\nDear Hiring Team, …");
+});
+
+test('answers to questions get no subject line or notes', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = draftedApplicationOf($candidate);
+    inWorkspaceOf($candidate, fn () => $application->forceFill(['subject_line' => 'Senior Engineer', 'notes' => 'Say when you can start.'])->save());
+    $question = questionToDraft($candidate, $application);
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('I ran PostgreSQL.', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $question]));
+
+    expect($fake->requests[0]->messages[0]['content'])->not->toContain('Say when you can start.')
+        ->and(draftOf($candidate, $question)->body())->toBe('I ran PostgreSQL.');
+});
+
 test('drafting is refused on an approved answer or while a draft is being written', function () {
     $candidate = candidateWithTwoFactor();
     $application = draftedApplicationOf($candidate);
