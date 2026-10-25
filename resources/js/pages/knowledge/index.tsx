@@ -115,9 +115,15 @@ export default function KnowledgeIndex({
                         <Heading
                             title="Library"
                             description="Every experience, project and bullet point you have entered — the facts behind all your resumes. Verify, archive and restore them here; build resumes on your Profile."
+                            className="hidden"
                         />
                         {canEditSkills && (
-                            <Button size="sm" variant="outline" asChild>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-auto"
+                                asChild
+                            >
                                 <Link href={search()}>
                                     <Search /> Search playground
                                 </Link>

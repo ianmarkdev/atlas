@@ -13,7 +13,7 @@ use Inertia\Inertia;
 
 /**
  * "Prepare in background" for the applications chosen on the list: the scheduler then analyses
- * each, adds its questions, tailors the resume and drafts the answers and cover letter
+ * each, adds its questions, picks the best resume and drafts the answers and cover letter
  * (ApplicationAutopilot), for review later.
  */
 class ApplicationAutopilotController extends Controller

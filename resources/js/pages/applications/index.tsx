@@ -199,9 +199,10 @@ export default function Applications({
                                 : "Applications"
                         }
                         description="Every job you are applying for, from saved to offer. Paste the job description once; the resume and answers for it live here too."
+                        className="hidden"
                     />
                     {!filters.deleted && (
-                        <div className="flex gap-2">
+                        <div className="ml-auto flex gap-2">
                             <Button variant="outline" asChild>
                                 <Link href={collectionsIndex()}>
                                     Collections
@@ -337,8 +338,9 @@ export default function Applications({
                     >
                         <span className="mr-auto">
                             {selected.length} chosen. The AI analyses each job,
-                            adds its questions, tailors the resume and drafts
-                            the answers and cover letter while you are away.
+                            adds its questions, picks the best resume and
+                            drafts the answers and cover letter while you are
+                            away.
                             Nothing is approved.
                         </span>
                         <Button

@@ -12,9 +12,9 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Prepares marked applications in the background, as if someone clicked through them: analyse
- * the job description, add the questions it found and a cover letter, tailor a resume (from the
- * best-ranked one), answer each question from the answer library or else with an AI draft, then
- * draft the cover letter once the resume and the other answers are written. advance() takes the
+ * the job description, add the questions it found and a cover letter, use the best-ranked resume
+ * from the library as it is (not tailored), answer each question from the answer library or else
+ * with an AI draft, then draft the cover letter once the other answers are written. advance() takes the
  * next step each scheduler run (app:prepare-applications) and never waits for the AI itself.
  *
  * Nothing is approved: it ends `ready` for review, or `stopped` with a note when something failed
@@ -136,11 +136,7 @@ class ApplicationAutopilot
             $this->addQuestions($application, $analysis, $actor);
         }
 
-        $resumeBusy = $this->tailorResume($application, $analysis, $actor, $since);
-
-        if ($application->autopilot_status !== self::RUNNING) {
-            return;
-        }
+        $this->pickResume($application, $analysis, $actor);
 
         $questions = ApplicationQuestion::query()
             ->where('job_application_id', $application->id)
@@ -156,7 +152,7 @@ class ApplicationAutopilot
         }
 
         // The cover letter is written from the resume and the other answers' evidence.
-        $coverBusy = $resumeBusy || $answersBusy || $this->answer($application, $coverLetters, $actor, $since, fromLibrary: false);
+        $coverBusy = $answersBusy || $this->answer($application, $coverLetters, $actor, $since, fromLibrary: false);
 
         if ($application->autopilot_status === self::RUNNING && ! $coverBusy) {
             $this->finish($application, self::READY, $application->autopilot_note);
@@ -181,51 +177,27 @@ class ApplicationAutopilot
     }
 
     /**
-     * Copy the best-ranked resume into the application when it has none, and tailor it once per
-     * run.
-     *
-     * @return bool whether the resume is still being tailored
+     * Copy the best-ranked resume from the library into the application when it has none. It is
+     * used as it is: not tailored.
      *
      * @throws ValidationException
      */
-    private function tailorResume(JobApplication $application, JobAnalysis $analysis, User $actor, CarbonImmutable $since): bool
+    private function pickResume(JobApplication $application, JobAnalysis $analysis, User $actor): void
     {
-        $resume = ApplicationResume::query()->where('job_application_id', $application->id)->first();
-
-        if ($resume === null) {
-            $variant = self::bestVariant($analysis, $application->candidate_profile_id);
-
-            if ($variant === null) {
-                $this->note($application, __('There is no resume to tailor: add one on your Profile.'));
-
-                return false;
-            }
-
-            [$document, $snapshot] = $this->resumes->copyOf($variant);
-            $resume = $this->resumes->start($application, $variant, $document, $snapshot, $actor);
+        if (ApplicationResume::query()->where('job_application_id', $application->id)->exists()) {
+            return;
         }
 
-        if ($resume->isApproved()) {
-            return false;
+        $variant = self::bestVariant($analysis, $application->candidate_profile_id);
+
+        if ($variant === null) {
+            $this->note($application, __('There is no resume to use: add one on your Profile.'));
+
+            return;
         }
 
-        if ($resume->isGenerating()) {
-            return true;
-        }
-
-        $requestedThisRun = $resume->generation_requested_at !== null && $resume->generation_requested_at >= $since;
-
-        if (! $requestedThisRun) {
-            $this->resumes->requestTailoring($resume, $actor);
-
-            return true;
-        }
-
-        if ($resume->generation_status === 'failed') {
-            $this->finish($application, self::STOPPED, __('Tailoring the resume failed: :reason', ['reason' => $resume->generation_error ?? __('no reason given')]));
-        }
-
-        return false;
+        [$document, $snapshot] = $this->resumes->copyOf($variant);
+        $this->resumes->start($application, $variant, $document, $snapshot, $actor);
     }
 
     /**

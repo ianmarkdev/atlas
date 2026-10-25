@@ -134,7 +134,7 @@ test('stopping takes an application out of the background', function () {
     Queue::assertNothingPushed();
 });
 
-test('after the analysis it adds the questions and cover letter, tailors the best resume, answers from the library and drafts the rest', function () {
+test('after the analysis it adds the questions and cover letter, uses the best resume untailored, answers from the library and drafts the rest', function () {
     Queue::fake([GenerateAnswerDraft::class, TailorApplicationResume::class]);
     $candidate = candidateWithTwoFactor();
     autopilotResumeVariantOf($candidate, 'General', default: true);
@@ -154,12 +154,13 @@ test('after the analysis it adds the questions and cover letter, tailors the bes
         ->and($coverLetter->isCoverLetter())->toBeTrue()
         ->and($coverLetter->answer)->toBeNull()
         ->and(inWorkspaceOf($candidate, fn () => ApplicationResume::query()->sole()->based_on_variant_id))->toBe($best->id)
+        ->and(inWorkspaceOf($candidate, fn () => ApplicationResume::query()->sole()->generation_status))->toBeNull()
         ->and(autopilotStateOf($application)->autopilot_status)->toBe('running');
     Queue::assertPushed(GenerateAnswerDraft::class, 1);
-    Queue::assertPushed(TailorApplicationResume::class, 1);
+    Queue::assertNotPushed(TailorApplicationResume::class);
 });
 
-test('the cover letter is drafted once the resume and the other answers are written, then it is ready for review', function () {
+test('the cover letter is drafted once the other answers are written, then it is ready for review', function () {
     Queue::fake([GenerateAnswerDraft::class, TailorApplicationResume::class]);
     $candidate = candidateWithTwoFactor();
     autopilotResumeVariantOf($candidate, 'General', default: true);
@@ -168,12 +169,9 @@ test('the cover letter is drafted once the resume and the other answers are writ
     $this->artisan('app:prepare-applications')->assertSuccessful();
     [$bug, $coverLetter] = autopilotQuestionsOf($candidate, $application)->all();
 
+    expect($coverLetter->answer)->toBeNull();
+
     autopilotWrite($candidate, $bug, 'The invoice run that double-charged.');
-    $this->artisan('app:prepare-applications')->assertSuccessful();
-
-    expect(autopilotQuestionsOf($candidate, $application)->last()->answer)->toBeNull();
-
-    inWorkspaceOf($candidate, fn () => ApplicationResume::query()->sole()->forceFill(['generation_status' => null])->save());
     $this->artisan('app:prepare-applications')->assertSuccessful();
 
     expect(autopilotQuestionsOf($candidate, $application)->last()->answer->generation_status)->toBe('queued');
@@ -186,7 +184,7 @@ test('the cover letter is drafted once the resume and the other answers are writ
         ->and($application->autopilot_note)->toBeNull()
         ->and(autopilotQuestionsOf($candidate, $application)->every(fn (ApplicationQuestion $question): bool => ! $question->answer->isApproved()))->toBeTrue();
     Queue::assertPushed(GenerateAnswerDraft::class, 2);
-    Queue::assertPushed(TailorApplicationResume::class, 1);
+    Queue::assertNotPushed(TailorApplicationResume::class);
 });
 
 test('questions from a job description that may hold text aimed at the AI are not added, and the note says so', function () {
