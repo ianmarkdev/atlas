@@ -77,6 +77,8 @@ type Answer = {
         paragraph: number | null;
     } | null;
     ai: AiCheck | null;
+    /** Stock phrases and repeated paragraph openings in the saved text (StyleLint). */
+    style: StyleFinding[];
     /** The latest edit of an AI draft the AI learned from (M10). */
     feedback: {
         status: 'pending_analysis' | 'analysed' | 'failed';
@@ -84,6 +86,15 @@ type Answer = {
         suggestions: number;
         pending: number;
     } | null;
+};
+
+type StyleFinding = {
+    /** 0-based, as the server splits paragraphs. */
+    paragraph: number;
+    kind: 'stock_phrase' | 'filler_opening' | 'repeated_opening';
+    text: string;
+    /** The instruction for redrafting that paragraph. */
+    fix: string;
 };
 
 type ClaimLabel = 'verified' | 'inferred' | 'proposed' | 'hypothetical';
@@ -688,6 +699,7 @@ function QuestionCard({
     const hasPlaceholders = /\[confirm:[^\]]*\]/i.test(body);
 
     const needsReview = question.answer?.ai?.needs_review ?? false;
+    const style = question.answer?.style ?? [];
 
     const draftWithAi = (
         instruction: string | null,
@@ -927,6 +939,48 @@ function QuestionCard({
                         not backed by a verified fact. Open “AI check” to review
                         them, or edit the text, before approving.
                     </p>
+                )}
+                {style.length > 0 && !dirty && !approved && (
+                    <div className="flex flex-col gap-1 type-caption text-text-secondary">
+                        <p className="flex items-center gap-2">
+                            <AlertTriangle className="size-4" aria-hidden />
+                            Wording a hiring manager may read as filler:
+                        </p>
+                        <ul className="flex flex-col gap-1 pl-6">
+                            {style.map((finding) => (
+                                <li
+                                    key={`${finding.kind}-${finding.paragraph}-${finding.text}`}
+                                    className="flex flex-wrap items-center gap-2"
+                                >
+                                    <span>
+                                        Paragraph {finding.paragraph + 1}:{' '}
+                                        {finding.kind === 'repeated_opening'
+                                            ? `opens with “${finding.text}”, like an earlier paragraph`
+                                            : finding.kind === 'filler_opening'
+                                              ? `opens with “${finding.text}”`
+                                              : `“${finding.text}”`}
+                                    </span>
+                                    {question.can.update && (
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-6 px-2"
+                                            onClick={() =>
+                                                draftWithAi(
+                                                    finding.fix,
+                                                    finding.paragraph,
+                                                )
+                                            }
+                                            disabled={generating}
+                                        >
+                                            <Sparkles /> Redraft paragraph
+                                        </Button>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 )}
             </div>
 

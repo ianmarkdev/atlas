@@ -8,6 +8,7 @@ use App\Domain\Applications\ApplicationQuestion;
 use App\Domain\Applications\ApplicationQuestionService;
 use App\Domain\Applications\JobAnalysisService;
 use App\Domain\Applications\JobApplication;
+use App\Domain\Applications\StyleLint;
 use App\Domain\Feedback\FeedbackEvent;
 use App\Domain\Feedback\FeedbackService;
 use App\Domain\Knowledge\AnswerCategory;
@@ -110,6 +111,8 @@ class ApplicationQuestionController extends Controller
                             // False while CheckAnswerClaims has not labelled this draft (or could not).
                             'labelled' => $answer->currentVersion->grounding !== null,
                         ],
+                        // Stock phrases and repeated openings in the saved text, as hints.
+                        'style' => $answer->isApproved() ? [] : StyleLint::findings($answer->body()),
                         'feedback' => $learned === null ? null : [
                             'status' => $learned->status,
                             'error' => $learned->error,

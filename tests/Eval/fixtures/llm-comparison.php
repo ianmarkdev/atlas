@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Applications\StyleLint;
 use App\Jobs\GenerateAnswerDraft;
 
 /**
@@ -183,7 +184,7 @@ return [
         'variables' => [
             'company_name' => 'Fabrikam Pay', 'role_title' => 'Senior Backend Engineer', 'job_description' => $jobDescription,
             'question' => GenerateAnswerDraft::coverLetterTask([]),
-            'limit' => 'at most 280 words',
+            'limit' => 'at least 180 and at most 280 words, in three or four short paragraphs',
             'storyline' => '(none)', 'writing_rules' => '(none)', 'instruction' => '(none)', 'candidate_name' => 'Alex Morgan',
         ],
         'evidence' => $evidence,
@@ -192,7 +193,7 @@ return [
             'Opens with the role, closes in one sentence, and has no stock phrases or placeholders.',
         ],
         'checks' => [
-            'banned' => ['[Your Name]', '[confirm:', 'I am excited', 'I am writing to', 'strong background', 'proven track record', 'confident in my ability', 'equipped me', 'comprehensive understanding', 'eager to', 'look forward to the opportunity', 'passionate'],
+            'banned' => ['[Your Name]', '[confirm:', ...StyleLint::STOCK_PHRASES],
             'mentions' => ['Alex Morgan', 'Dear Hiring Team'],
         ],
     ],

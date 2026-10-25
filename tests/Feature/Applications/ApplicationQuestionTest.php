@@ -212,6 +212,26 @@ describe('approve', function () {
     });
 });
 
+test('the page points out stock phrases in a draft answer, with the redraft instruction, until it is approved', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = trackedApplicationOf($candidate);
+    $question = questionOn($candidate, $application);
+    answerTo($candidate, $application, $question, "Dear Hiring Team,\n\nI am eager to join a team that ships payments software to small merchants.");
+
+    $this->actingAs($candidate)
+        ->get(route('applications.questions.index', $application))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('questions.0.answer.style', [
+                ['paragraph' => 1, 'kind' => 'stock_phrase', 'text' => 'eager to', 'fix' => 'Say it plainly, without "eager to".'],
+            ]));
+
+    $this->actingAs($candidate)->patch(route('applications.questions.approve', [$application, $question]));
+
+    $this->actingAs($candidate)
+        ->get(route('applications.questions.index', $application))
+        ->assertInertia(fn (Assert $page) => $page->where('questions.0.answer.style', []));
+});
+
 test('answer versions cannot be edited once written', function () {
     $candidate = candidateWithTwoFactor();
     $application = trackedApplicationOf($candidate);

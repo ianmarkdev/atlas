@@ -20,6 +20,7 @@ use App\Domain\Applications\EvidencePackBuilder;
 use App\Domain\Applications\JobAnalysis;
 use App\Domain\Applications\JobAnalysisService;
 use App\Domain\Applications\ParagraphRedraft;
+use App\Domain\Applications\StyleLint;
 use App\Domain\Knowledge\CandidateProfile;
 use App\Domain\Knowledge\WritingPreference;
 use App\Domain\Knowledge\WritingPreferenceDrafts;
@@ -272,14 +273,23 @@ class GenerateAnswerDraft implements ShouldQueue
             __('Cover letter rules:'),
             __('1. Pick the 2 experiences in the evidence that best match the job\'s most important requirements. Leave the rest out, even if relevant. Do not walk through the resume.'),
             __('2. For each one: what the candidate built or did, the result if the evidence states one, then one sentence on why it matters for this job, in the job description\'s own words.'),
-            __('3. Open with the role and the strongest match, in one or two sentences. Do not start the letter with "I am".'),
+            __('3. The first sentence after the greeting names the role and the strongest match. Do not open with an employer name, "At …" or "I am".'),
             __('4. Close with one short sentence about discussing the role. No recap.'),
             __('5. Claim experience with a tool or domain only if the evidence shows it. Similar experience is not the same experience: describe it as similar, never as the tool itself.'),
-            __('6. Where a number is missing, leave it out and ask in clarification_questions; for numbers this replaces the placeholder rule. Never list placeholders or notes after the letter.'),
-            __('7. Plain sentences of mixed length. No two paragraphs start the same way. At most one short list of technologies (4 items).'),
-            __('8. Never use: "I am excited", "I am writing to", "strong background", "proven track record", "confident in my ability", "equipped me", "comprehensive understanding", "eager to", "look forward to the opportunity".'),
-            __('9. Greet with "Dear Hiring Team," and sign with the candidate\'s name.'),
+            __('6. Add no results, effects or benefits the evidence does not state, and keep the candidate\'s role as the evidence words it: "cut" stays "cut", not "led".'),
+            __('7. Where a number is missing, leave it out and ask in clarification_questions; for numbers this replaces the placeholder rule. Never list placeholders or notes after the letter.'),
+            __('8. Plain sentences of mixed length. No two paragraphs start with the same word, and none starts with :openings. At most one short list of technologies (4 items).', ['openings' => self::quotedList(StyleLint::FILLER_OPENINGS)]),
+            __('9. Never use: :phrases.', ['phrases' => self::quotedList(StyleLint::STOCK_PHRASES)]),
+            __('10. Greet with "Dear Hiring Team," and sign with the candidate\'s name.'),
         ]);
+    }
+
+    /**
+     * @param  list<string>  $phrases
+     */
+    private static function quotedList(array $phrases): string
+    {
+        return implode(', ', array_map(fn (string $phrase): string => "\"{$phrase}\"", $phrases));
     }
 
     private static function limitOf(ApplicationQuestion $question, bool $hasPointsToCover = false): string
@@ -288,7 +298,7 @@ class GenerateAnswerDraft implements ShouldQueue
             $question->word_limit !== null => __('at most :n words', ['n' => $question->word_limit]),
             $question->char_limit !== null => __('at most :n characters', ['n' => $question->char_limit]),
             $question->isCoverLetter() && $hasPointsToCover => __('about 300 to 450 words, in short paragraphs'),
-            $question->isCoverLetter() => __('about 180 to 280 words, in three or four short paragraphs'),
+            $question->isCoverLetter() => __('at least 180 and at most 280 words, in three or four short paragraphs'),
             default => __('concise: about 100 to 200 words'),
         };
     }
