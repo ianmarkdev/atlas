@@ -3,9 +3,11 @@
 namespace App\Domain\Ai;
 
 use App\Domain\Tenancy\BelongsToWorkspace;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
@@ -33,6 +35,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int|null $created_by
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
+ * @property-read User|null $creator
  * @property-read GenerationPayload|null $payload
  */
 class GenerationRun extends Model
@@ -52,6 +55,14 @@ class GenerationRun extends Model
     public function uniqueIds(): array
     {
         return ['ulid'];
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     /**

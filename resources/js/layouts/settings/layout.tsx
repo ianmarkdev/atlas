@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import { cn, toUrl } from '@/lib/utils';
+import { index as aiActivity } from '@/routes/ai-activity';
 import { index as aiComparisons } from '@/routes/ai-comparisons';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
@@ -35,7 +36,14 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
     const navItems: NavItem[] = [
         ...sidebarNavItems,
         ...(auth.role === 'candidate'
-            ? [{ title: 'Model comparison', href: aiComparisons(), icon: null }]
+            ? [
+                  { title: 'AI activity', href: aiActivity(), icon: null },
+                  {
+                      title: 'Model comparison',
+                      href: aiComparisons(),
+                      icon: null,
+                  },
+              ]
             : []),
     ];
 
