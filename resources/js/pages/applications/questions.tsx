@@ -91,7 +91,11 @@ type Answer = {
 type StyleFinding = {
     /** 0-based, as the server splits paragraphs. */
     paragraph: number;
-    kind: 'stock_phrase' | 'filler_opening' | 'repeated_opening';
+    kind:
+        | 'stock_phrase'
+        | 'long_paragraph'
+        | 'filler_opening'
+        | 'repeated_opening';
     text: string;
     /** The instruction for redrafting that paragraph. */
     fix: string;
@@ -958,7 +962,10 @@ function QuestionCard({
                                             ? `opens with “${finding.text}”, like an earlier paragraph`
                                             : finding.kind === 'filler_opening'
                                               ? `opens with “${finding.text}”`
-                                              : `“${finding.text}”`}
+                                              : finding.kind ===
+                                                  'long_paragraph'
+                                                ? `too long to skim (${finding.text})`
+                                                : `“${finding.text}”`}
                                     </span>
                                     {question.can.update && (
                                         <Button

@@ -4,11 +4,11 @@ namespace App\Domain\Applications;
 
 /**
  * Wording a hiring manager reads as filler, found in an answer's text without a model: stock
- * phrases, paragraphs that open with a filler transition, and paragraphs that open with the same
- * word. Hints for the candidate, never a block on approving. The stock phrases are also the ones
+ * phrases, paragraphs too long to skim, paragraphs that open with a filler transition, and
+ * paragraphs that open with the same word. Hints for the candidate, never a block on approving. The stock phrases are also the ones
  * the cover letter rules ban, so the writer and the lint agree.
  *
- * @phpstan-type Finding array{paragraph: int, kind: 'stock_phrase'|'filler_opening'|'repeated_opening', text: string, fix: string}
+ * @phpstan-type Finding array{paragraph: int, kind: 'stock_phrase'|'long_paragraph'|'filler_opening'|'repeated_opening', text: string, fix: string}
  */
 class StyleLint
 {
@@ -34,6 +34,13 @@ class StyleLint
     private const MIN_WORDS_FOR_OPENING = 8;
 
     /**
+     * A paragraph longer than either of these reads as a wall of text.
+     */
+    private const MAX_SENTENCES = 4;
+
+    private const MAX_WORDS = 90;
+
+    /**
      * The findings in paragraph order; `paragraph` is 0-based, as ParagraphRedraft splits the text,
      * and `fix` is the instruction for redrafting that paragraph.
      *
@@ -51,7 +58,14 @@ class StyleLint
                 }
             }
 
-            if (count(preg_split('/\s+/u', $paragraph) ?: []) < self::MIN_WORDS_FOR_OPENING) {
+            $words = count(preg_split('/\s+/u', $paragraph) ?: []);
+            $sentences = preg_match_all('/[.!?]+(?=\s+\p{Lu}|\s*$)/u', $paragraph);
+
+            if ($sentences > self::MAX_SENTENCES || $words > self::MAX_WORDS) {
+                $findings[] = ['paragraph' => $index, 'kind' => 'long_paragraph', 'text' => $sentences > self::MAX_SENTENCES ? __(':n sentences', ['n' => $sentences]) : __(':n words', ['n' => $words]), 'fix' => __('Cut this paragraph to at most :n sentences and :words words, keeping its main point.', ['n' => self::MAX_SENTENCES, 'words' => self::MAX_WORDS])];
+            }
+
+            if ($words < self::MIN_WORDS_FOR_OPENING) {
                 continue;
             }
 

@@ -32,3 +32,16 @@ test('a paragraph opening with the same word as an earlier one is found, except 
 test('the opening of a short paragraph such as a greeting or sign-off is not checked', function () {
     expect(StyleLint::findings("Also,\n\nBest regards,\nAlex Morgan\n\nBest regards,\nAlex"))->toBe([]);
 });
+
+test('a paragraph with more than four sentences or ninety words is found as too long', function (string $paragraph, string $text) {
+    expect(StyleLint::findings($paragraph))->toBe([
+        ['paragraph' => 0, 'kind' => 'long_paragraph', 'text' => $text, 'fix' => 'Cut this paragraph to at most 4 sentences and 90 words, keeping its main point.'],
+    ]);
+})->with([
+    'five sentences' => ['I built the billing API. I tuned its queries. I wrote its tests. I set up its CI. I ran its on-call rota.', '5 sentences'],
+    'ninety-one words' => ['I built '.implode(' ', array_fill(0, 89, 'things')).'.', '91 words'],
+]);
+
+test('a paragraph of four sentences is not too long, whatever abbreviations it holds', function () {
+    expect(StyleLint::findings('I work 9 a.m. to 5 p.m. on weekdays. I built the billing API. I tuned its queries. I wrote its tests.'))->toBe([]);
+});
