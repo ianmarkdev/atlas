@@ -10,8 +10,9 @@ use App\Domain\Ai\PromptInjectionScanner;
  * - every requirement's quote must come from the job description: `found` (verbatim, ignoring
  *   case and spacing), `close` (≥ 80% of its words appear in order-free overlap), or
  *   `not_found` (the model paraphrased or invented it — show it as unconfirmed);
- * - a question is kept only when its quote is copied from the job description or the notes: its
- *   words, in order, ignoring case and punctuation. The model understands how
+ * - a question is kept only when its quote, holding most of the question's words, is copied from
+ *   the job description or the notes (its words, in order, ignoring case and punctuation), or
+ *   the question itself is. The model understands how
  *   the text asks (lists, headings, layouts); the server only checks it did not invent the ask.
  *   The rest go to `dropped_questions`;
  * - the model's injection warnings are kept only when most of their words occur in the texts
@@ -74,7 +75,11 @@ class BriefChecker
         foreach ($questions as $question) {
             $question = is_array($question) ? $question : ['question' => $question];
             $text = trim(is_string($question['question'] ?? null) ? $question['question'] : '');
-            $source = self::sourceOf(is_string($question['quote'] ?? null) ? $question['quote'] : '', $sequences);
+            $quote = is_string($question['quote'] ?? null) ? $question['quote'] : '';
+            // A quote of something else (only the list's heading) proves nothing about this
+            // question: then the question itself must be copied from a text.
+            $source = (self::share(self::significantWords($text), self::words($quote)) >= 0.5 ? self::sourceOf($quote, $sequences) : null)
+                ?? self::sourceOf($text, $sequences);
 
             if ($text === '') {
                 continue;
@@ -129,6 +134,33 @@ class BriefChecker
     }
 
     /**
+     * The share of `$words` that also occur in `$in` (0 when there are no words).
+     *
+     * @param  list<string>  $words
+     * @param  list<string>  $in
+     */
+    private static function share(array $words, array $in): float
+    {
+        if ($words === []) {
+            return 0.0;
+        }
+
+        $lookup = array_flip($in);
+
+        return count(array_filter($words, fn (string $word): bool => isset($lookup[$word]))) / count($words);
+    }
+
+    /**
+     * The words that carry meaning (longer than two letters).
+     *
+     * @return list<string>
+     */
+    private static function significantWords(string $text): array
+    {
+        return array_values(array_filter(self::words($text), fn (string $word): bool => mb_strlen($word) > 2));
+    }
+
+    /**
      * Split model-written strings into those whose words mostly appear in the texts and those
      * that do not.
      *
@@ -148,7 +180,7 @@ class BriefChecker
                 continue;
             }
 
-            $itemWords = array_values(array_filter(self::words($text), fn (string $word): bool => mb_strlen($word) > 2));
+            $itemWords = self::significantWords($text);
             $present = array_filter($itemWords, fn (string $word): bool => isset($words[$word]));
 
             if ($itemWords !== [] && count($present) / count($itemWords) >= $threshold) {

@@ -21,11 +21,14 @@ test('a question is kept only when its quote is copied from the job description 
         ['question' => 'Do you have 5+ years of PHP experience?', 'quote' => 'Do you have 5+ years of PHP experience?', 'source' => 'job_description'],
         ['question' => 'Why do you want to join us?', 'quote' => 'Why do you want to join us?', 'source' => 'job_description'],
         ['question' => 'What is your rate?', 'quote' => 'rate', 'source' => 'notes'],
-    ]], $jd, "Please provide:\n\nYour hourly rate in USD.\n\nYour weekly availability.");
+        // Only the list's heading quoted: the question must then be copied from a text itself.
+        ['question' => 'Your GitHub profile.', 'quote' => 'Please provide:', 'source' => 'notes'],
+        ['question' => 'Your notice period.', 'quote' => 'Please provide:', 'source' => 'notes'],
+    ]], $jd, "Please provide:\n\nYour hourly rate in USD.\n\nYour weekly availability.\n\nYour GitHub profile.");
 
-    expect($brief['questions'])->toBe(['Why do you want to join us?', 'A system you scaled', 'Your hourly rate', 'Your weekly availability'])
-        ->and($brief['question_sources'])->toBe(['job_description', 'job_description', 'notes', 'notes'])
-        ->and($brief['dropped_questions'])->toBe(['Do you have 5+ years of PHP experience?', 'What is your rate?']);
+    expect($brief['questions'])->toBe(['Why do you want to join us?', 'A system you scaled', 'Your hourly rate', 'Your weekly availability', 'Your GitHub profile.'])
+        ->and($brief['question_sources'])->toBe(['job_description', 'job_description', 'notes', 'notes', 'notes'])
+        ->and($brief['dropped_questions'])->toBe(['Do you have 5+ years of PHP experience?', 'What is your rate?', 'Your notice period.']);
 });
 
 test('the server scans the notes as well as the job description for text aimed at the AI', function () use ($jd) {
