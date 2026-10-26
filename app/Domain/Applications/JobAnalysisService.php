@@ -2,6 +2,7 @@
 
 namespace App\Domain\Applications;
 
+use App\Domain\Ai\PromptInjectionScanner;
 use App\Domain\Audit\AuditLogger;
 use App\Jobs\AnalyseJobApplication;
 use App\Jobs\RefreshAnalysisMatches;
@@ -21,6 +22,7 @@ class JobAnalysisService
         private ResumeRanker $ranker,
         private ApplicationQuestionService $questions,
         private ClarificationService $clarifications,
+        private PromptInjectionScanner $scanner,
     ) {}
 
     /**
@@ -135,22 +137,26 @@ class JobAnalysisService
     }
 
     /**
-     * The questions the analysis found that are not on the application yet, keyed by their index
-     * in the brief. They are added only when someone confirms them: a job description may hold
-     * text aimed at the AI (docs/04 §4.8).
+     * The questions the analysis found, then those the application's notes ask (the how-to-apply
+     * notes from the extension), that are not on the application yet, keyed by their index in
+     * that list. They are added only when someone confirms them: a job description may hold text
+     * aimed at the AI (docs/04 §4.8).
      *
      * @return array<int, string>
      */
     public function questionsNotAdded(JobAnalysis $analysis): array
     {
         $existing = array_flip(array_map(self::normaliseQuestion(...), $analysis->application->questions()->pluck('prompt_text')->all()));
+        $found = [...array_values((array) ($analysis->brief['questions'] ?? [])), ...$this->questionsInNotes($analysis->application)];
         $notAdded = [];
 
-        foreach (array_values((array) ($analysis->brief['questions'] ?? [])) as $index => $question) {
+        foreach ($found as $index => $question) {
             $prompt = trim((string) $question);
+            $key = self::normaliseQuestion($prompt);
 
-            if ($prompt !== '' && ! isset($existing[self::normaliseQuestion($prompt)])) {
+            if ($prompt !== '' && ! isset($existing[$key])) {
                 $notAdded[$index] = $prompt;
+                $existing[$key] = true;
             }
         }
 
@@ -158,8 +164,41 @@ class JobAnalysisService
     }
 
     /**
-     * What the cover letter should cover: the questions the latest analysis found that are not on
-     * the application as questions of their own. None while the analysis warns of text aimed at
+     * What the application's notes ask applicants to send or answer (BriefChecker::askedIn).
+     * None when the notes hold text aimed at the AI: they may be pasted from the listing.
+     *
+     * @return list<string>
+     */
+    public function questionsInNotes(JobApplication $application): array
+    {
+        $notes = trim((string) $application->notes);
+
+        if ($notes === '' || $this->scanner->scan($notes) !== []) {
+            return [];
+        }
+
+        return BriefChecker::askedIn($notes);
+    }
+
+    /**
+     * The notes for the cover letter to cover as they are: only when nothing in them could be
+     * taken as a question (those become questions or points to cover), and never when they hold
+     * text aimed at the AI.
+     */
+    public function coverLetterNotes(JobApplication $application): string
+    {
+        $notes = trim((string) $application->notes);
+
+        if ($notes === '' || $this->scanner->scan($notes) !== [] || BriefChecker::askedIn($notes) !== []) {
+            return '';
+        }
+
+        return $notes;
+    }
+
+    /**
+     * What the cover letter should cover: the questions the latest analysis and the notes found
+     * that are not on the application as questions of their own. None while the analysis warns of text aimed at
      * the AI, since nobody has confirmed these points.
      *
      * @return list<string>

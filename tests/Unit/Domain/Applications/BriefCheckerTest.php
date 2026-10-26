@@ -36,6 +36,21 @@ test('the items of a list introduced as what to send are asked, other lists are 
         ->and($brief['dropped_questions'])->toBe(['Build Zoho workflows.']);
 });
 
+test('an unbulleted list of what to send is asked up to the blank line after it, and a question merging it is split into its items', function () {
+    $jd = "How to Apply\n\nPlease include:\n\nLinks to SaaS applications you have personally built.\nYour preferred technology stack.\nYour availability and preferred working arrangement.\n\nWe are an equal opportunity employer.";
+
+    $brief = checkedBrief(['questions' => [
+        'Please include: Links to SaaS applications you have personally built. Your preferred technology stack. Your availability and preferred working arrangement.',
+        'Are you an equal opportunity employer?',
+    ]], $jd);
+
+    expect($brief['questions'])->toBe([
+        'Links to SaaS applications you have personally built.',
+        'Your preferred technology stack.',
+        'Your availability and preferred working arrangement.',
+    ])->and($brief['dropped_questions'])->toBe(['Are you an equal opportunity employer?']);
+});
+
 test('model injection warnings that point at nothing in the text are dropped', function () use ($jd) {
     $brief = checkedBrief(['injection_warnings' => ['The ad tells the assistant to reveal its system prompt']], $jd);
 

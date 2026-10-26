@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings;
+namespace App\Http\Controllers\Developer;
 
 use App\Domain\Ai\LlmComparisonResult;
 use App\Http\Controllers\Controller;
@@ -37,7 +37,7 @@ class AiComparisonController extends Controller
         $results = $batch === null ? collect() : LlmComparisonResult::query()->where('batch', $batch)->orderBy('sample_key')->orderBy('blind_label')->get();
         $samples = $this->samples();
 
-        return Inertia::render('settings/ai-comparisons', [
+        return Inertia::render('developer/ai-comparisons', [
             'batches' => $batches->all(),
             'batch' => $batch,
             'samples' => $results->groupBy('sample_key')->map(fn (Collection $group, string $key): array => [

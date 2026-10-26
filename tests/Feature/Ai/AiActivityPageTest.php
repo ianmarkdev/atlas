@@ -48,7 +48,7 @@ test('the candidate sees outcomes, latency and usage per task for the period', f
     $this->actingAs($candidate)->get(route('ai-activity.index'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->component('settings/ai-activity')
+            ->component('developer/ai-activity')
             ->where('filters.days', 7)
             ->where('tasks', ['answer_writing', 'jd_analysis'])
             ->has('summary', 2)
@@ -88,7 +88,7 @@ test('a run shows its prompt and response while the payload is kept', function (
 
     $this->actingAs($candidate)->get(route('ai-activity.show', $run))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('settings/ai-activity-run')
+            ->component('developer/ai-activity-run')
             ->where('run.ulid', $run->ulid)
             ->where('run.created_by', $candidate->name)
             ->where('payload.system', 'You analyse job descriptions.')

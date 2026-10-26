@@ -1,11 +1,13 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
+    Activity,
     BookUser,
     GitPullRequestArrow,
     IdCard,
     LayoutGrid,
     MessageSquareText,
     PenLine,
+    Scale,
     Send,
     Users,
 } from 'lucide-react';
@@ -22,6 +24,8 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import { index as aiActivity } from '@/routes/ai-activity';
+import { index as aiComparisons } from '@/routes/ai-comparisons';
 import { index as applications } from '@/routes/applications';
 import { index as knowledge } from '@/routes/knowledge';
 import { index as answers } from '@/routes/knowledge/answers';
@@ -58,6 +62,18 @@ export function AppSidebar() {
             : []),
     ];
 
+    const developerItems: NavItem[] =
+        auth.role === 'candidate'
+            ? [
+                  { title: 'AI activity', href: aiActivity(), icon: Activity },
+                  {
+                      title: 'Model comparison',
+                      href: aiComparisons(),
+                      icon: Scale,
+                  },
+              ]
+            : [];
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
@@ -76,6 +92,9 @@ export function AppSidebar() {
                 <NavMain items={overviewItems} />
                 <NavMain items={careerItems} label="Career" />
                 <NavMain items={workspaceItems} label="Workspace" />
+                {developerItems.length > 0 && (
+                    <NavMain items={developerItems} label="Developer" />
+                )}
             </SidebarContent>
 
             <SidebarFooter>

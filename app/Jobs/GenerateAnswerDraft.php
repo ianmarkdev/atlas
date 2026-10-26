@@ -99,7 +99,7 @@ class GenerateAnswerDraft implements ShouldQueue
             ->get();
         $rules = $applicableRules;
         $points = $question->isCoverLetter() ? $analyses->coverLetterPoints($application) : [];
-        $notes = $question->isCoverLetter() ? trim((string) $application->notes) : '';
+        $notes = $question->isCoverLetter() ? $analyses->coverLetterNotes($application) : '';
         $variables = [
             'candidate_name' => CandidateProfile::current()->display_name,
             'company_name' => $application->companyLabel(),
@@ -264,7 +264,7 @@ class GenerateAnswerDraft implements ShouldQueue
         $notes = trim((string) $notes);
 
         if ($proposalAngle !== '') {
-            $task .= "\n".__('Lead with the skills below (the proposal angle, separated by spaces): choose the 2 experiences in the evidence that show them best. Claim none of them that the evidence does not show.')
+            $task .= "\n".__('Keywords: use each of the skills below (the proposal angle) by name in the letter, and choose the 2 experiences in the evidence that show them best. Claim none of them that the evidence does not show.')
                 ."\n<proposal_angle untrusted=\"true\">\n{$proposalAngle}\n</proposal_angle>";
         }
 

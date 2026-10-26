@@ -74,7 +74,7 @@ test('outputs are shown blind until scored, then the provider is revealed and su
 
     $this->actingAs($candidate)->get(route('ai-comparisons.index'))
         ->assertInertia(fn (Assert $page) => $page
-            ->component('settings/ai-comparisons')
+            ->component('developer/ai-comparisons')
             ->where('samples.0.results.0.provider', null)
             ->where('samples.0.results.0.label', 'A')
             ->where('summary', []));

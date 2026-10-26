@@ -16,6 +16,9 @@ use App\Domain\Ai\PromptInjectionScanner;
  */
 class BriefChecker
 {
+    /** A longer line after "Please include:" is prose, not an unbulleted item of the list. */
+    private const MAX_PLAIN_ITEM_LENGTH = 200;
+
     public function __construct(private PromptInjectionScanner $scanner) {}
 
     /**
@@ -38,7 +41,7 @@ class BriefChecker
 
         // Questions and the model's injection warnings must point at text that is really there
         // (the 3B model invents generic questions and warnings); the rest is kept aside, visibly.
-        [$brief['questions'], $brief['dropped_questions']] = self::matchQuestions((array) ($brief['questions'] ?? []), self::askedInText($jobDescription));
+        [$brief['questions'], $brief['dropped_questions']] = self::matchQuestions((array) ($brief['questions'] ?? []), self::askedIn($jobDescription));
         [$brief['injection_warnings'], $brief['dropped_injection_warnings']] = self::partition((array) ($brief['injection_warnings'] ?? []), $words, 0.5);
 
         $brief['server_injection_warnings'] = $this->scanner->scan($jobDescription);
@@ -47,41 +50,50 @@ class BriefChecker
     }
 
     /**
-     * What the job description itself asks the applicant: sentences ending in "?", prompts such
-     * as "Tell us…", "Describe…", "Please explain…", and the items of a list introduced as what
-     * to send ("Please provide:", "In your proposal, include:").
+     * What a text asks the applicant: sentences ending in "?", prompts such as "Tell us…",
+     * "Describe…", "Please explain…", and the items of a list introduced as what to send ("Please
+     * provide:", "In your proposal, include:"). Items may be bulleted, or plain short lines up to
+     * the first blank line after one.
      *
-     * @return list<list<string>> the words of each asked passage
+     * @return list<string>
      */
-    private static function askedInText(string $text): array
+    public static function askedIn(string $text): array
     {
         $asked = [];
         $inAskedList = false;
+        $plainItemsEnded = false;
+        $itemsInList = 0;
 
-        foreach (preg_split('/\n+/u', $text) ?: [] as $line) {
+        foreach (preg_split('/\R/u', $text) ?: [] as $line) {
             $line = trim($line);
 
             if ($line === '') {
+                $plainItemsEnded = $itemsInList > 0;
+
                 continue;
             }
 
             $isListItem = preg_match('/^(?:[-*•]|\d+[.)])\s+/u', $line) === 1;
+            $isPlainItem = ! $isListItem && ! $plainItemsEnded && ! str_ends_with($line, ':') && mb_strlen($line) <= self::MAX_PLAIN_ITEM_LENGTH;
 
-            if ($isListItem && $inAskedList) {
-                $asked[] = self::askedWords((string) preg_replace('/^(?:[-*•]|\d+[.)])\s+/u', '', $line));
+            if ($inAskedList && ($isListItem || $isPlainItem)) {
+                $asked[] = (string) preg_replace('/^(?:[-*•]|\d+[.)])\s+/u', '', $line);
+                $itemsInList++;
 
                 continue;
             }
 
             if (! $isListItem) {
                 $inAskedList = self::introducesAskedList($line);
+                $plainItemsEnded = false;
+                $itemsInList = 0;
             }
 
             foreach (preg_split('/(?<=[.!?])\s+/u', $line) ?: [] as $sentence) {
                 $sentence = trim((string) preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $sentence));
 
                 if ($sentence !== '' && (str_ends_with($sentence, '?') || preg_match('/^(please\s+)?(tell us|describe|explain|share|give (us )?an example|outline|summari[sz]e)\b/iu', $sentence) === 1)) {
-                    $asked[] = self::askedWords($sentence);
+                    $asked[] = $sentence;
                 }
             }
         }
@@ -109,16 +121,19 @@ class BriefChecker
 
     /**
      * Keep the model's questions that correspond to something the text asks (≥ 60% of the
-     * question's words in one asked passage); the rest are dropped as invented.
+     * question's words in one asked passage). A question that merges several asked passages (a
+     * whole "Please include:" list in one) is replaced by those passages, one question each. The
+     * rest are dropped as invented.
      *
      * @param  array<mixed>  $questions
-     * @param  list<list<string>>  $asked
+     * @param  list<string>  $asked
      * @return array{list<string>, list<string>}
      */
     private static function matchQuestions(array $questions, array $asked): array
     {
         $kept = [];
         $dropped = [];
+        $askedWords = array_map(self::askedWords(...), $asked);
 
         foreach ($questions as $question) {
             $text = trim(is_string($question) ? $question : '');
@@ -127,28 +142,49 @@ class BriefChecker
                 continue;
             }
 
-            $questionWords = array_values(array_filter(self::words($text), fn (string $word): bool => mb_strlen($word) > 2));
+            $questionWords = self::askedWords($text);
             $matches = false;
+            $merged = [];
 
-            foreach ($asked as $passage) {
-                $passageWords = array_flip($passage);
-                $present = array_filter($questionWords, fn (string $word): bool => isset($passageWords[$word]));
-
-                if ($questionWords !== [] && count($present) / count($questionWords) >= 0.6) {
+            foreach ($askedWords as $index => $passage) {
+                if (self::share($questionWords, $passage) >= 0.6) {
                     $matches = true;
 
                     break;
+                }
+
+                if (self::share($passage, $questionWords) >= 0.8) {
+                    $merged[] = $asked[$index];
                 }
             }
 
             if ($matches) {
                 $kept[] = $text;
+            } elseif (count($merged) >= 2) {
+                array_push($kept, ...$merged);
             } else {
                 $dropped[] = $text;
             }
         }
 
-        return [$kept, $dropped];
+        return [array_values(array_unique($kept)), $dropped];
+    }
+
+    /**
+     * The share of `$words` that also occur in `$in` (0 when there are no words).
+     *
+     * @param  list<string>  $words
+     * @param  list<string>  $in
+     */
+    private static function share(array $words, array $in): float
+    {
+        if ($words === []) {
+            return 0.0;
+        }
+
+        $lookup = array_flip($in);
+
+        return count(array_filter($words, fn (string $word): bool => isset($lookup[$word]))) / count($words);
     }
 
     /**

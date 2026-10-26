@@ -151,7 +151,7 @@ export default function AiActivity({
         <>
             <Head title="AI activity" />
 
-            <div className="space-y-8">
+            <div className="space-y-8 p-4">
                 <Heading
                     variant="small"
                     title="AI activity"
@@ -469,3 +469,7 @@ function RunTable({ runs }: { runs: Run[] }) {
         </div>
     );
 }
+
+AiActivity.layout = {
+    breadcrumbs: [{ title: 'AI activity', href: index() }],
+};

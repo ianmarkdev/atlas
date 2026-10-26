@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Settings;
+namespace App\Http\Controllers\Developer;
 
 use App\Domain\Ai\GenerationRun;
 use App\Domain\Applications\AnswerDraftVersion;
@@ -50,7 +50,7 @@ class AiActivityController extends Controller
             ->withQueryString()
             ->through(fn (GenerationRun $run): array => $this->presentRun($run));
 
-        return Inertia::render('settings/ai-activity', [
+        return Inertia::render('developer/ai-activity', [
             'filters' => ['days' => $days, 'task' => $task, 'status' => $status],
             'periods' => self::PERIODS,
             'statuses' => self::STATUSES,
@@ -66,7 +66,7 @@ class AiActivityController extends Controller
         $run->load(['creator:id,name', 'payload']);
         $payload = $run->payload;
 
-        return Inertia::render('settings/ai-activity-run', [
+        return Inertia::render('developer/ai-activity-run', [
             'run' => [
                 ...$this->presentRun($run),
                 'prompt_key' => $run->prompt_key,

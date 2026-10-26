@@ -10,6 +10,8 @@ use App\Http\Controllers\Applications\JdCollectionController;
 use App\Http\Controllers\Applications\JobAnalysisController;
 use App\Http\Controllers\Applications\JobApplicationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Developer\AiActivityController;
+use App\Http\Controllers\Developer\AiComparisonController;
 use App\Http\Controllers\Knowledge\AnswerLibraryController;
 use App\Http\Controllers\Knowledge\ClaimController;
 use App\Http\Controllers\Knowledge\CredentialController;
@@ -204,6 +206,15 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
         Route::patch('team/{user:ulid}/deactivate', [TeamController::class, 'deactivate'])->name('team.deactivate');
         Route::patch('team/{user:ulid}/reactivate', [TeamController::class, 'reactivate'])->name('team.reactivate');
         Route::post('team/{user:ulid}/password-link', [TeamController::class, 'passwordLink'])->name('team.password-link');
+    });
+
+    // Developer tools, candidate only: the audit of every AI call (outcomes, latency, usage and
+    // accuracy) and blind scoring of AI model comparisons (M4).
+    Route::prefix('developer')->middleware('can:edit-candidate-profile')->group(function () {
+        Route::get('ai-activity', [AiActivityController::class, 'index'])->name('ai-activity.index');
+        Route::get('ai-activity/{run:ulid}', [AiActivityController::class, 'show'])->name('ai-activity.show');
+        Route::get('model-comparison', [AiComparisonController::class, 'index'])->name('ai-comparisons.index');
+        Route::patch('model-comparison/{result}', [AiComparisonController::class, 'rate'])->name('ai-comparisons.rate');
     });
 });
 

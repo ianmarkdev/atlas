@@ -48,7 +48,7 @@ export default function AiActivityRun({
         <>
             <Head title={`AI run · ${run.task}`} />
 
-            <div className="space-y-6">
+            <div className="space-y-6 p-4">
                 <Link
                     href={index()}
                     className="type-body text-text-secondary underline-offset-4 hover:underline"
@@ -142,3 +142,7 @@ function Block({ title, text }: { title: string; text: string }) {
         </details>
     );
 }
+
+AiActivityRun.layout = {
+    breadcrumbs: [{ title: 'AI activity', href: index() }],
+};
