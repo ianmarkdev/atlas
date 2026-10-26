@@ -14,21 +14,22 @@ use Illuminate\Validation\ValidationException;
  */
 class KnowledgeRecordService
 {
-    public function __construct(private AuditLogger $audit) {}
+    public function __construct(private AuditLogger $audit, private ClaimService $claims) {}
 
     /**
      * @template TRecord of Employment|Project|Credential
      *
      * @param  TRecord  $record  unsaved model, already filled with validated attributes
+     * @param  bool  $imported  read from a document: stays proposed, whoever ran the import
      * @return TRecord
      */
-    public function create(Employment|Project|Credential $record, User $actor): Employment|Project|Credential
+    public function create(Employment|Project|Credential $record, User $actor, bool $imported = false): Employment|Project|Credential
     {
-        return DB::transaction(function () use ($record, $actor): Employment|Project|Credential {
+        return DB::transaction(function () use ($record, $actor, $imported): Employment|Project|Credential {
             $record->candidate_profile_id = CandidateProfile::current()->id;
             $record->created_by = $actor->id;
 
-            if ($actor->isCandidate()) {
+            if ($actor->isCandidate() && ! $imported) {
                 $this->markVerified($record, $actor);
             } else {
                 $record->status = KnowledgeStatus::Proposed;
@@ -75,15 +76,22 @@ class KnowledgeRecordService
         });
     }
 
+    /**
+     * The record's live claims are archived with it, so they stop backing generated text.
+     */
     public function archive(Employment|Project|Credential $record, User $actor): void
     {
-        $this->transition($record, $actor, 'archived', function () use ($record): void {
+        $this->transition($record, $actor, 'archived', function () use ($record, $actor): void {
             $record->status = KnowledgeStatus::Archived;
+
+            $record->claims()->whereIn('status', ClaimStatus::live())->get()
+                ->each(fn (Claim $claim) => $this->claims->archive($claim, $actor));
         });
     }
 
     /**
-     * Restored records come back as verified: only the candidate can restore.
+     * Restored records come back as verified: only the candidate can restore. Their archived
+     * claims stay archived and are restored one by one.
      */
     public function restore(Employment|Project|Credential $record, User $actor): void
     {

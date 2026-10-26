@@ -25,16 +25,17 @@ class ClaimService
     /**
      * @param  Model|null  $subject  employment, project or credential; null for a general claim
      * @param  bool  $allowNearDuplicate  the user saw the "similar claim" warning and chose to save anyway
+     * @param  'user_entered'|'imported'  $origin  an imported claim stays proposed, whoever ran the import
      *
      * @throws ValidationException on an exact duplicate, or a near duplicate that was not confirmed
      */
-    public function create(string $statement, ClaimKind $kind, ?Model $subject, User $actor, bool $allowNearDuplicate = false): Claim
+    public function create(string $statement, ClaimKind $kind, ?Model $subject, User $actor, bool $allowNearDuplicate = false, string $origin = 'user_entered'): Claim
     {
         $profile = CandidateProfile::current();
 
         $this->guardDuplicates($profile->id, $statement, $subject, null, $allowNearDuplicate);
 
-        return $this->translateRace(fn (): Claim => DB::transaction(function () use ($profile, $statement, $kind, $subject, $actor): Claim {
+        return $this->translateRace(fn (): Claim => DB::transaction(function () use ($profile, $statement, $kind, $subject, $actor, $origin): Claim {
             $claim = new Claim;
             $claim->forceFill([
                 'candidate_profile_id' => $profile->id,
@@ -42,14 +43,14 @@ class ClaimService
                 'subject_id' => $subject?->getKey(),
                 'kind' => $kind,
                 'status' => ClaimStatus::Proposed,
-                'origin' => 'user_entered',
+                'origin' => $origin,
                 'normalized_hash' => Claim::hashStatement($statement),
                 'created_by' => $actor->id,
             ])->save();
 
-            $revision = $this->appendRevision($claim, $statement, null, $actor);
+            $revision = $this->appendRevision($claim, $statement, null, $actor, $origin === 'imported' ? 'import' : 'manual');
 
-            if ($actor->isCandidate()) {
+            if ($actor->isCandidate() && $origin === 'user_entered') {
                 $this->markVerified($claim, $revision, $actor);
             }
 

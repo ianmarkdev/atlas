@@ -1,6 +1,8 @@
 <?php
 
 use App\Domain\Audit\AuditEvent;
+use App\Domain\Knowledge\Claim;
+use App\Domain\Knowledge\ClaimStatus;
 use App\Domain\Knowledge\Employment;
 use App\Domain\Knowledge\KnowledgeProposal;
 use App\Domain\Knowledge\KnowledgeStatus;
@@ -164,6 +166,23 @@ describe('status changes', function () {
 
         $this->actingAs($candidate)->patch(route('knowledge.employments.restore', $employment));
         expect($employment->refresh()->status)->toBe(KnowledgeStatus::Verified);
+    });
+
+    test('archiving an employment archives its live claims', function () {
+        $candidate = candidateWithTwoFactor();
+        $profile = profileOf($candidate);
+        $employment = Employment::factory()->forProfile($profile)->verified($candidate)->create();
+        $verified = Claim::factory()->forProfile($profile)->about($employment)->verified($candidate)->create();
+        $proposed = Claim::factory()->forProfile($profile)->about($employment)->create();
+        $rejected = Claim::factory()->forProfile($profile)->about($employment)->create(['status' => ClaimStatus::Rejected]);
+        $otherJob = Claim::factory()->forProfile($profile)->about(Employment::factory()->forProfile($profile)->create())->verified($candidate)->create();
+
+        $this->actingAs($candidate)->patch(route('knowledge.employments.archive', $employment));
+
+        expect($verified->refresh()->status)->toBe(ClaimStatus::Archived)
+            ->and($proposed->refresh()->status)->toBe(ClaimStatus::Archived)
+            ->and($rejected->refresh()->status)->toBe(ClaimStatus::Rejected)
+            ->and($otherJob->refresh()->status)->toBe(ClaimStatus::Verified);
     });
 
     test('a VA cannot archive an employment', function () {

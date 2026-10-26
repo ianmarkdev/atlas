@@ -39,9 +39,11 @@ yarn-error.log
 /.mcp.json
 /AGENTS.md
 /CLAUDE.md
+/PROFILE.md
 /boost.json
 /opencode.json
 /opencode.jsonc
 
 # Real candidate data, seeded locally only
 /database/seeders/IanGanutProfileSeeder.php
+/answers/*
