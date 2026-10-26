@@ -70,7 +70,7 @@ class EvalAnalysis extends Command
     }
 
     /**
-     * @param  array{company: string, role: string, text: string, must: list<string>, nice: list<string>, questions: ?int, injection: ?bool}  $case
+     * @param  array{company: string, role: string, text: string, notes: string, must: list<string>, nice: list<string>, questions: ?int, injection: ?bool}  $case
      * @return array<string, mixed>
      */
     private function evaluate(AiGateway $gateway, BriefChecker $checker, array $case, ?string $provider): array
@@ -80,6 +80,7 @@ class EvalAnalysis extends Command
                 'company_name' => $case['company'],
                 'role_title' => $case['role'],
                 'job_description' => $case['text'],
+                'application_notes' => $case['notes'] === '' ? '(none)' : $case['notes'],
             ], purpose: 'eval', provider: $provider);
         } catch (InvalidModelOutput $exception) {
             return ['status' => 'invalid_output', 'error' => implode('; ', array_slice($exception->errors, 0, 3))];
@@ -87,7 +88,7 @@ class EvalAnalysis extends Command
             return ['status' => 'failed', 'error' => $exception->getMessage()];
         }
 
-        $brief = $checker->check($result->data ?? [], $case['text']);
+        $brief = $checker->check($result->data ?? [], $case['text'], $case['notes']);
         $musts = (array) ($brief['must_haves'] ?? []);
         $nices = (array) ($brief['nice_to_haves'] ?? []);
         $quotes = array_column([...$musts, ...$nices], 'quote_check');
@@ -106,9 +107,13 @@ class EvalAnalysis extends Command
             'nice_as_must' => array_values(array_filter($expectedNice, fn (string $topic): bool => self::mentions($musts, $topic) && ! self::mentions($nices, $topic))),
             'quotes_grounded' => $quotes === [] ? null : count(array_filter($quotes, fn (string $check): bool => in_array($check, ['found', 'close'], true))) / count($quotes),
             'questions_found' => count((array) ($brief['questions'] ?? [])),
+            'questions' => $brief['questions'],
+            'dropped_questions' => $brief['dropped_questions'],
+            'injection_warnings' => $brief['injection_warnings'],
             'questions_expected' => $case['questions'],
             'injection_expected' => $case['injection'],
             'injection_model' => ((array) ($brief['injection_warnings'] ?? [])) !== [],
+            // Only the server's findings hold questions back; the model's are hints.
             'injection_server' => ((array) ($brief['server_injection_warnings'] ?? [])) !== [],
         ];
     }
@@ -139,7 +144,8 @@ class EvalAnalysis extends Command
             'questions_exact' => count(array_filter($questionCases, fn (array $result): bool => $result['questions_found'] === $result['questions_expected'])).'/'.count($questionCases),
             'injection_caught_by_model' => count(array_filter($injectionCases, fn (array $result): bool => $result['injection_model'])).'/'.count($injectionCases),
             'injection_caught_by_server' => count(array_filter($injectionCases, fn (array $result): bool => $result['injection_server'])).'/'.count($injectionCases),
-            'false_injection_alarms' => count(array_filter($succeeded, fn (array $result): bool => $result['injection_expected'] === false && ($result['injection_model'] || $result['injection_server']))),
+            'false_injection_alarms_by_model' => count(array_filter($succeeded, fn (array $result): bool => $result['injection_expected'] === false && $result['injection_model'])),
+            'false_injection_alarms_by_server' => count(array_filter($succeeded, fn (array $result): bool => $result['injection_expected'] === false && $result['injection_server'])),
         ];
 
         $this->newLine();
@@ -185,13 +191,14 @@ class EvalAnalysis extends Command
                 'company' => $application->company_name,
                 'role' => $application->role_title,
                 'text' => (string) $application->jobDescription(),
+                'notes' => (string) $application->notes,
             ]])->all();
     }
 
     /**
      * One eval case with defaults, from a fixture entry or a real application.
      *
-     * @return array{company: string, role: string, text: string, must: list<string>, nice: list<string>, questions: ?int, injection: ?bool}
+     * @return array{company: string, role: string, text: string, notes: string, must: list<string>, nice: list<string>, questions: ?int, injection: ?bool}
      */
     private static function caseOf(mixed $case): array
     {
@@ -202,6 +209,7 @@ class EvalAnalysis extends Command
             'company' => is_string($case['company'] ?? null) ? $case['company'] : '',
             'role' => is_string($case['role'] ?? null) ? $case['role'] : '',
             'text' => is_string($case['text'] ?? null) ? $case['text'] : '',
+            'notes' => is_string($case['notes'] ?? null) ? $case['notes'] : '',
             'must' => $strings($case['must'] ?? []),
             'nice' => $strings($case['nice'] ?? []),
             'questions' => is_int($case['questions'] ?? null) ? $case['questions'] : null,

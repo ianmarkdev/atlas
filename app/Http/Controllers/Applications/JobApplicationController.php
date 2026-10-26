@@ -318,7 +318,8 @@ class JobApplicationController extends Controller
             'must_haves' => count($musts),
             'strong' => $coverage['strong'] ?? 0,
             'gaps' => $coverage['gap'] ?? 0,
-            'injection_warnings' => count((array) ($analysis->brief['server_injection_warnings'] ?? [])) + count((array) ($analysis->brief['injection_warnings'] ?? [])),
+            // The server's findings only: the model's own warnings are hints, shown on the analysis page.
+            'injection_warnings' => count((array) ($analysis->brief['server_injection_warnings'] ?? [])),
             'error_message' => $analysis->error_message,
             'is_latest_posting' => $analysis->job_posting_id === $application->posting?->id,
         ];

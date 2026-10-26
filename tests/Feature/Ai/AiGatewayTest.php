@@ -40,7 +40,7 @@ function analysisOutput(array $overrides = []): array
 function analyse(User $candidate, array $options = []): mixed
 {
     return inWorkspaceOf($candidate, fn () => app(AiGateway::class)->run('jd_analysis', 'jd_analysis', [
-        'company_name' => 'Fabrikam', 'role_title' => 'Engineer', 'job_description' => 'We need PostgreSQL.',
+        'company_name' => 'Fabrikam', 'role_title' => 'Engineer', 'job_description' => 'We need PostgreSQL.', 'application_notes' => '(none)',
     ], $candidate, ...$options));
 }
 
@@ -52,7 +52,7 @@ test('a valid structured output is returned and the run is recorded without its 
 
     expect($result->data['seniority'])->toBe('senior')
         ->and($result->run->only(['task', 'prompt_key', 'prompt_version', 'provider', 'status', 'attempts', 'cost_micros', 'created_by']))
-        ->toBe(['task' => 'jd_analysis', 'prompt_key' => 'jd_analysis', 'prompt_version' => 1, 'provider' => 'fake', 'status' => 'succeeded', 'attempts' => 1, 'cost_micros' => 0, 'created_by' => $candidate->id])
+        ->toBe(['task' => 'jd_analysis', 'prompt_key' => 'jd_analysis', 'prompt_version' => 2, 'provider' => 'fake', 'status' => 'succeeded', 'attempts' => 1, 'cost_micros' => 0, 'created_by' => $candidate->id])
         ->and($fake->requests[0]->schema['required'])->toContain('injection_warnings')
         ->and($fake->requests[0]->messages[0]['content'])->toContain('<job_description untrusted="true">');
 });

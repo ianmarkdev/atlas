@@ -1,4 +1,4 @@
-import { Form, Head, Link, router, usePoll } from "@inertiajs/react";
+import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
 import {
     AlertTriangle,
     ArrowLeft,
@@ -7,34 +7,34 @@ import {
     CircleSlash,
     Plus,
     RefreshCw,
-} from "lucide-react";
-import { useEffect, useState } from "react";
-import ClarificationController from "@/actions/App/Http/Controllers/Applications/ClarificationController";
-import JobAnalysisController from "@/actions/App/Http/Controllers/Applications/JobAnalysisController";
-import JobApplicationController from "@/actions/App/Http/Controllers/Applications/JobApplicationController";
-import Heading from "@/components/heading";
-import InputError from "@/components/input-error";
-import { NativeSelect } from "@/components/native-select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import ClarificationController from '@/actions/App/Http/Controllers/Applications/ClarificationController';
+import JobAnalysisController from '@/actions/App/Http/Controllers/Applications/JobAnalysisController';
+import JobApplicationController from '@/actions/App/Http/Controllers/Applications/JobApplicationController';
+import Heading from '@/components/heading';
+import InputError from '@/components/input-error';
+import { NativeSelect } from '@/components/native-select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { timeAgo } from "@/lib/time";
-import { create as createClaim } from "@/routes/knowledge/claims";
-import { companyLabel } from "@/lib/applications";
-import { index as applicationsIndex } from "@/routes/applications";
+} from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
+import { timeAgo } from '@/lib/time';
+import { create as createClaim } from '@/routes/knowledge/claims';
+import { companyLabel } from '@/lib/applications';
+import { index as applicationsIndex } from '@/routes/applications';
 
 type Requirement = {
     requirement: string;
     quote: string;
-    quote_check: "found" | "close" | "not_found" | "missing";
+    quote_check: 'found' | 'close' | 'not_found' | 'missing';
 };
 
 type Brief = {
@@ -63,16 +63,16 @@ type Evidence = {
 };
 
 type Match = {
-    kind: "must" | "nice";
+    kind: 'must' | 'nice';
     index: number;
     requirement: string;
-    coverage: "strong" | "partial" | "gap";
+    coverage: 'strong' | 'partial' | 'gap';
     evidence: Evidence[];
 };
 
 type Analysis = {
     ulid: string;
-    status: "queued" | "running" | "succeeded" | "failed" | "invalid_output";
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'invalid_output';
     brief: Brief | null;
     matches: {
         semantic: boolean;
@@ -113,12 +113,12 @@ export default function AnalysisPage({
 }) {
     const pending =
         analysis !== null &&
-        (analysis.status === "queued" || analysis.status === "running");
+        (analysis.status === 'queued' || analysis.status === 'running');
     // Poll while the analysis or a "Refresh evidence" is on its way.
     const waiting = pending || (analysis?.refreshing ?? false);
     const poll = usePoll(
         3000,
-        { only: ["analysis", "history"] },
+        { only: ['analysis', 'history'] },
         { autoStart: false },
     );
 
@@ -143,7 +143,7 @@ export default function AnalysisPage({
                     className="inline-flex items-center gap-1.5 self-start text-sm text-text-secondary focus-ring hover:text-text-primary"
                 >
                     <ArrowLeft className="size-4" aria-hidden />
-                    {application.role_title} ·{" "}
+                    {application.role_title} ·{' '}
                     {companyLabel(application.company_name)}
                 </Link>
 
@@ -157,10 +157,10 @@ export default function AnalysisPage({
                             <NativeSelect
                                 aria-label="Analysis version"
                                 className="h-9 w-auto"
-                                value={analysis?.ulid ?? ""}
+                                value={analysis?.ulid ?? ''}
                                 options={history.map((item, i) => ({
                                     value: item.ulid,
-                                    label: `${i === 0 ? "Latest" : `#${history.length - i}`} · ${item.created_at ? new Date(item.created_at).toLocaleString() : ""} · ${item.status}`,
+                                    label: `${i === 0 ? 'Latest' : `#${history.length - i}`} · ${item.created_at ? new Date(item.created_at).toLocaleString() : ''} · ${item.status}`,
                                 }))}
                                 onChange={(event) =>
                                     router.get(
@@ -186,8 +186,8 @@ export default function AnalysisPage({
                                             disabled={processing || pending}
                                         >
                                             {analysis === null
-                                                ? "Analyse"
-                                                : "Re-analyse"}
+                                                ? 'Analyse'
+                                                : 'Re-analyse'}
                                         </Button>
                                         {errors.analysis && (
                                             <p className="text-xs text-text-error">
@@ -204,33 +204,33 @@ export default function AnalysisPage({
                 {analysis === null ? (
                     <p className="rounded-kraken-sm border border-dashed border-border-input p-6 type-body text-text-muted">
                         {application.has_job_description
-                            ? "Not analysed yet."
-                            : "Paste the job description on the application first."}
+                            ? 'Not analysed yet.'
+                            : 'Paste the job description on the application first.'}
                     </p>
                 ) : pending ? (
                     <p
                         className="rounded-kraken-sm border border-border-accent-subtle bg-surface-accent-subtle p-6 type-body text-text-primary"
                         aria-live="polite"
                     >
-                        {analysis.status === "queued"
-                            ? "Waiting to start…"
-                            : "Analysing… with a local model this can take a minute or two."}{" "}
+                        {analysis.status === 'queued'
+                            ? 'Waiting to start…'
+                            : 'Analysing… with a local model this can take a minute or two.'}{' '}
                         This page updates by itself.
-                        {analysis.status === "queued" &&
+                        {analysis.status === 'queued' &&
                             analysis.created_at !== null &&
                             Date.now() -
                                 new Date(analysis.created_at).getTime() >
                                 20_000 && (
                                 <span className="mt-2 block type-caption text-text-secondary">
                                     Still waiting? Background jobs need a queue
-                                    worker. Start one in a terminal with{" "}
-                                    <code>php artisan queue:work</code> (or run{" "}
+                                    worker. Start one in a terminal with{' '}
+                                    <code>php artisan queue:work</code> (or run{' '}
                                     <code>composer run dev</code>, which starts
                                     it for you).
                                 </span>
                             )}
                     </p>
-                ) : analysis.status !== "succeeded" ||
+                ) : analysis.status !== 'succeeded' ||
                   analysis.brief === null ? (
                     <p
                         role="alert"
@@ -268,11 +268,13 @@ function BriefView({
     clarifications: Clarification[];
     subjects: { value: string; label: string }[];
 }) {
-    const warnings = [
-        ...brief.server_injection_warnings,
-        ...brief.injection_warnings,
-    ];
-    const matchFor = (kind: "must" | "nice", index: number) =>
+    // Only the server's findings hold questions back; the model's own warnings are hints
+    // (small models flag what the listing asks applicants).
+    const warnings = brief.server_injection_warnings;
+    const modelWarnings = brief.injection_warnings.filter(
+        (warning) => !warnings.includes(warning),
+    );
+    const matchFor = (kind: 'must' | 'nice', index: number) =>
         analysis.matches?.requirements.find(
             (m) => m.kind === kind && m.index === index,
         );
@@ -287,7 +289,7 @@ function BriefView({
                     `analysed ${timeAgo(analysis.completed_at)}`}
                 {analysis.requested_by && ` by ${analysis.requested_by}`}
                 {!analysis.is_latest_posting &&
-                    " · the job description has changed since: re-analyse to update"}
+                    ' · the job description has changed since: re-analyse to update'}
             </p>
 
             {brief.shortened_input && (
@@ -301,7 +303,7 @@ function BriefView({
                     />
                     <span>
                         The job description was too long for the model, so only
-                        its first{" "}
+                        its first{' '}
                         {Math.round(
                             (brief.shortened_input.read_characters /
                                 brief.shortened_input.total_characters) *
@@ -329,6 +331,24 @@ function BriefView({
                     </p>
                     <ul className="list-disc pl-5 text-text-primary">
                         {[...new Set(warnings)].map((warning) => (
+                            <li key={warning}>{warning}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            {modelWarnings.length > 0 && (
+                <div className="space-y-1 rounded-kraken-sm border border-border-subtle p-4 text-sm">
+                    <p className="font-medium text-text-secondary">
+                        The AI also flagged these passages
+                    </p>
+                    <p className="text-text-muted">
+                        Often false alarms: the server's own check found nothing
+                        in them, so they do not hold anything back. Review them
+                        if they look odd.
+                    </p>
+                    <ul className="list-disc pl-5 text-text-secondary">
+                        {[...new Set(modelWarnings)].map((warning) => (
                             <li key={warning}>{warning}</li>
                         ))}
                     </ul>
@@ -387,13 +407,13 @@ function BriefView({
                                     <RefreshCw
                                         className={
                                             analysis.refreshing
-                                                ? "animate-spin"
+                                                ? 'animate-spin'
                                                 : undefined
                                         }
-                                    />{" "}
+                                    />{' '}
                                     {analysis.refreshing
-                                        ? "Refreshing…"
-                                        : "Refresh evidence"}
+                                        ? 'Refreshing…'
+                                        : 'Refresh evidence'}
                                 </Button>
                             )}
                         </Form>
@@ -401,7 +421,7 @@ function BriefView({
                 }
                 note={
                     analysis.matches && !analysis.matches.semantic
-                        ? `Keyword matching only: ${analysis.matches.semantic_reason ?? "embeddings unavailable"}`
+                        ? `Keyword matching only: ${analysis.matches.semantic_reason ?? 'embeddings unavailable'}`
                         : null
                 }
             />
@@ -437,7 +457,7 @@ type Clarification = {
     ulid: string;
     requirement: string;
     question: string;
-    status: "open" | "answered";
+    status: 'open' | 'answered';
     answer: string | null;
     answered_by: string | null;
 };
@@ -457,7 +477,7 @@ function GapsCard({
     subjects: { value: string; label: string }[];
     canUpdate: boolean;
 }) {
-    const open = clarifications.filter((c) => c.status === "open");
+    const open = clarifications.filter((c) => c.status === 'open');
 
     return (
         <Card>
@@ -465,14 +485,14 @@ function GapsCard({
                 <CardTitle>Gaps to fill</CardTitle>
                 <CardDescription>
                     {open.length === 0
-                        ? "All gaps answered."
-                        : `${open.length} must-have${open.length === 1 ? "" : "s"} with no evidence in your library. If you have the experience, add it; it becomes a bullet point you can use everywhere.`}
+                        ? 'All gaps answered.'
+                        : `${open.length} must-have${open.length === 1 ? '' : 's'} with no evidence in your library. If you have the experience, add it; it becomes a bullet point you can use everywhere.`}
                 </CardDescription>
             </CardHeader>
             <CardContent>
                 <ul className="space-y-4">
                     {clarifications.map((clarification) =>
-                        clarification.status === "answered" ? (
+                        clarification.status === 'answered' ? (
                             <li
                                 key={clarification.ulid}
                                 className="flex gap-2 text-sm text-text-secondary"
@@ -484,7 +504,7 @@ function GapsCard({
                                 <span>
                                     <span className="font-medium text-text-primary">
                                         {clarification.requirement}
-                                    </span>{" "}
+                                    </span>{' '}
                                     — {clarification.answer}
                                     {clarification.answered_by &&
                                         ` (${clarification.answered_by})`}
@@ -581,11 +601,11 @@ function GapAnswerForm({
 const coverageBadge = {
     strong: {
         icon: CheckCircle2,
-        label: "Strong evidence",
-        variant: "default",
+        label: 'Strong evidence',
+        variant: 'default',
     },
-    partial: { icon: CircleDashed, label: "Partial", variant: "secondary" },
-    gap: { icon: CircleSlash, label: "Gap", variant: "destructive" },
+    partial: { icon: CircleDashed, label: 'Partial', variant: 'secondary' },
+    gap: { icon: CircleSlash, label: 'Gap', variant: 'destructive' },
 } as const;
 
 function RequirementList({
@@ -597,9 +617,9 @@ function RequirementList({
     note,
 }: {
     title: string;
-    kind: "must" | "nice";
+    kind: 'must' | 'nice';
     items: Requirement[];
-    matchFor: (kind: "must" | "nice", index: number) => Match | undefined;
+    matchFor: (kind: 'must' | 'nice', index: number) => Match | undefined;
     headerAction?: React.ReactNode;
     note?: string | null;
 }) {
@@ -632,7 +652,7 @@ function RequirementList({
                                     </p>
                                     {coverage && (
                                         <Badge variant={coverage.variant}>
-                                            <coverage.icon aria-hidden />{" "}
+                                            <coverage.icon aria-hidden />{' '}
                                             {coverage.label}
                                         </Badge>
                                     )}
@@ -640,9 +660,9 @@ function RequirementList({
                                 {item.quote && (
                                     <p className="type-caption text-text-muted">
                                         “{item.quote}”
-                                        {item.quote_check === "not_found" && (
+                                        {item.quote_check === 'not_found' && (
                                             <span className="text-text-error">
-                                                {" "}
+                                                {' '}
                                                 · not found in the job
                                                 description (AI paraphrase)
                                             </span>
@@ -659,7 +679,7 @@ function RequirementList({
                                                     className="flex gap-2 rounded-kraken-sm bg-surface-card px-2 py-1.5 text-sm text-text-secondary"
                                                 >
                                                     {evidence.status ===
-                                                        "proposed" && (
+                                                        'proposed' && (
                                                         <Badge variant="outline">
                                                             unverified
                                                         </Badge>
@@ -674,7 +694,7 @@ function RequirementList({
                                     match && (
                                         <Link
                                             href={createClaim({
-                                                query: { subject: "general" },
+                                                query: { subject: 'general' },
                                             })}
                                             className="inline-flex items-center gap-1 type-caption text-text-accent focus-ring hover:underline"
                                         >
@@ -714,9 +734,9 @@ function QuestionsFound({
             <CardHeader>
                 <CardTitle>Questions found</CardTitle>
                 <CardDescription>
-                    Questions the job description asks you to answer. Add them
-                    to the application to answer them there; the AI cover letter
-                    covers any you don&apos;t add.
+                    What the job description and your notes ask you to answer or
+                    send. Add them to the application to answer them there; the
+                    AI cover letter covers any you don&apos;t add.
                 </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -746,7 +766,7 @@ function QuestionsFound({
                                     {question}
                                     {added && (
                                         <span className="type-caption text-text-muted">
-                                            {" "}
+                                            {' '}
                                             · already on the application
                                         </span>
                                     )}
@@ -770,8 +790,8 @@ function QuestionsFound({
                             )
                         }
                     >
-                        <Plus /> Add {selected.length}{" "}
-                        {selected.length === 1 ? "question" : "questions"}
+                        <Plus /> Add {selected.length}{' '}
+                        {selected.length === 1 ? 'question' : 'questions'}
                     </Button>
                 )}
             </CardContent>
@@ -781,7 +801,7 @@ function QuestionsFound({
 
 AnalysisPage.layout = {
     breadcrumbs: [
-        { title: "Applications", href: applicationsIndex() },
-        { title: "Job analysis", href: applicationsIndex() },
+        { title: 'Applications', href: applicationsIndex() },
+        { title: 'Job analysis', href: applicationsIndex() },
     ],
 };

@@ -60,12 +60,15 @@ return [
         'jd_analysis' => [
             'provider' => env('AI_JD_ANALYSIS_PROVIDER'),
             'models' => [
-                'ollama' => env('AI_JD_ANALYSIS_OLLAMA_MODEL', 'qwen2.5:3b'),
+                'ollama' => env('AI_JD_ANALYSIS_OLLAMA_MODEL', 'qwen2.5:7b'),
                 'claude' => env('AI_JD_ANALYSIS_CLAUDE_MODEL', 'claude-haiku-5-5'),
             ],
-            'max_tokens' => 2000,
+            // Each question comes with its quote, so a listing that asks for many things needs room.
+            'max_tokens' => 3000,
             'temperature' => 0.0,
-            'timeout' => 180,
+            // The 7B model partly on the CPU takes 2–6 minutes on a long listing; with one repair
+            // attempt this stays inside AnalyseJobApplication's 900 s.
+            'timeout' => 420,
             'context' => $context,
         ],
         'answer_writing' => [

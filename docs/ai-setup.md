@@ -6,8 +6,8 @@ unless you explicitly configure it. Two local models are used:
 | Use | Model | Config |
 |---|---|---|
 | Embeddings for search (M6) | `bge-m3` | `config/embeddings.php` |
-| Text generation (M4): job-description analysis, claim checking | `qwen2.5:3b` | `config/ai.php` |
-| Text generation (M4): answers and cover letters | `qwen2.5:7b` | `config/ai.php` |
+| Text generation (M4): claim checking | `qwen2.5:3b` | `config/ai.php` |
+| Text generation (M4): job-description analysis, answers and cover letters | `qwen2.5:7b` | `config/ai.php` |
 
 Embeddings and text generation are configured separately; changing one never changes the other.
 

@@ -61,11 +61,14 @@ class AnalyseJobApplication implements ShouldQueue
         $analysis->forceFill(['status' => 'running'])->save();
         $application = $analysis->application;
         $jobDescription = $analysis->posting->raw_text;
+        $notes = trim((string) $application->notes);
 
+        // The notes (how to apply, often copied from the listing) are read for the questions they ask.
         $variables = [
             'company_name' => $application->companyLabel(),
             'role_title' => $application->role_title,
             'job_description' => '',
+            'application_notes' => $notes === '' ? '(none)' : $notes,
         ];
 
         try {
@@ -92,7 +95,7 @@ class AnalyseJobApplication implements ShouldQueue
             return;
         }
 
-        $brief = $checker->check($result->data ?? [], $jobDescription);
+        $brief = $checker->check($result->data ?? [], $jobDescription, $notes);
         $brief['shortened_input'] = $variables['job_description'] === $jobDescription ? null : [
             'read_characters' => mb_strlen($variables['job_description']),
             'total_characters' => mb_strlen($jobDescription),

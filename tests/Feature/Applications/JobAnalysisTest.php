@@ -41,12 +41,22 @@ function briefOutput(array $overrides = []): array
         ],
         'nice_to_haves' => [['requirement' => 'German language', 'quote' => 'Nice to have: German.']],
         'employer_language' => ['senior engineer'],
-        'questions' => ['Why do you want to join us?'],
+        'questions' => [askedIn('Why do you want to join us?', 'Tell us why you want to join us.')],
         'red_flags' => [],
         // The model "missed" the injection: the server must still catch it.
         'injection_warnings' => [],
         ...$overrides,
     ];
+}
+
+/**
+ * A question as the model returns it, quoting the job description (or the notes).
+ *
+ * @return array{question: string, quote: string, source: string}
+ */
+function askedIn(string $question, ?string $quote = null, string $source = 'job_description'): array
+{
+    return ['question' => $question, 'quote' => $quote ?? $question, 'source' => $source];
 }
 
 function latestAnalysisOf(User $candidate): JobAnalysis
@@ -68,7 +78,7 @@ test('analysing stores a checked brief and matches each requirement to library e
     $analysis = latestAnalysisOf($candidate);
     $requirements = collect($analysis->matches['requirements']);
     expect($analysis->status)->toBe('succeeded')
-        ->and($analysis->prompt_version)->toBe(1)
+        ->and($analysis->prompt_version)->toBe(2)
         ->and($analysis->job_posting_id)->toBe($application->posting->id)
         ->and($analysis->brief['must_haves'][0]['quote_check'])->toBe('found')
         ->and($analysis->brief['must_haves'][1]['quote_check'])->toBe('not_found')
@@ -81,7 +91,7 @@ test('analysing stores a checked brief and matches each requirement to library e
 });
 
 test("a job description too long for the model's window is analysed from its start, and the brief says how much was read", function () {
-    config(['ai.tasks.jd_analysis.context' => 3000]);
+    config(['ai.tasks.jd_analysis.context' => 4000]);
     $candidate = candidateWithTwoFactor();
     $jobDescription = implode("\n", array_map(fn (int $n): string => "Line {$n} of a very long job description.", range(1, 300)));
     $application = analysedApplicationOf($candidate, $jobDescription);
@@ -94,7 +104,7 @@ test("a job description too long for the model's window is analysed from its sta
     expect($request->messages[0]['content'])->toContain('Line 1 of a very long job description.')
         ->and($request->messages[0]['content'])->not->toContain('Line 300 of')
         ->and($request->messages[0]['content'])->toContain("[… the rest of the job description was left out to fit the model's window]")
-        ->and(mb_strlen($request->system) + mb_strlen($request->messages[0]['content']))->toBeLessThanOrEqual((int) ((3000 - 2000) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN)
+        ->and(mb_strlen($request->system) + mb_strlen($request->messages[0]['content']))->toBeLessThanOrEqual((int) ((4000 - 3000) * (1 - PromptBudget::MARGIN)) * PromptBudget::CHARACTERS_PER_TOKEN)
         ->and($shortened['total_characters'])->toBe(mb_strlen($jobDescription))
         ->and($shortened['read_characters'])->toBeLessThan($shortened['total_characters']);
 
@@ -173,7 +183,7 @@ test('refreshing evidence re-matches against the current library without calling
 test('questions found are added to the application once', function () {
     $candidate = candidateWithTwoFactor();
     $application = analysedApplicationOf($candidate);
-    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => ['Why do you want to join us?', 'What is your notice period?']])]));
+    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => [askedIn('Why do you want to join us?', 'Tell us why you want to join us.'), askedIn('What is your notice period?')]])]));
     $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
     $analysis = latestAnalysisOf($candidate);
 
@@ -192,13 +202,13 @@ test('questions found are added to the application once', function () {
             ->component('applications/analysis')
             ->where('analysis.status', 'succeeded')
             ->where('analysis.question_already_added', [true, true])
-            ->where('analysis.model', 'fake/qwen2.5:3b'));
+            ->where('analysis.model', 'fake/qwen2.5:7b'));
 });
 
 test('the questions page offers the questions found that are not on the list yet', function () {
     $candidate = candidateWithTwoFactor();
     $application = analysedApplicationOf($candidate);
-    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => ['Why do you want to join us?', 'What is your notice period?']])]));
+    app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => [askedIn('Why do you want to join us?', 'Tell us why you want to join us.'), askedIn('What is your notice period?')]])]));
     $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
     $analysis = latestAnalysisOf($candidate);
     $this->actingAs($candidate)->post(route('applications.questions.store', $application), ['prompt_text' => 'why do you want to  join us?']);
@@ -230,6 +240,24 @@ test('the application page summarises the latest analysis', function () {
             ->where('analysisSummary.gaps', 1)
             ->where('analysisSummary.injection_warnings', 1)
             ->where('analysisSummary.is_latest_posting', true));
+});
+
+test('the notes are analysed with the job description, and what they ask is kept when quoted from them', function () {
+    $candidate = candidateWithTwoFactor();
+    $application = analysedApplicationOf($candidate);
+    inWorkspaceOf($candidate, fn () => $application->forceFill(['notes' => "Please provide:\n\nYour hourly rate in USD."])->save());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([briefOutput(['questions' => [
+        askedIn('Your hourly rate in USD', 'Your hourly rate in USD.', 'notes'),
+        askedIn('Your weekly availability', 'Your weekly availability.', 'notes'),
+    ]])]));
+
+    $this->actingAs($candidate)->post(route('applications.analysis.store', $application));
+
+    $brief = latestAnalysisOf($candidate)->brief;
+    expect($fake->requests[0]->messages[0]['content'])->toContain("<application_notes untrusted=\"true\">\nPlease provide:\n\nYour hourly rate in USD.\n</application_notes>")
+        ->and($brief['questions'])->toBe(['Your hourly rate in USD'])
+        ->and($brief['question_sources'])->toBe(['notes'])
+        ->and($brief['dropped_questions'])->toBe(['Your weekly availability']);
 });
 
 test('another workspace\'s analysis is not reachable', function () {

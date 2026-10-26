@@ -117,7 +117,7 @@ describe('routing', function () {
         $router = new LlmRouter;
 
         expect($router->route('jd_analysis')->provider)->toBe('ollama')
-            ->and($router->route('jd_analysis')->model)->toBe('qwen2.5:3b')
+            ->and($router->route('jd_analysis')->model)->toBe('qwen2.5:7b')
             ->and($router->route('answer_writing')->model)->toBe('qwen2.5:7b')
             ->and($router->route('claim_check')->external)->toBeFalse();
     });

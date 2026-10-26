@@ -10,22 +10,30 @@ use App\Domain\Ai\PromptInjectionScanner;
  * - every requirement's quote must come from the job description: `found` (verbatim, ignoring
  *   case and spacing), `close` (≥ 80% of its words appear in order-free overlap), or
  *   `not_found` (the model paraphrased or invented it — show it as unconfirmed);
- * - questions and the model's injection warnings are kept only when most of their words occur
- *   in the job description (otherwise moved to `dropped_questions` / `dropped_injection_warnings`);
- * - prompt-injection passages found by the server are merged with the model's own warnings.
+ * - a question is kept only when its quote is copied from the job description or the notes: its
+ *   words, in order, ignoring case and punctuation. The model understands how
+ *   the text asks (lists, headings, layouts); the server only checks it did not invent the ask.
+ *   The rest go to `dropped_questions`;
+ * - the model's injection warnings are kept only when most of their words occur in the texts
+ *   (otherwise moved to `dropped_injection_warnings`). They are hints: only the server's own
+ *   `server_injection_warnings`, from both texts, hold questions back (docs/04 §4.8).
  */
 class BriefChecker
 {
-    /** A longer line after "Please include:" is prose, not an unbulleted item of the list. */
-    private const MAX_PLAIN_ITEM_LENGTH = 200;
+    /** A shorter quote ("Your rate") could be found by chance in any text. */
+    private const MIN_QUESTION_QUOTE_WORDS = 2;
+
+    /** "Please provide:", "Include all of the following:" — longer text before a colon is part of the quote. */
+    private const MAX_HEADING_WORDS = 6;
 
     public function __construct(private PromptInjectionScanner $scanner) {}
 
     /**
      * @param  array<string, mixed>  $brief  validated jd_analysis output
-     * @return array<string, mixed> the brief with `quote_check` on each requirement and `server_injection_warnings`
+     * @param  string  $notes  the application's notes on how to apply, analysed with the job description
+     * @return array<string, mixed> the brief with `quote_check` on each requirement, the kept questions as text with their `question_sources`, and `server_injection_warnings`
      */
-    public function check(array $brief, string $jobDescription): array
+    public function check(array $brief, string $jobDescription, string $notes = ''): array
     {
         $haystack = self::normalise($jobDescription);
         $words = array_flip(self::words($jobDescription));
@@ -39,157 +47,90 @@ class BriefChecker
             }, (array) ($brief[$list] ?? []));
         }
 
-        // Questions and the model's injection warnings must point at text that is really there
-        // (the 3B model invents generic questions and warnings); the rest is kept aside, visibly.
-        [$brief['questions'], $brief['dropped_questions']] = self::matchQuestions((array) ($brief['questions'] ?? []), self::askedIn($jobDescription));
-        [$brief['injection_warnings'], $brief['dropped_injection_warnings']] = self::partition((array) ($brief['injection_warnings'] ?? []), $words, 0.5);
+        [$brief['questions'], $brief['question_sources'], $brief['dropped_questions']] = self::checkQuestions((array) ($brief['questions'] ?? []), ['job_description' => $jobDescription, 'notes' => $notes]);
+        [$brief['injection_warnings'], $brief['dropped_injection_warnings']] = self::partition((array) ($brief['injection_warnings'] ?? []), $words + array_flip(self::words($notes)), 0.5);
 
-        $brief['server_injection_warnings'] = $this->scanner->scan($jobDescription);
+        $brief['server_injection_warnings'] = array_values(array_unique([...$this->scanner->scan($jobDescription), ...$this->scanner->scan($notes)]));
 
         return $brief;
     }
 
     /**
-     * What a text asks the applicant: sentences ending in "?", prompts such as "Tell us…",
-     * "Describe…", "Please explain…", and the items of a list introduced as what to send ("Please
-     * provide:", "In your proposal, include:"). Items may be bulleted, or plain short lines up to
-     * the first blank line after one.
-     *
-     * @return list<string>
-     */
-    public static function askedIn(string $text): array
-    {
-        $asked = [];
-        $inAskedList = false;
-        $plainItemsEnded = false;
-        $itemsInList = 0;
-
-        foreach (preg_split('/\R/u', $text) ?: [] as $line) {
-            $line = trim($line);
-
-            if ($line === '') {
-                $plainItemsEnded = $itemsInList > 0;
-
-                continue;
-            }
-
-            $isListItem = preg_match('/^(?:[-*•]|\d+[.)])\s+/u', $line) === 1;
-            $isPlainItem = ! $isListItem && ! $plainItemsEnded && ! str_ends_with($line, ':') && mb_strlen($line) <= self::MAX_PLAIN_ITEM_LENGTH;
-
-            if ($inAskedList && ($isListItem || $isPlainItem)) {
-                $asked[] = (string) preg_replace('/^(?:[-*•]|\d+[.)])\s+/u', '', $line);
-                $itemsInList++;
-
-                continue;
-            }
-
-            if (! $isListItem) {
-                $inAskedList = self::introducesAskedList($line);
-                $plainItemsEnded = false;
-                $itemsInList = 0;
-            }
-
-            foreach (preg_split('/(?<=[.!?])\s+/u', $line) ?: [] as $sentence) {
-                $sentence = trim((string) preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', $sentence));
-
-                if ($sentence !== '' && (str_ends_with($sentence, '?') || preg_match('/^(please\s+)?(tell us|describe|explain|share|give (us )?an example|outline|summari[sz]e)\b/iu', $sentence) === 1)) {
-                    $asked[] = $sentence;
-                }
-            }
-        }
-
-        return $asked;
-    }
-
-    /**
-     * A line that introduces a list of what to send with the application, such as "Please
-     * provide:" or "When applying, include:" (not "Responsibilities include:").
-     */
-    private static function introducesAskedList(string $line): bool
-    {
-        return str_ends_with($line, ':')
-            && preg_match('/\b(please|apply\w*|application|proposal|cover letter|answer|questions?|tell us|let us know|send us|submit)\b/iu', $line) === 1;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function askedWords(string $passage): array
-    {
-        return array_values(array_filter(self::words($passage), fn (string $word): bool => mb_strlen($word) > 2));
-    }
-
-    /**
-     * Keep the model's questions that correspond to something the text asks (≥ 60% of the
-     * question's words in one asked passage). A question that merges several asked passages (a
-     * whole "Please include:" list in one) is replaced by those passages, one question each. The
-     * rest are dropped as invented.
+     * The questions whose quote is in the job description or the notes, as text, with the name
+     * of the text it is in (models name the wrong one); the rest as text, dropped. A question
+     * seen twice is kept once.
      *
      * @param  array<mixed>  $questions
-     * @param  list<string>  $asked
-     * @return array{list<string>, list<string>}
+     * @param  array{job_description: string, notes: string}  $texts
+     * @return array{list<string>, list<'job_description'|'notes'>, list<string>}
      */
-    private static function matchQuestions(array $questions, array $asked): array
+    private static function checkQuestions(array $questions, array $texts): array
     {
+        $sequences = array_map(fn (string $text): string => ' '.implode(' ', self::words($text)).' ', $texts);
         $kept = [];
+        $sources = [];
         $dropped = [];
-        $askedWords = array_map(self::askedWords(...), $asked);
 
         foreach ($questions as $question) {
-            $text = trim(is_string($question) ? $question : '');
+            $question = is_array($question) ? $question : ['question' => $question];
+            $text = trim(is_string($question['question'] ?? null) ? $question['question'] : '');
+            $source = self::sourceOf(is_string($question['quote'] ?? null) ? $question['quote'] : '', $sequences);
 
             if ($text === '') {
                 continue;
             }
 
-            $questionWords = self::askedWords($text);
-            $matches = false;
-            $merged = [];
-
-            foreach ($askedWords as $index => $passage) {
-                if (self::share($questionWords, $passage) >= 0.6) {
-                    $matches = true;
-
-                    break;
-                }
-
-                if (self::share($passage, $questionWords) >= 0.8) {
-                    $merged[] = $asked[$index];
-                }
-            }
-
-            if ($matches) {
-                $kept[] = $text;
-            } elseif (count($merged) >= 2) {
-                array_push($kept, ...$merged);
-            } else {
+            if ($source === null) {
                 $dropped[] = $text;
+
+                continue;
+            }
+
+            if (! in_array(JobAnalysisService::normaliseQuestion($text), array_map(JobAnalysisService::normaliseQuestion(...), $kept), true)) {
+                $kept[] = $text;
+                $sources[] = $source;
             }
         }
 
-        return [array_values(array_unique($kept)), $dropped];
+        return [$kept, $sources, $dropped];
     }
 
     /**
-     * The share of `$words` that also occur in `$in` (0 when there are no words).
+     * The text the quote is copied from: its words, in order, in that text. Models often copy a
+     * list's heading in front of the item ("Please provide: Your rate"), so the quote also counts
+     * without a short heading ending in ":".
      *
-     * @param  list<string>  $words
-     * @param  list<string>  $in
+     * @param  array<'job_description'|'notes', string>  $sequences  each text's words, space-separated with a space at each end
+     * @return 'job_description'|'notes'|null
      */
-    private static function share(array $words, array $in): float
+    private static function sourceOf(string $quote, array $sequences): ?string
     {
-        if ($words === []) {
-            return 0.0;
+        $candidates = [$quote];
+
+        if (preg_match('/^([^:]{1,60}):\s*(\S.*)$/su', $quote, $match) === 1 && count(self::words($match[1])) <= self::MAX_HEADING_WORDS) {
+            $candidates[] = $match[2];
         }
 
-        $lookup = array_flip($in);
+        foreach ($candidates as $candidate) {
+            $words = self::words($candidate);
 
-        return count(array_filter($words, fn (string $word): bool => isset($lookup[$word]))) / count($words);
+            if (count($words) < self::MIN_QUESTION_QUOTE_WORDS) {
+                continue;
+            }
+
+            foreach ($sequences as $name => $sequence) {
+                if (str_contains($sequence, ' '.implode(' ', $words).' ')) {
+                    return $name;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
-     * Split model-written strings into those whose words mostly appear in the job description and
-     * those that do not.
+     * Split model-written strings into those whose words mostly appear in the texts and those
+     * that do not.
      *
      * @param  array<mixed>  $items
      * @param  array<string, int>  $words

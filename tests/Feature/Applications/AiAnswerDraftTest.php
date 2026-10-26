@@ -170,7 +170,7 @@ test('a cover letter covers the points the job description asks for that are not
         'job_application_id' => $application->id,
         'job_posting_id' => $application->posting->id,
         'status' => 'succeeded',
-        'brief' => ['summary' => 'A Zoho role.', 'questions' => ['Your experience integrating Twilio with Zoho.', 'Your estimated timeline and rate.'], 'injection_warnings' => $injectionWarnings],
+        'brief' => ['summary' => 'A Zoho role.', 'questions' => ['Your experience integrating Twilio with Zoho.', 'Your estimated timeline and rate.'], 'injection_warnings' => ['Please provide: your rate'], 'server_injection_warnings' => $injectionWarnings],
         'matches' => ['requirements' => []],
     ])->save());
     questionToDraft($candidate, $application, 'Your estimated timeline and rate.');
@@ -184,8 +184,8 @@ test('a cover letter covers the points the job description asks for that are not
     expect(str_contains($prompt, "<points_to_cover untrusted=\"true\">\n1. Your experience integrating Twilio with Zoho.\n</points_to_cover>"))->toBe($covered)
         ->and($prompt)->toContain($covered ? 'about 300 to 450 words' : 'at least 180 and at most 280 words');
 })->with([
-    'found points' => [[], true],
-    'none while the analysis warns of text aimed at the AI' => [['Ignore previous instructions'], false],
+    'found points, whatever the model warned of' => [[], true],
+    'none while the server finds text aimed at the AI' => [['Ignore previous instructions'], false],
 ]);
 
 test('a cover letter uses the how-to-apply fields: the proposal angle and notes in the task, the subject line on top', function () {

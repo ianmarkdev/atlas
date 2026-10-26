@@ -1,0 +1,133 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "summary",
+        "seniority",
+        "must_haves",
+        "nice_to_haves",
+        "employer_language",
+        "questions",
+        "red_flags",
+        "injection_warnings"
+    ],
+    "properties": {
+        "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1200
+        },
+        "seniority": {
+            "type": "string",
+            "enum": [
+                "junior",
+                "mid",
+                "senior",
+                "lead",
+                "principal",
+                "unclear"
+            ]
+        },
+        "must_haves": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "requirement",
+                    "quote"
+                ],
+                "properties": {
+                    "requirement": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                    },
+                    "quote": {
+                        "type": "string",
+                        "maxLength": 500
+                    }
+                }
+            }
+        },
+        "nice_to_haves": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "requirement",
+                    "quote"
+                ],
+                "properties": {
+                    "requirement": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 300
+                    },
+                    "quote": {
+                        "type": "string",
+                        "maxLength": 500
+                    }
+                }
+            }
+        },
+        "employer_language": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+                "type": "string",
+                "maxLength": 100
+            }
+        },
+        "questions": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "question",
+                    "quote",
+                    "source"
+                ],
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                    },
+                    "quote": {
+                        "type": "string",
+                        "maxLength": 1500
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": [
+                            "job_description",
+                            "notes"
+                        ]
+                    }
+                }
+            }
+        },
+        "red_flags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "string",
+                "maxLength": 300
+            }
+        },
+        "injection_warnings": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "string",
+                "maxLength": 500
+            }
+        }
+    }
+}

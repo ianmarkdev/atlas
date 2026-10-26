@@ -137,20 +137,18 @@ class JobAnalysisService
     }
 
     /**
-     * The questions the analysis found, then those the application's notes ask (the how-to-apply
-     * notes from the extension), that are not on the application yet, keyed by their index in
-     * that list. They are added only when someone confirms them: a job description may hold text
-     * aimed at the AI (docs/04 §4.8).
+     * The questions the analysis found in the job description and the notes that are not on the
+     * application yet, keyed by their index in the brief. They are added only when someone
+     * confirms them: a job description may hold text aimed at the AI (docs/04 §4.8).
      *
      * @return array<int, string>
      */
     public function questionsNotAdded(JobAnalysis $analysis): array
     {
         $existing = array_flip(array_map(self::normaliseQuestion(...), $analysis->application->questions()->pluck('prompt_text')->all()));
-        $found = [...array_values((array) ($analysis->brief['questions'] ?? [])), ...$this->questionsInNotes($analysis->application)];
         $notAdded = [];
 
-        foreach ($found as $index => $question) {
+        foreach (array_values((array) ($analysis->brief['questions'] ?? [])) as $index => $question) {
             $prompt = trim((string) $question);
             $key = self::normaliseQuestion($prompt);
 
@@ -164,32 +162,25 @@ class JobAnalysisService
     }
 
     /**
-     * What the application's notes ask applicants to send or answer (BriefChecker::askedIn).
-     * None when the notes hold text aimed at the AI: they may be pasted from the listing.
-     *
-     * @return list<string>
+     * Whether the server found text aimed at the AI in the job description or the notes. The
+     * model's own warnings are only hints: small models flag what the listing asks applicants.
      */
-    public function questionsInNotes(JobApplication $application): array
+    public static function warnsOfInjection(JobAnalysis $analysis): bool
     {
-        $notes = trim((string) $application->notes);
-
-        if ($notes === '' || $this->scanner->scan($notes) !== []) {
-            return [];
-        }
-
-        return BriefChecker::askedIn($notes);
+        return ($analysis->brief['server_injection_warnings'] ?? []) !== [];
     }
 
     /**
-     * The notes for the cover letter to cover as they are: only when nothing in them could be
-     * taken as a question (those become questions or points to cover), and never when they hold
-     * text aimed at the AI.
+     * The notes for the cover letter to cover as they are: only when the latest analysis found no
+     * question in them (those become questions or points to cover), and never when they hold text
+     * aimed at the AI.
      */
     public function coverLetterNotes(JobApplication $application): string
     {
         $notes = trim((string) $application->notes);
+        $analysis = $application->analyses()->where('status', 'succeeded')->first();
 
-        if ($notes === '' || $this->scanner->scan($notes) !== [] || BriefChecker::askedIn($notes) !== []) {
+        if ($notes === '' || $this->scanner->scan($notes) !== [] || in_array('notes', (array) ($analysis->brief['question_sources'] ?? []), true)) {
             return '';
         }
 
@@ -197,9 +188,9 @@ class JobAnalysisService
     }
 
     /**
-     * What the cover letter should cover: the questions the latest analysis and the notes found
-     * that are not on the application as questions of their own. None while the analysis warns of text aimed at
-     * the AI, since nobody has confirmed these points.
+     * What the cover letter should cover: the questions the latest analysis found that are not on
+     * the application as questions of their own. None while the server warns of text aimed at the
+     * AI, since nobody has confirmed these points.
      *
      * @return list<string>
      */
@@ -207,7 +198,7 @@ class JobAnalysisService
     {
         $analysis = $application->analyses()->where('status', 'succeeded')->first();
 
-        if ($analysis === null || ($analysis->brief['injection_warnings'] ?? []) !== [] || ($analysis->brief['server_injection_warnings'] ?? []) !== []) {
+        if ($analysis === null || self::warnsOfInjection($analysis)) {
             return [];
         }
 

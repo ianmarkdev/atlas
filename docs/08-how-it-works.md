@@ -151,7 +151,7 @@ Every call goes through [AiGateway](../app/Domain/Ai/AiGateway.php): one route p
 
 | Task | When | Ollama default | Claude option | Size |
 |---|---|---|---|---|
-| `jd_analysis` | Each analysis | qwen2.5:3b | claude-haiku-5-5 | Medium in, medium out |
+| `jd_analysis` | Each analysis | qwen2.5:7b | claude-haiku-5-5 | Medium in, medium out |
 | `resume_tailoring` | "Tailor with AI" | qwen2.5:7b | claude-sonnet-5-5 | Long in, short out |
 | `answer_writing` | Each answer, cover letter or paragraph redraft | qwen2.5:7b | claude-sonnet-5-5 | Long in, long out: the largest cost |
 | `claim_check` | After each whole AI draft | qwen2.5:3b | claude-haiku-5-5 | Short, structured |

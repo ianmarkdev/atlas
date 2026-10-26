@@ -166,7 +166,7 @@ class ApplicationAutopilot
     {
         $found = $this->analyses->questionsNotAdded($analysis);
 
-        if ($found !== [] && self::warnsOfInjection($analysis)) {
+        if ($found !== [] && JobAnalysisService::warnsOfInjection($analysis)) {
             $this->note($application, __('The job description may hold text aimed at the AI, so the questions found in it were not added. Check them on the Questions page.'));
         } elseif ($found !== []) {
             $this->analyses->addQuestions($analysis, array_keys($found), $actor);
@@ -264,11 +264,6 @@ class ApplicationAutopilot
 
         return $variants->firstWhere('ulid', $best)
             ?? $variants->sortByDesc(fn (ResumeVariant $variant): int => $variant->is_default ? 1 : 0)->first();
-    }
-
-    private static function warnsOfInjection(JobAnalysis $analysis): bool
-    {
-        return ($analysis->brief['injection_warnings'] ?? []) !== [] || ($analysis->brief['server_injection_warnings'] ?? []) !== [];
     }
 
     private function note(JobApplication $application, string $line): void
