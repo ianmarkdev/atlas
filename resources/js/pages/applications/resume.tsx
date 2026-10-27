@@ -80,6 +80,8 @@ const refusalReasons: Record<string, string> = {
     title_candidate_only: 'only the candidate changes how a job title is shown',
     title_not_in_use: 'not a title you already use for this job',
     summary_number: 'the summary mentions a number that is not on the resume',
+    not_in_library:
+        'no longer in your library (archived), so it was removed from the resume',
 };
 
 type Version = {

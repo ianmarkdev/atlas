@@ -3,6 +3,8 @@
 namespace App\Domain\Applications;
 
 use App\Domain\Ai\ClaimGroundingValidator;
+use App\Domain\Knowledge\Employment;
+use App\Domain\Knowledge\Project;
 use App\Domain\Resumes\ResumeVariant;
 use App\Domain\Shared\PlainText;
 
@@ -16,7 +18,9 @@ use App\Domain\Shared\PlainText;
  * - a rewording that adds numbers not in the original bullet is refused (the old wording stays);
  * - a display title must be one already used for that job (or the official title), and only the
  *   candidate's requests may change it;
- * - jobs are never dropped; projects may be.
+ * - jobs are never dropped; projects may be;
+ * - jobs, projects and bullets no longer in the library (archived) are removed, so the result
+ *   passes the resume checks.
  *
  * Everything refused is reported, so the candidate sees what the AI wanted and why it was not used.
  *
@@ -144,12 +148,28 @@ class ResumeTailor
 
         $tailorBullets = function (array $current, string $id) use ($proposals, $map, &$refused): array {
             $proposal = $proposals[$id] ?? null;
+            $label = $map['items'][$id]['label'];
+            $live = [];
+
+            foreach ($map['bullets'] as $info) {
+                if ($info['owner'] === $id) {
+                    $live[$info['claim']] = true;
+                }
+            }
+
+            $current = array_values(array_filter($current, function (array $bullet) use ($live, $label, &$refused): bool {
+                if (isset($live[$bullet['claim']])) {
+                    return true;
+                }
+
+                $refused[] = ['item' => $label, 'what' => (string) ($bullet['text'] ?? ''), 'reason' => 'not_in_library', 'kept' => null];
+
+                return false;
+            }));
 
             if ($proposal === null) {
                 return $current;
             }
-
-            $label = $map['items'][$id]['label'];
             $existing = [];
 
             foreach ($current as $bullet) {
@@ -186,11 +206,13 @@ class ResumeTailor
             return array_slice($result, 0, 30);
         };
 
-        $tailorProject = function (array $item) use ($byUlid, $proposals, $tailorBullets): ?array {
+        $tailorProject = function (array $item) use ($byUlid, $proposals, $tailorBullets, &$refused): ?array {
             $id = $byUlid['project:'.$item['project']] ?? null;
 
             if ($id === null) {
-                return $item;
+                $refused[] = ['item' => Project::query()->where('ulid', $item['project'])->value('name') ?? '', 'what' => '', 'reason' => 'not_in_library', 'kept' => null];
+
+                return null;
             }
 
             if (($proposals[$id]['include'] ?? true) === false) {
@@ -206,7 +228,8 @@ class ResumeTailor
             $id = $byUlid['job:'.$job['employment']] ?? null;
 
             if ($id === null) {
-                $experience[] = $job;
+                $record = Employment::query()->where('ulid', $job['employment'])->first(['title', 'employer_name']);
+                $refused[] = ['item' => $record === null ? '' : "{$record->title} · {$record->employer_name}", 'what' => '', 'reason' => 'not_in_library', 'kept' => null];
 
                 continue;
             }

@@ -19,9 +19,14 @@ use App\Domain\Retrieval\RetrievalUnit;
  * bullet points come first, in resume order, and the storyline lists each experience with the
  * evidence ids of its bullets.
  *
- * For a question, the best hits of the search on the question itself keep their place even when
- * a job with many requirements would fill the pack. Items that do not fit `$maxCharacters`
- * (as rendered for the prompt) are left out, lowest priority first.
+ * The best hits of the search on the question itself keep their place even when a job with many
+ * requirements would fill the pack. A cover letter keeps fewer, for hits the resume and the
+ * matches do not already hold: experience added after the resume was tailored or the job was
+ * matched still reaches the letter. Items that do not fit `$maxCharacters` (as rendered for the
+ * prompt) are left out, lowest priority first.
+ *
+ * An item is listed once per library item: a bullet point and a search hit for the same claim
+ * keep the first wording (the resume's, for a cover letter).
  *
  * @phpstan-type EvidenceSource array{unit_id: int, source_type: string, source_id: int, source_revision_id: ?int, content_hash: string}
  * @phpstan-type Retrieval array{semantic: bool, semantic_unavailable_reason: ?string, embedding_model: ?array{id: int, provider: string, model: string}, settings: array<string, int|float>, sources: array<string, EvidenceSource>}
@@ -32,6 +37,9 @@ class EvidencePackBuilder
 
     /** Places kept for the search on a question (not a cover letter) itself. */
     public const QUESTION_SLOTS = 5;
+
+    /** Places kept for the search on the role, for a cover letter. */
+    public const COVER_LETTER_SLOTS = 3;
 
     /** Hits taken from the search on the question (or, for a cover letter, the role). */
     public const SEARCH_LIMIT = 6;
@@ -70,7 +78,7 @@ class EvidencePackBuilder
         $refs = EvidenceMatcher::refsOf($result->hits);
 
         foreach ($result->hits as $index => $hit) {
-            $items[] = ['ref' => $refs[$index], 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_question' => ! $question->isCoverLetter(), 'source' => self::sourceOf($hit->unit)];
+            $items[] = ['ref' => $refs[$index], 'status' => $hit->unit->status, 'text' => $hit->unit->search_text, 'unit_type' => $hit->unit->unit_type, 'from_search' => true, 'source' => self::sourceOf($hit->unit)];
         }
 
         // Distinct usable items in order, each with the storyline groups it appeared under.
@@ -79,13 +87,13 @@ class EvidencePackBuilder
         foreach ($items as $item) {
             $text = trim((string) ($item['text'] ?? ''));
             $status = (string) ($item['status'] ?? '');
-            $key = mb_strtolower($text);
+            $key = $item['ref'] ?? mb_strtolower($text);
 
             if ($text === '' || ! in_array($status, ['verified', 'approved', 'proposed'], true)) {
                 continue;
             }
 
-            $candidates[$key] ??= ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text, 'from_question' => $item['from_question'] ?? false, 'source' => null, 'groups' => []];
+            $candidates[$key] ??= ['ref' => $item['ref'] ?? null, 'status' => $status, 'text' => $text, 'from_search' => $item['from_search'] ?? false, 'source' => null, 'groups' => []];
             $candidates[$key]['source'] ??= $item['source'] ?? null;
 
             if (isset($item['group'])) {
@@ -93,7 +101,7 @@ class EvidencePackBuilder
             }
         }
 
-        $chosen = $this->choose($candidates, $maxCharacters);
+        $chosen = $this->choose($candidates, $question->isCoverLetter() ? self::COVER_LETTER_SLOTS : self::QUESTION_SLOTS, $maxCharacters);
         $pack = [];
         $sources = [];
         $groups = [];
@@ -190,17 +198,17 @@ class EvidencePackBuilder
     }
 
     /**
-     * Which candidates go into the pack: the first QUESTION_SLOTS hits of the question's own
-     * search, then the rest in order, up to MAX_ITEMS and `$maxCharacters`. An item too long for
-     * what is left is passed over for shorter ones after it.
+     * Which candidates go into the pack: the first `$searchSlots` hits found only by the search,
+     * then the rest in order, up to MAX_ITEMS and `$maxCharacters`. An item too long for what is
+     * left is passed over for shorter ones after it.
      *
-     * @param  array<string, array{ref: ?string, status: string, text: string, from_question: bool, groups: list<string>}>  $candidates
+     * @param  array<string, array{ref: ?string, status: string, text: string, from_search: bool, groups: list<string>}>  $candidates
      * @return array<string, true>
      */
-    private function choose(array $candidates, int $maxCharacters): array
+    private function choose(array $candidates, int $searchSlots, int $maxCharacters): array
     {
-        $questionKeys = array_keys(array_filter($candidates, fn (array $candidate): bool => $candidate['from_question']));
-        $priority = array_unique([...array_slice($questionKeys, 0, self::QUESTION_SLOTS), ...array_keys($candidates)]);
+        $searchKeys = array_keys(array_filter($candidates, fn (array $candidate): bool => $candidate['from_search']));
+        $priority = array_unique([...array_slice($searchKeys, 0, $searchSlots), ...array_keys($candidates)]);
         $chosen = [];
         $characters = 0;
 

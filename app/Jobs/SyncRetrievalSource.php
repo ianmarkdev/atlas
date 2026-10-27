@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Domain\Ai\AiQueue;
 use App\Domain\Retrieval\RetrievalIndexer;
 use App\Jobs\Middleware\WithWorkspaceContext;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -10,7 +11,9 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
- * Re-index one library item after it changed (dispatched after the transaction commits).
+ * Re-index one library item after it changed (dispatched after the transaction commits). It waits
+ * in the embeddings lane it feeds: whatever worker keeps search embeddings current also keeps the
+ * text and status (verified, archived) of what is found current.
  */
 class SyncRetrievalSource implements ShouldQueue
 {
@@ -19,6 +22,7 @@ class SyncRetrievalSource implements ShouldQueue
     public function __construct(public int $workspaceId, public string $sourceType, public int $sourceId)
     {
         $this->afterCommit();
+        $this->onQueue(AiQueue::embeddings());
     }
 
     /**

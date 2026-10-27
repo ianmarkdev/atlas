@@ -349,6 +349,40 @@ test("a question's own evidence keeps its place when the job's requirements woul
         ->and($prompt)->not->toContain('Requirement 8 evidence A');
 });
 
+test('a cover letter keeps a place for experience the resume and the matches do not hold, and lists a resume bullet point once', function () {
+    $candidate = candidateWithTwoFactor();
+    $employment = employmentOf($candidate);
+    $onResume = claimOf($candidate, 'Built agency websites for retail clients', $employment);
+    $variant = ResumeVariant::factory()->forProfile(profileOf($candidate))->withDocument(['experience' => [[
+        'employment' => $employment->ulid, 'display_title' => null, 'description' => null, 'projects' => [],
+        'bullets' => [['claim' => $onResume->ulid, 'text' => 'Led agency website builds for retail clients']],
+    ]]])->create();
+    claimOf($candidate, 'Maintained forty agency websites on WordPress');
+    $application = draftedApplicationOf($candidate);
+    $this->actingAs($candidate)->post(route('applications.resume.store', $application), ['variant' => $variant->ulid]);
+    $requirements = array_map(fn (int $n): array => ['kind' => 'must', 'evidence' => [
+        ['ref' => null, 'status' => 'verified', 'text' => "Requirement {$n} evidence A"],
+        ['ref' => null, 'status' => 'verified', 'text' => "Requirement {$n} evidence B"],
+    ]], range(1, 8));
+    inWorkspaceOf($candidate, fn () => (new JobAnalysis)->forceFill([
+        'job_application_id' => $application->id,
+        'job_posting_id' => $application->posting->id,
+        'status' => 'succeeded',
+        'brief' => ['summary' => 'Builds and maintains agency websites'],
+        'matches' => ['requirements' => $requirements],
+    ])->save());
+    $this->actingAs($candidate)->post(route('applications.questions.cover-letter', $application));
+    $letter = inWorkspaceOf($candidate, fn () => ApplicationQuestion::query()->where('origin', 'cover_letter')->sole());
+    $fake = app(LlmRouter::class)->fake(new FakeLlmClient([answerOutput('Dear hiring team, …', [])]));
+
+    $this->actingAs($candidate)->post(route('applications.questions.draft', [$application, $letter]));
+
+    $prompt = $fake->requests[0]->messages[0]['content'];
+    expect($prompt)->toContain('<item id="E1" status="verified">Led agency website builds for retail clients</item>')
+        ->and($prompt)->toContain('Maintained forty agency websites on WordPress')
+        ->and($prompt)->not->toContain('Built agency websites for retail clients');
+});
+
 test("a job description too long for the model's window is shortened, and the evidence still goes in", function () {
     config(['ai.tasks.answer_writing.context' => 5000]);
     $candidate = candidateWithTwoFactor();

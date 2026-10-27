@@ -45,7 +45,8 @@ final class AiQueue
     }
 
     /**
-     * Embeddings always run on the local Ollama: searches wait for them.
+     * Embeddings always run on the local Ollama: searches wait for them. Re-indexing a changed
+     * library item waits here too, ahead of the embedding it queues.
      */
     public static function embeddings(): string
     {

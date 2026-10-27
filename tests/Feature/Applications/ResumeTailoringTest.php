@@ -171,6 +171,34 @@ test('the AI cannot drop a job, invent a display title or a summary number, or c
         ->and($version->document['summary'])->toBe('Backend engineer.');
 });
 
+test('a bullet point archived since the resume was made is removed, not sent back to the checks', function () {
+    ['candidate' => $candidate, 'onResume' => $onResume, 'second' => $second, 'application' => $application] = aiTailoringSetup();
+    $this->actingAs($candidate)->patch(route('knowledge.claims.archive', $second));
+    app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput(['items' => []])]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    $resume = aiTailoredResumeOf($candidate);
+    expect($resume->generation_status)->toBeNull()
+        ->and(array_column($resume->currentVersion->document['experience'][0]['bullets'], 'claim'))->toBe([$onResume->ulid])
+        ->and(collect($resume->currentVersion->ai_report['refused'])->pluck('reason')->all())->toBe(['not_in_library']);
+});
+
+test('a job archived since the resume was made is removed and reported', function () {
+    ['candidate' => $candidate, 'employment' => $employment, 'application' => $application] = aiTailoringSetup();
+    $this->actingAs($candidate)->patch(route('knowledge.employments.archive', $employment));
+    app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput(['items' => []])]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    $resume = aiTailoredResumeOf($candidate);
+    expect($resume->generation_status)->toBeNull()
+        ->and($resume->currentVersion->document['experience'])->toBe([])
+        ->and($resume->currentVersion->ai_report['refused'])->toEqual([
+            ['item' => "{$employment->title} · {$employment->employer_name}", 'what' => '', 'reason' => 'not_in_library', 'kept' => null],
+        ]);
+});
+
 test('a VA can tailor, but the AI cannot change display titles for them', function () {
     ['candidate' => $candidate, 'application' => $application] = aiTailoringSetup();
     app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput()]));
