@@ -32,7 +32,7 @@ export function StyleguideHeader({
             </nav>
             <div className="flex flex-col gap-3">
                 <h1 className="type-display-l text-text-primary">
-                    Career Engine{' '}
+                    Atlas{' '}
                     <span className="text-text-accent">{title}</span>
                 </h1>
                 <p className="type-body-l text-text-secondary">{description}</p>

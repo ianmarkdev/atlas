@@ -1,7 +1,7 @@
 import type { SVGAttributes } from 'react';
 
 /**
- * Product mark: a resume page with a folded corner and text lines.
+ * Product mark: a globe with an equator and a meridian, for Atlas.
  */
 export default function AppLogoIcon(props: SVGAttributes<SVGElement>) {
     return (
@@ -9,8 +9,14 @@ export default function AppLogoIcon(props: SVGAttributes<SVGElement>) {
             <path
                 fillRule="evenodd"
                 clipRule="evenodd"
-                d="M10 3h15l9 9v23a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm14 2.5V13h7.5L24 5.5ZM13 18h14v3H13v-3Zm0 6h14v3H13v-3Zm0 6h9v3h-9v-3Z"
+                d="M20 4a16 16 0 1 1 0 32a16 16 0 1 1 0-32Zm0 3a13 13 0 1 0 0 26a13 13 0 1 0 0-26Z"
             />
+            <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M20 4a7 16 0 1 1 0 32a7 16 0 1 1 0-32Zm0 3a4.5 13 0 1 0 0 26a4.5 13 0 1 0 0-26Z"
+            />
+            <path d="M5 18.5h30v3H5z" />
         </svg>
     );
 }

@@ -22,7 +22,7 @@ const steps = [
 ] as const;
 
 /**
- * The front door. Career Engine has no public signup (accounts are created
+ * The front door. Atlas has no public signup (accounts are created
  * by the candidate), so this only says what the app is and leads to log in.
  */
 export default function Welcome() {
