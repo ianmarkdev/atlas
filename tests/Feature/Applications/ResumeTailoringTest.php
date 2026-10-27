@@ -171,6 +171,20 @@ test('the AI cannot drop a job, invent a display title or a summary number, or c
         ->and($version->document['summary'])->toBe('Backend engineer.');
 });
 
+test('a tailored job shows at most four bullets, the first ones the AI chose', function () {
+    ['candidate' => $candidate, 'employment' => $employment, 'onResume' => $onResume, 'second' => $second, 'libraryOnly' => $libraryOnly, 'application' => $application] = aiTailoringSetup();
+    $fourth = claimOf($candidate, 'Ran the on-call rota for the billing team', $employment);
+    claimOf($candidate, 'Wrote the runbook for failed payouts', $employment);
+    app(LlmRouter::class)->fake(new FakeLlmClient([tailoringOutput([
+        'items' => [['id' => 'J1', 'bullets' => array_map(fn (int $number): array => ['id' => "B{$number}", 'text' => ''], [3, 1, 4, 2, 5])]],
+    ])]));
+
+    $this->actingAs($candidate)->post(route('applications.resume.tailor', $application));
+
+    expect(array_column(aiTailoredResumeOf($candidate)->currentVersion->document['experience'][0]['bullets'], 'claim'))
+        ->toBe([$libraryOnly->ulid, $onResume->ulid, $fourth->ulid, $second->ulid]);
+});
+
 test('a bullet point archived since the resume was made is removed, not sent back to the checks', function () {
     ['candidate' => $candidate, 'onResume' => $onResume, 'second' => $second, 'application' => $application] = aiTailoringSetup();
     $this->actingAs($candidate)->patch(route('knowledge.claims.archive', $second));

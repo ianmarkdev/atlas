@@ -19,6 +19,7 @@ use App\Domain\Shared\PlainText;
  * - a display title must be one already used for that job (or the official title), and only the
  *   candidate's requests may change it;
  * - jobs are never dropped; projects may be;
+ * - a job or project shows at most MAX_BULLETS bullets (the first ones, most relevant first);
  * - jobs, projects and bullets no longer in the library (archived) are removed, so the result
  *   passes the resume checks.
  *
@@ -30,6 +31,11 @@ use App\Domain\Shared\PlainText;
  */
 class ResumeTailor
 {
+    /**
+     * Most bullets a tailored job or project may show.
+     */
+    public const int MAX_BULLETS = 4;
+
     public function __construct(private ClaimGroundingValidator $grounding) {}
 
     /**
@@ -168,7 +174,7 @@ class ResumeTailor
             }));
 
             if ($proposal === null) {
-                return $current;
+                return array_slice($current, 0, self::MAX_BULLETS);
             }
             $existing = [];
 
@@ -200,10 +206,10 @@ class ResumeTailor
             if ($result === []) {
                 $refused[] = ['item' => $label, 'what' => '', 'reason' => 'no_bullets_left', 'kept' => null];
 
-                return $current;
+                return array_slice($current, 0, self::MAX_BULLETS);
             }
 
-            return array_slice($result, 0, 30);
+            return array_slice($result, 0, self::MAX_BULLETS);
         };
 
         $tailorProject = function (array $item) use ($byUlid, $proposals, $tailorBullets, &$refused): ?array {
