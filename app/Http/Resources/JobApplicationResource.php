@@ -45,6 +45,7 @@ class JobApplicationResource extends JsonResource
             ]),
             'deadline_on' => $this->deadline_on?->format('Y-m-d'),
             'is_overdue' => $this->isOverdue(),
+            'is_important' => $this->is_important,
             'applied_at' => $this->applied_at?->toIso8601String(),
             'stage_changed_at' => $this->stage_changed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),

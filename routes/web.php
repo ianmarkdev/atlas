@@ -76,6 +76,7 @@ Route::middleware(['auth', 'verified', 'tenant', 'candidate.two-factor'])->group
     Route::get('applications/{application}/edit', [JobApplicationController::class, 'edit'])->name('applications.edit');
     Route::put('applications/{application}', [JobApplicationController::class, 'update'])->name('applications.update');
     Route::patch('applications/{application}/stage', [JobApplicationController::class, 'stage'])->name('applications.stage');
+    Route::patch('applications/{application}/important', [JobApplicationController::class, 'important'])->name('applications.important');
     Route::delete('applications/{application}', [JobApplicationController::class, 'destroy'])->name('applications.destroy');
     Route::patch('applications/{application}/restore', [JobApplicationController::class, 'restore'])
         ->withTrashed()->name('applications.restore');

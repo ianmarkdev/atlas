@@ -99,6 +99,11 @@ return [
             // Match the application timezone so timestamptz values come back in UTC.
             'timezone' => 'UTC',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Emulated prepares send each query in one round-trip instead of three; worth it over a
+            // high-latency link such as a local machine talking to Neon.
+            'options' => [
+                PDO::ATTR_EMULATE_PREPARES => (bool) env('DB_EMULATE_PREPARES', false),
+            ],
         ],
 
         // The queue's own database, when the data lives elsewhere (shared Neon database): workers

@@ -6,6 +6,7 @@ import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { NativeSelect } from '@/components/native-select';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -300,6 +301,28 @@ export default function ApplicationForm({
                                     placeholder="Recruiter name, referral, what stood out…"
                                 />
                             </Field>
+
+                            <div className="grid gap-1">
+                                <div className="flex items-center gap-3">
+                                    {/* value="1": Laravel's boolean rule refuses the default "on". */}
+                                    <Checkbox
+                                        id="is_important"
+                                        name="is_important"
+                                        value="1"
+                                        defaultChecked={
+                                            application?.is_important ?? false
+                                        }
+                                    />
+                                    <Label htmlFor="is_important">
+                                        Important
+                                    </Label>
+                                </div>
+                                <p className="type-caption text-text-muted">
+                                    Starred on the board and table, and
+                                    highlighted in Orbit.
+                                </p>
+                                <InputError message={errors.is_important} />
+                            </div>
 
                             <div className="flex gap-2">
                                 <Button disabled={processing}>

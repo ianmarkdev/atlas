@@ -43,6 +43,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property ApplyRequirement|null $apply_requirement
  * @property string|null $proposal_angle
  * @property string|null $notes
+ * @property bool $is_important flagged to stand out in lists (here and in Orbit)
  * @property string|null $review_note
  * @property CarbonImmutable|null $review_status_changed_at
  * @property int|null $owner_user_id
@@ -224,6 +225,7 @@ class JobApplication extends Model
             'stage_changed_at' => 'datetime',
             'applied_at' => 'datetime',
             'deadline_on' => 'date',
+            'is_important' => 'boolean',
             'review_status_changed_at' => 'datetime',
             'autopilot_requested_at' => 'datetime',
             'autopilot_questions_added_at' => 'datetime',

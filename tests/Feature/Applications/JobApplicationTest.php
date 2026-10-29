@@ -7,6 +7,7 @@ use App\Domain\Applications\JobPosting;
 use App\Domain\Audit\AuditEvent;
 use App\Models\User;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Arr;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function applicationOf(User $candidate, array $attributes = [], ?string $jobDescription = null): JobApplication
@@ -171,6 +172,59 @@ describe('stage', function () {
         $this->actingAs($candidate)
             ->patch(route('applications.stage', applicationOf($candidate)), ['stage' => 'hired'])
             ->assertSessionHasErrors('stage');
+    });
+});
+
+describe('important', function () {
+    test('the form marks an application important and unmarks it', function () {
+        $candidate = candidateWithTwoFactor();
+
+        $this->actingAs($candidate)->post(route('applications.store'), applicationForm(['is_important' => '1']));
+        $application = onlyApplication($candidate);
+        expect($application->is_important)->toBeTrue();
+
+        // An unticked checkbox sends nothing.
+        $this->actingAs($candidate)->put(route('applications.update', $application), [
+            ...Arr::except(applicationForm(), ['stage']),
+            'lock_version' => $application->lock_version,
+        ])->assertRedirect();
+        expect(onlyApplication($candidate)->is_important)->toBeFalse();
+    });
+
+    test('the star flags and unflags an application, for the candidate and a VA', function () {
+        $candidate = candidateWithTwoFactor();
+        $application = applicationOf($candidate);
+
+        $this->actingAs(vaOf($candidate))->patch(route('applications.important', $application), ['is_important' => true])->assertRedirect();
+        $flagged = onlyApplication($candidate);
+        $this->actingAs($candidate)->patch(route('applications.important', $application), ['is_important' => false])->assertRedirect();
+
+        $events = inWorkspaceOf($candidate, fn () => AuditEvent::query()->where('action', 'application.importance_changed')->orderBy('id')->pluck('metadata')->all());
+        expect($flagged->is_important)->toBeTrue()
+            ->and($flagged->lock_version)->toBe($application->lock_version + 1)
+            ->and(onlyApplication($candidate)->is_important)->toBeFalse()
+            ->and($events)->toEqual([['important' => true], ['important' => false]]);
+    });
+
+    test('the star needs true or false', function () {
+        $candidate = candidateWithTwoFactor();
+
+        $this->actingAs($candidate)
+            ->patch(route('applications.important', applicationOf($candidate)), ['is_important' => 'maybe'])
+            ->assertSessionHasErrors('is_important');
+    });
+
+    test('the list filters to important applications and says which are', function () {
+        $candidate = candidateWithTwoFactor();
+        applicationOf($candidate, ['company_name' => 'Starred', 'is_important' => true]);
+        applicationOf($candidate, ['company_name' => 'Plain']);
+
+        $this->actingAs($candidate)->get(route('applications.index', ['filter' => 'important']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters.filter', 'important')
+                ->has('applications', 1)
+                ->where('applications.0.company_name', 'Starred')
+                ->where('applications.0.is_important', true));
     });
 });
 

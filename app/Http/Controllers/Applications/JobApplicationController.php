@@ -35,7 +35,7 @@ class JobApplicationController extends Controller
      * Quick filters of the list: everything, assigned to me, unassigned (open), waiting for the
      * candidate's review, sent back with changes, past the deadline, prepared in the background.
      */
-    private const FILTERS = ['all', 'mine', 'unassigned', 'in_review', 'changes_requested', 'overdue', 'background'];
+    private const FILTERS = ['all', 'mine', 'unassigned', 'in_review', 'changes_requested', 'overdue', 'background', 'important'];
 
     public function __construct(private JobApplicationService $applications) {}
 
@@ -65,6 +65,7 @@ class JobApplicationController extends Controller
                 ->whereIn('stage', [ApplicationStage::Saved, ApplicationStage::Preparing])
                 ->whereDate('deadline_on', '<', CarbonImmutable::today()))
             ->when($filter === 'background', fn (Builder $query) => $query->whereNotNull('autopilot_status'))
+            ->when($filter === 'important', fn (Builder $query) => $query->where('is_important', true))
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $like = '%'.addcslashes($search, '%_\\').'%';
                 $query->where(fn (Builder $inner) => $inner
@@ -259,6 +260,20 @@ class JobApplicationController extends Controller
         $validated = $request->validate(['stage' => ['required', Rule::enum(ApplicationStage::class)]]);
 
         $this->applications->changeStage($application, ApplicationStage::from($validated['stage']), $request->user());
+
+        return back();
+    }
+
+    /**
+     * Flag or unflag an application as important (the star on the board, table and detail page).
+     */
+    public function important(Request $request, JobApplication $application): RedirectResponse
+    {
+        Gate::authorize('update', $application);
+
+        $validated = $request->validate(['is_important' => ['required', 'boolean']]);
+
+        $this->applications->markImportant($application, (bool) $validated['is_important'], $request->user());
 
         return back();
     }

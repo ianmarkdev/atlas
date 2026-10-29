@@ -50,7 +50,7 @@ class CaptureJobApplicationRequest extends SaveJobApplicationRequest
     /**
      * The company is null when the listing did not name it.
      *
-     * @return array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string}
+     * @return array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string, is_important: bool}
      */
     public function details(): array
     {

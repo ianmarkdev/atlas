@@ -44,6 +44,7 @@ class SaveJobApplicationRequest extends FormRequest
             'apply_requirement' => ['nullable', Rule::enum(ApplyRequirement::class)],
             'proposal_angle' => ['nullable', 'string', 'max:'.self::MAX_PROPOSAL_ANGLE_LENGTH],
             'notes' => ['nullable', 'string', 'max:5000'],
+            'is_important' => ['sometimes', 'boolean'],
             'job_description' => ['nullable', 'string', 'max:'.self::MAX_JOB_DESCRIPTION_LENGTH],
             'stage' => [Rule::requiredIf($isCreating), Rule::enum(ApplicationStage::class)],
             'lock_version' => [Rule::requiredIf(! $isCreating), 'integer'],
@@ -51,7 +52,7 @@ class SaveJobApplicationRequest extends FormRequest
     }
 
     /**
-     * @return array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string}
+     * @return array{company_name: string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string, is_important: bool}
      */
     public function details(): array
     {
@@ -68,6 +69,8 @@ class SaveJobApplicationRequest extends FormRequest
             'apply_requirement' => $this->input('apply_requirement'),
             'proposal_angle' => $this->input('proposal_angle'),
             'notes' => $this->input('notes'),
+            // Absent means not important: an unticked checkbox sends nothing.
+            'is_important' => $this->boolean('is_important'),
         ];
     }
 

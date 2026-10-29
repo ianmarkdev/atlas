@@ -36,6 +36,8 @@ export type JobApplication = {
     /** `YYYY-MM-DD` */
     deadline_on: string | null;
     is_overdue: boolean;
+    /** Flagged to stand out in lists, from the extension or the star. */
+    is_important: boolean;
     applied_at: string | null;
     stage_changed_at: string | null;
     created_at: string | null;

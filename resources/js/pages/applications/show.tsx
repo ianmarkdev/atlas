@@ -39,6 +39,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { index } from "@/routes/applications";
 import { index as collectionsIndex } from "@/routes/collections";
 import ApplicationReviewController from "@/actions/App/Http/Controllers/Applications/ApplicationReviewController";
+import { ImportantToggle } from "@/components/applications/important";
 import { ReviewBadge, Timeline } from "@/components/applications/review";
 import {
     ResumeRanking,
@@ -195,9 +196,15 @@ export default function ApplicationShow({
                         <p className="type-label text-text-label uppercase">
                             {companyLabel(application.company_name)}
                         </p>
-                        <h1 className="type-heading-2 text-text-primary">
-                            {application.role_title}
-                        </h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="type-heading-2 text-text-primary">
+                                {application.role_title}
+                            </h1>
+                            <ImportantToggle
+                                application={application}
+                                className="[&_svg]:size-5"
+                            />
+                        </div>
                         <div className="flex flex-wrap items-center gap-2">
                             <StageBadge
                                 stage={application.stage}

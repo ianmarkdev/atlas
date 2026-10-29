@@ -15,6 +15,10 @@ import {
     StageBadge,
     StageSelect,
 } from "@/components/applications/stage";
+import {
+    ImportantToggle,
+    importantHighlight,
+} from "@/components/applications/important";
 import { Initials, ReviewBadge } from "@/components/applications/review";
 import Heading from "@/components/heading";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +41,12 @@ type QuickFilter =
     | "in_review"
     | "changes_requested"
     | "overdue"
-    | "background";
+    | "background"
+    | "important";
 
 const quickFilters: { value: QuickFilter; label: string }[] = [
     { value: "all", label: "All" },
+    { value: "important", label: "Important" },
     { value: "mine", label: "Assigned to me" },
     { value: "unassigned", label: "Unassigned" },
     { value: "in_review", label: "In review" },
@@ -500,7 +506,12 @@ function ApplicationCard({
     selection: Selection;
 }) {
     return (
-        <article className="space-y-2 rounded-kraken-sm border border-border-subtle bg-card p-3 transition-colors duration-fast ease-out hover:border-border-accent-subtle">
+        <article
+            className={cn(
+                "space-y-2 rounded-kraken-sm border border-border-subtle bg-card p-3 transition-colors duration-fast ease-out hover:border-border-accent-subtle",
+                application.is_important && importantHighlight,
+            )}
+        >
             <div className="flex items-start gap-2">
                 {application.can.update && (
                     <Checkbox
@@ -528,6 +539,7 @@ function ApplicationCard({
                         </p>
                     )}
                 </Link>
+                <ImportantToggle application={application} className="mt-0.5" />
             </div>
             <AutopilotStatus application={application} />
             <div className="flex flex-wrap items-center gap-1.5">
@@ -616,7 +628,10 @@ function Table({
                     {applications.map((application) => (
                         <tr
                             key={application.ulid}
-                            className="border-b border-border-subtle last:border-0 hover:bg-surface-card"
+                            className={cn(
+                                "border-b border-border-subtle last:border-0 hover:bg-surface-card",
+                                application.is_important && importantHighlight,
+                            )}
                         >
                             <td className="px-3 py-2 align-top">
                                 {application.can.update && (
@@ -636,14 +651,17 @@ function Table({
                                 )}
                             </td>
                             <td className="px-3 py-2">
-                                <Link
-                                    href={JobApplicationController.show(
-                                        application.ulid,
-                                    )}
-                                    className="font-medium text-text-primary focus-ring hover:underline"
-                                >
-                                    {companyLabel(application.company_name)}
-                                </Link>
+                                <div className="flex items-center gap-1.5">
+                                    <Link
+                                        href={JobApplicationController.show(
+                                            application.ulid,
+                                        )}
+                                        className="font-medium text-text-primary focus-ring hover:underline"
+                                    >
+                                        {companyLabel(application.company_name)}
+                                    </Link>
+                                    <ImportantToggle application={application} />
+                                </div>
                                 <p className="text-text-secondary">
                                     {application.role_title}
                                 </p>

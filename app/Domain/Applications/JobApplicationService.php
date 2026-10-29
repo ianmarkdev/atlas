@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
  * Writes applications. Candidate and VAs both add and prepare applications; the job description
  * is kept verbatim, and a corrected paste is stored next to the earlier one.
  *
- * @phpstan-type ApplicationDetails array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string}
+ * @phpstan-type ApplicationDetails array{company_name: ?string, role_title: string, source_url: ?string, location: ?string, employment_type: ?string, salary_text: ?string, deadline_on: ?string, source: ?string, subject_line: ?string, apply_requirement: ?string, proposal_angle: ?string, notes: ?string, is_important: bool}
  */
 class JobApplicationService
 {
@@ -118,6 +118,25 @@ class JobApplicationService
             }
 
             $this->audit->record('application.stage_changed', $application, ['from' => $from->value, 'to' => $stage->value], $actor);
+        });
+    }
+
+    /**
+     * Flag or unflag an application as important (the star on the board, table and detail page).
+     * Like a stage change it bumps the lock version, so a form opened before it can't undo it.
+     */
+    public function markImportant(JobApplication $application, bool $important, User $actor): void
+    {
+        if ($application->is_important === $important) {
+            return;
+        }
+
+        DB::transaction(function () use ($application, $important, $actor): void {
+            $application->is_important = $important;
+            $application->lock_version++;
+            $application->save();
+
+            $this->audit->record('application.importance_changed', $application, ['important' => $important], $actor);
         });
     }
 

@@ -155,6 +155,15 @@ describe('saving a captured listing', function () {
             ->and(capturedApplications($other))->toBeEmpty();
     });
 
+    test('a listing can be marked important when it is saved', function () {
+        $candidate = candidateWithTwoFactor();
+
+        captureAs($candidate, ['is_important' => true, 'source_url' => 'https://jobs.example.com/1'])->assertCreated();
+        captureAs($candidate, ['source_url' => 'https://jobs.example.com/2'])->assertCreated();
+
+        expect(capturedApplications($candidate)->pluck('is_important')->all())->toBe([true, false]);
+    });
+
     test('a long job description is stored in full', function () {
         $candidate = candidateWithTwoFactor();
         $description = str_repeat("Build reliable payment systems.\n", 1500);
@@ -183,6 +192,7 @@ describe('validation', function () {
         'unknown apply requirement' => [['apply_requirement' => 'essay'], 'apply_requirement'],
         'proposal angle too long' => [['proposal_angle' => str_repeat('a', 5001)], 'proposal_angle'],
         'notes too long' => [['notes' => str_repeat('a', 5001)], 'notes'],
+        'important not a boolean' => [['is_important' => 'very'], 'is_important'],
         'unknown extraction method' => [['capture' => ['method' => 'magic']], 'capture.method'],
         'unknown workplace type' => [['capture' => ['workplace_type' => 'moon']], 'capture.workplace_type'],
         'salary max below min' => [['capture' => ['salary' => ['min' => 90000, 'max' => 50000]]], 'capture.salary.max'],
